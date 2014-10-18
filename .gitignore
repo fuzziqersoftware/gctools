@@ -1,0 +1,6 @@
+.DS_Store
+*.o
+afsdump
+gcmdump
+gsldump
+pae2gvm
