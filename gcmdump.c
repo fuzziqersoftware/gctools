@@ -51,6 +51,19 @@ typedef union {
 } ImageHeader;
 
 typedef struct {
+  uint32_t text_offset[7];
+  uint32_t data_offset[11];
+  uint32_t text_address[7];
+  uint32_t data_address[11];
+  uint32_t text_size[7];
+  uint32_t data_size[11];
+  uint32_t bss_address;
+  uint32_t bss_size;
+  uint32_t entry_point;
+  uint32_t unused[7];
+} DolHeader;
+
+typedef struct {
   int8_t dir_flag;
   int32_t string_offset:24;
   int32_t parent_offset;
@@ -80,6 +93,18 @@ typedef union {
 int32_t byteswap(int32_t a) {
   return ((a >> 24) & 0x000000FF) | ((a >> 8) & 0x0000FF00) |
          ((a << 8) & 0x00FF0000) | ((a << 24) & 0xFF000000);
+}
+
+uint32_t dol_file_size(DolHeader* dol) {
+  static const int num_sections = 18;
+  uint32_t x, max_offset = 0;
+  for (x = 0; x < num_sections; x++) {
+    uint32_t section_end_offset = byteswap(dol->text_offset[x]) +
+        byteswap(dol->text_size[x]);
+    if (section_end_offset > max_offset)
+      max_offset = section_end_offset;
+  }
+  return max_offset;
 }
 
 void parse_until(FILE* f, FstEntry* fst, const char* string_table, int start,
@@ -176,23 +201,42 @@ int main(int argc, char* argv[]) {
       format = FORMAT_TGC;
   }
 
-  uint32_t fst_offset, fst_size;
+  uint32_t fst_offset, fst_size, dol_offset;
   int32_t base_offset;
   if (format == FORMAT_GCM) {
     printf("format: gcm (%s)\n", header.gcm.name);
     fst_offset = byteswap(header.gcm.fst_offset);
     fst_size = byteswap(header.gcm.fst_size);
     base_offset = 0;
+    dol_offset = byteswap(header.gcm.dol_offset);
 
   } else if (format == FORMAT_TGC) {
     printf("format: tgc\n");
     fst_offset = byteswap(header.tgc.fst_offset);
     fst_size = byteswap(header.tgc.fst_size);
     base_offset = byteswap(header.tgc.file_area) - byteswap(header.tgc.file_offset_base);
+    dol_offset = byteswap(header.tgc.dol_offset);
 
   } else {
     fprintf(stderr, "can\'t figure out format; use one of --tgc or --gcm\n");
     return -3;
+  }
+
+  {
+    fseek(f, dol_offset, SEEK_SET);
+    DolHeader dol;
+    fread(&dol, sizeof(DolHeader), 1, f);
+    uint32_t dol_size = dol_file_size(&dol) - sizeof(DolHeader);
+
+    void* dol_data = malloc(dol_size);
+    fread(dol_data, dol_size, 1, f);
+
+    FILE* dol_file = fopen("default.dol", "wb");
+    fwrite(&dol, sizeof(DolHeader), 1, dol_file);
+    fwrite(dol_data, dol_size, 1, dol_file);
+
+    fclose(dol_file);
+    free(dol_data);
   }
 
   fseek(f, fst_offset, SEEK_SET);
