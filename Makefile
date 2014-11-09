@@ -1,5 +1,5 @@
 CFLAGS=-O3 -Wall
-EXECUTABLES=afsdump gcmdump gsldump pae2gvm
+EXECUTABLES=afsdump gcmdump gsldump gvmdump pae2gvm
 
 all: $(EXECUTABLES) prs
 
@@ -11,6 +11,9 @@ gcmdump: gcmdump.c
 
 gsldump: gsldump.c
 	gcc $(CFLAGS) -o gsldump gsldump.c
+
+gvmdump: gvmdump.c
+	gcc $(CFLAGS) -o gvmdump gvmdump.c
 
 pae2gvm: pae2gvm.c
 	gcc $(CFLAGS) -o pae2gvm pae2gvm.c
