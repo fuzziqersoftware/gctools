@@ -37,8 +37,8 @@ int main(int argc, char* argv[]) {
 
   FILE *in = stdin, *out = stdout;
 
-  int x, decompress = 0, verbose = 0;
-  int start_offset = 0, raw_bytes = 0, truncate_beginning = 0, pr2_format = 0;
+  int x, decompress = 0, verbose = 0, pr2_format = 0;
+  int64_t start_offset = 0, raw_bytes = 0;
   int format = FORMAT_PRS;
   for (x = 1; x < argc; x++) {
 
@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
 
     } else if (!strncmp(argv[x], "--start-offset=", 15)) {
       if (argv[x][15] == '0' && argv[x][16] == 'x')
-        sscanf(&argv[x][17], "%x", &start_offset);
+        sscanf(&argv[x][17], "%llx", &start_offset);
       else
         start_offset = atoi(&argv[x][15]);
 
@@ -69,7 +69,7 @@ int main(int argc, char* argv[]) {
 
     } else if (!strncmp(argv[x], "--raw-bytes=", 12)) {
       if (argv[x][12] == '0' && argv[x][13] == 'x')
-        sscanf(&argv[x][14], "%x", &raw_bytes);
+        sscanf(&argv[x][14], "%llx", &raw_bytes);
       else
         raw_bytes = atoi(&argv[x][12]);
 
@@ -84,6 +84,19 @@ int main(int argc, char* argv[]) {
   if (pr2_format && (format != FORMAT_PRS))
     fprintf(stderr, "prs: warning: using pr2 format for non-prs stream\n");
 
+  if (verbose) {
+    const char* action_str = (decompress ? "decompress" : "compress");
+    const char* format_str;
+    if (format == FORMAT_PRS)
+      format_str = "FORMAT_PRS";
+    if (format == FORMAT_YAZ0)
+      format_str = "FORMAT_YAZ0";
+    if (format == FORMAT_YAY0)
+      format_str = "FORMAT_YAY0";
+    fprintf(stderr, "prs: action=%s, format=%s, start_offset=%016llX, "
+        "raw_bytes=%016llX\n", action_str, format_str, start_offset, raw_bytes);
+  }
+
   int64_t ret = ERROR_UNSUPPORTED;
 
   if (decompress) {
@@ -91,7 +104,7 @@ int main(int argc, char* argv[]) {
     if (pr2_format) {
       fread(&size, 4, 1, in);
       size = byteswap32(size);
-      prs_decompress_stream(in, out, truncate_beginning, size);
+      prs_decompress_stream(in, out, size);
 
     } else {
       // skip start_offset bytes, then copy raw_bytes bytes to the output
@@ -101,11 +114,11 @@ int main(int argc, char* argv[]) {
     }
 
     if (format == FORMAT_PRS)
-      ret = prs_decompress_stream(in, out, truncate_beginning, size);
+      ret = prs_decompress_stream(in, out, size);
     else if (format == FORMAT_YAZ0)
-      ret = yaz0_decompress_stream(in, out, truncate_beginning, size);
+      ret = yaz0_decompress_stream(in, out, size);
     else if (format == FORMAT_YAY0)
-      ret = yay0_decompress_stream(in, out, truncate_beginning, size);
+      ret = yay0_decompress_stream(in, out, size);
 
   } else {
     if (format == FORMAT_PRS)

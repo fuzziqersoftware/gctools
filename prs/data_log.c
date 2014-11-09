@@ -44,9 +44,7 @@ void fill_log(struct data_log* log, FILE* f, size_t max_read) {
     int bytes_to_read = 0x8000 - log->size;
     if (bytes_to_read > max_read)
       bytes_to_read = max_read;
-    if (bytes_to_read) {
-      int bytes_read = fread(&log->data[0x8000 - bytes_to_read], 1, bytes_to_read, f);
-      log->size += bytes_read;
-    }
+    if (bytes_to_read)
+      log->size += fread(&log->data[0x8000 - bytes_to_read], 1, bytes_to_read, f);
   }
 }

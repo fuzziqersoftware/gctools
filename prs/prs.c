@@ -123,14 +123,14 @@ int64_t prs_compress_stream(FILE* src, FILE* dst, int64_t size) {
     int best_offset = 0;
     int best_size = 0;
     int this_offset;
-    for (this_offset = -3; (this_offset > -backward_log.size) && (this_offset > -0x1FF0) && (best_size < 255); this_offset--) {
+    for (this_offset = -3; (this_offset >= -backward_log.size) && (this_offset > -0x1FF0) && (best_size < 255); this_offset--) {
       int this_size = 1;
       while (!memcmp(&backward_log.data[backward_log.size + this_offset],
                      &forward_log.data[forward_log.offset],
                      this_size) &&
              (this_size < 256) &&
              ((this_offset + this_size) < 0) &&
-             (this_size <= forward_log.size))
+             (this_size <= (forward_log.size - forward_log.offset)))
         this_size++;
       this_size--;
 
@@ -154,6 +154,10 @@ int64_t prs_compress_stream(FILE* src, FILE* dst, int64_t size) {
       if (size > 0)
         size -= best_size;
     }
+
+    if (forward_log.offset > forward_log.size || forward_log.offset < 0)
+      fprintf(stderr, "warning: forward_log has invalid offset (%d %d)\n",
+          forward_log.offset, forward_log.size);
   }
   prs_finish(&pc);
 
@@ -161,8 +165,7 @@ int64_t prs_compress_stream(FILE* src, FILE* dst, int64_t size) {
 }
 
 
-int64_t prs_decompress_stream(FILE* in, FILE* out, int64_t skip_output_bytes,
-    int64_t stop_after_size) {
+int64_t prs_decompress_stream(FILE* in, FILE* out, int64_t stop_after_size) {
 
   struct data_log log;
   log_init(&log);
@@ -189,14 +192,10 @@ int64_t prs_decompress_stream(FILE* in, FILE* out, int64_t skip_output_bytes,
     if (flag)
     {
       int ch = fgetc(in);
-      if (skip_output_bytes)
-        skip_output_bytes--;
-      else {
-        fputc(ch, out);
-        out_size++;
-        if (stop_after_size && (out_size >= stop_after_size))
-          return out_size;
-      }
+      fputc(ch, out);
+      out_size++;
+      if (stop_after_size && (out_size >= stop_after_size))
+        return out_size;
       log_byte(&log, ch);
       continue;
     }
@@ -249,14 +248,10 @@ int64_t prs_decompress_stream(FILE* in, FILE* out, int64_t skip_output_bytes,
     for (x = 0; x < t; x++)
     {
       int ch = log.data[log.size + r5];
-      if (skip_output_bytes)
-        skip_output_bytes--;
-      else {
-        fputc(ch, out);
-        out_size++;
-        if (stop_after_size && (out_size >= stop_after_size))
-          return out_size;
-      }
+      fputc(ch, out);
+      out_size++;
+      if (stop_after_size && (out_size >= stop_after_size))
+        return out_size;
       log_byte(&log, ch);
     }
   }

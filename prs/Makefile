@@ -1,6 +1,7 @@
 CC=gcc
 OBJECTS=main.o data_log.o errors.o prs.o util.o yay0.o yaz0.o
-CFLAGS=-O3 -Wall
+CFLAGS=-g -O0 -Wall
+LDFLAGS=-g
 EXECUTABLES=prs
 
 all: prs
