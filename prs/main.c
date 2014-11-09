@@ -22,6 +22,7 @@ void print_help(const char* name) {
   fprintf(stderr, "  or use unix pipes appropriately\n\n");
   fprintf(stderr, "options:\n");  
   fprintf(stderr, "  -h, --help: show this message\n");
+  fprintf(stderr, "  -v, --verbose: print more info messages\n");
   fprintf(stderr, "  -d, --decompress: self-explanatory (default behavior is to compress)\n");
   fprintf(stderr, "  --start-offset=N: before decompressing, ignore this many bytes from the input stream\n");
   fprintf(stderr, "  --raw-bytes=N: before decompressing, copy this many bytes directly to the output stream (after start_offset bytes have been discarded)\n");
@@ -36,7 +37,7 @@ int main(int argc, char* argv[]) {
 
   FILE *in = stdin, *out = stdout;
 
-  int x, decompress = 0;
+  int x, decompress = 0, verbose = 0;
   int start_offset = 0, raw_bytes = 0, truncate_beginning = 0, pr2_format = 0;
   int format = FORMAT_PRS;
   for (x = 1; x < argc; x++) {
@@ -47,6 +48,9 @@ int main(int argc, char* argv[]) {
 
     } else if (!strcmp(argv[x], "-d") || !strcmp(argv[x], "--decompress")) {
       decompress = 1;
+
+    } else if (!strcmp(argv[x], "-v") || !strcmp(argv[x], "--verbose")) {
+      verbose = 1;
 
     } else if (!strncmp(argv[x], "--start-offset=", 15)) {
       if (argv[x][15] == '0' && argv[x][16] == 'x')
@@ -114,10 +118,12 @@ int main(int argc, char* argv[]) {
 
   if (ret < 0)
     fprintf(stderr, "prs: operation failed with error %lld\n", ret);
-  else if (ret > 0)
-    fprintf(stderr, "prs: %lld (0x%llX) bytes written\n", ret, ret);
-  else
-    fprintf(stderr, "prs: warning: result was empty\n");
+  else if (verbose) {
+    if (ret > 0)
+      fprintf(stderr, "prs: %lld (0x%llX) bytes written\n", ret, ret);
+    else
+      fprintf(stderr, "prs: warning: result was empty\n");
+  }
 
   return 0;
 }
