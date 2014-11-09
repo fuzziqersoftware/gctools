@@ -18,7 +18,8 @@
 
 void print_help(const char* name) {
   fprintf(stderr, "fuzziqer software prs/yaz0/yay0 (de)compressor\n\n");
-  fprintf(stderr, "usage: %s [options]\n\n", name);
+  fprintf(stderr, "usage: %s [options] < input_file > output_file\n", name);
+  fprintf(stderr, "  or use unix pipes appropriately\n\n");
   fprintf(stderr, "options:\n");  
   fprintf(stderr, "  -h, --help: show this message\n");
   fprintf(stderr, "  -d, --decompress: self-explanatory (default behavior is to compress)\n");

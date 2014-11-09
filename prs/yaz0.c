@@ -17,8 +17,8 @@ struct yaz0_header {
 } __attribute__ ((packed));
 
 
-int64_t yaz0_decompress_stream(FILE* in, FILE* out, size_t skip_output_bytes,
-    size_t stop_after_size) {
+int64_t yaz0_decompress_stream(FILE* in, FILE* out, int64_t skip_output_bytes,
+    int64_t stop_after_size) {
 
   struct yaz0_header header;
   fread(&header, sizeof(struct yaz0_header), 1, in);

@@ -4,60 +4,9 @@
 #include <stdlib.h>
 #include <sys/types.h>
 
+#include "data_log.h"
 #include "errors.h"
 #include "util.h"
-
-
-
-struct data_log {
-  uint8_t* data;
-  int size;
-  int offset;
-};
-
-static void log_init(struct data_log* log) {
-  log->data = malloc(0x8000);
-  log->size = 0;
-  log->offset = 0;
-}
-
-static void log_byte(struct data_log* log, int ch) {
-  if (log->size == 0x8000) {
-    memmove(log->data, &log->data[0x4000], 0x4000);
-    log->size -= 0x4000;
-    log->offset -= 0x4000;
-  }
-  log->data[log->size] = ch;
-  log->size++;
-}
-
-static void log_bytes(struct data_log* log, void* data, size_t size) {
-  uint8_t* bytes = (uint8_t*)data;
-  for (; size > 0; bytes++, size--)
-    log_byte(log, *bytes);
-}
-
-static void delete_log(struct data_log* log) {
-  if (log->data)
-    free(log->data);
-}
-
-static void fill_log(struct data_log* log, FILE* f, size_t max_read) {
-  if (log->offset > 0x6000) {
-    log->offset -= 0x2000;
-    log->size -= 0x2000;
-    memmove(log->data, &log->data[0x2000], log->size);
-  }
-  if (log->size < 0x8000) {
-    int bytes_to_read = 0x8000 - log->size;
-    if (bytes_to_read > max_read)
-      bytes_to_read = max_read;
-    if (bytes_to_read) {
-      int bytes_read = fread(&log->data[0x8000 - bytes_to_read], 1, bytes_to_read, f);
-      log->size += bytes_read;
-    }
-  }
-}
 
 
 
@@ -65,6 +14,7 @@ struct prs_compress_ctx {
   unsigned char bitpos;
   struct data_log forward_log;
   FILE* out;
+  int64_t bytes_written;
 };
 
 static void prs_put_control_bit_nosave(struct prs_compress_ctx* pc, unsigned char bit) {
@@ -77,8 +27,11 @@ static void prs_put_control_save(struct prs_compress_ctx* pc) {
   if (pc->bitpos >= 8) {
     pc->bitpos = 0;
     fwrite(pc->forward_log.data, pc->forward_log.size, 1, pc->out);
+
     pc->forward_log.size = 0;
     log_byte(&pc->forward_log, 0);
+
+    pc->bytes_written++;
   }
 }
 
@@ -89,6 +42,7 @@ static void prs_put_control_bit(struct prs_compress_ctx* pc, unsigned char bit) 
 
 static void prs_put_static_data(struct prs_compress_ctx* pc, unsigned char data) {
   log_byte(&pc->forward_log, data);
+  pc->bytes_written++;
 }
 
 
@@ -98,6 +52,7 @@ static void prs_init(struct prs_compress_ctx* pc, FILE* out) {
   pc->out = out;
   log_init(&pc->forward_log);
   log_byte(&pc->forward_log, 0);
+  pc->bytes_written = 1;
 }
 
 static void prs_finish(struct prs_compress_ctx* pc) {
@@ -151,7 +106,7 @@ static void prs_copy(struct prs_compress_ctx* pc, int offset, unsigned char size
     prs_longcopy(pc, offset, size);
 }
 
-int64_t prs_compress_stream(FILE* src, FILE* dst, size_t size) {
+int64_t prs_compress_stream(FILE* src, FILE* dst, int64_t size) {
 
   struct data_log backward_log, forward_log;
   struct prs_compress_ctx pc;
@@ -202,12 +157,12 @@ int64_t prs_compress_stream(FILE* src, FILE* dst, size_t size) {
   }
   prs_finish(&pc);
 
-  return size;
+  return pc.bytes_written;
 }
 
 
-int64_t prs_decompress_stream(FILE* in, FILE* out, int skip_output_bytes,
-                           int stop_after_size) {
+int64_t prs_decompress_stream(FILE* in, FILE* out, int64_t skip_output_bytes,
+    int64_t stop_after_size) {
 
   struct data_log log;
   log_init(&log);

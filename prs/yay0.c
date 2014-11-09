@@ -15,8 +15,8 @@ struct yay0_header {
 } __attribute__ ((packed));
 
 
-int64_t yay0_decompress(void* _in, void** _out, size_t skip_output_bytes,
-    size_t stop_after_size) {
+int64_t yay0_decompress(void* _in, void** _out, int64_t skip_output_bytes,
+    int64_t stop_after_size) {
 
   struct yay0_header* header = (struct yay0_header*)_in;
   if (header->magic[0] != 'Y' || header->magic[1] != 'a' ||
@@ -84,8 +84,8 @@ int64_t yay0_decompress(void* _in, void** _out, size_t skip_output_bytes,
   return bytes_written;
 }
 
-int64_t yay0_decompress_stream(FILE* in, FILE* out, size_t skip_output_bytes,
-    size_t stop_after_size) {
+int64_t yay0_decompress_stream(FILE* in, FILE* out, int64_t skip_output_bytes,
+    int64_t stop_after_size) {
 
   void* input_data;
   int64_t input_size = read_entire_stream(in, &input_data);
