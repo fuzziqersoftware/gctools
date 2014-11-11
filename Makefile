@@ -16,7 +16,7 @@ gvmdump: gvmdump.c
 	gcc $(CFLAGS) -o gvmdump gvmdump.c
 
 pae2gvm: pae2gvm.c
-	gcc $(CFLAGS) -o pae2gvm pae2gvm.c
+	gcc $(CFLAGS) -o pae2gvm pae2gvm.c prs/prs.c prs/data_log.c
 
 prs:
 	cd prs && make && cd ..
