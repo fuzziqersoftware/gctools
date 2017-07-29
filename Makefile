@@ -1,4 +1,5 @@
-CFLAGS=-O3 -Wall
+CFLAGS=-O3 -Wall -Werror
+CXXFLAGS=-O3 -Wall -Werror -std=c++14
 EXECUTABLES=afsdump gcmdump gsldump gvmdump pae2gvm
 
 all: $(EXECUTABLES) prs
@@ -6,8 +7,8 @@ all: $(EXECUTABLES) prs
 afsdump: afsdump.c
 	gcc $(CFLAGS) -o afsdump afsdump.c
 
-gcmdump: gcmdump.c
-	gcc $(CFLAGS) -o gcmdump gcmdump.c
+gcmdump: gcmdump.cc
+	g++ $(CXXFLAGS) -o gcmdump gcmdump.cc
 
 gsldump: gsldump.c
 	gcc $(CFLAGS) -o gsldump gsldump.c
