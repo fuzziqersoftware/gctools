@@ -1,6 +1,6 @@
-CFLAGS=-O3 -Wall -Werror
-CXXFLAGS=-O3 -Wall -Werror -std=c++14
-EXECUTABLES=afsdump gcmdump gsldump gvmdump pae2gvm
+CFLAGS=-g -Wall -Werror
+CXXFLAGS=-g -Wall -Werror -std=c++14
+EXECUTABLES=afsdump gcmdump gsldump gvmdump pae2gvm smsgetseqs smsrenderbms smsdumpbanks
 
 all: $(EXECUTABLES) prs
 
@@ -18,6 +18,15 @@ gvmdump: gvmdump.c
 
 pae2gvm: pae2gvm.c
 	gcc $(CFLAGS) -o pae2gvm pae2gvm.c prs/prs.c prs/data_log.c
+
+smsgetseqs: smsgetseqs.cc
+	g++ $(CXXFLAGS) -o smsgetseqs smsgetseqs.cc -lphosg
+
+smsdumpbanks: smsdumpbanks.cc
+	g++ $(CXXFLAGS) -o smsdumpbanks wav.cc smsdumpbanks.cc -lphosg
+
+smsrenderbms: smsrenderbms.cc
+	g++ $(CXXFLAGS) -o smsrenderbms wav.cc smsrenderbms.cc -lphosg
 
 prs:
 	cd prs && make && cd ..
