@@ -13,6 +13,6 @@ install: prs
 	cp prs /usr/bin/prs
 
 clean:
-	-rm -f *.o $(EXECUTABLES)
+	-rm -rf *.o $(EXECUTABLES) *.dSYM
 
 .PHONY: clean

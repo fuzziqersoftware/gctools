@@ -45,24 +45,29 @@ an aaf file is composed of multiple chunks, roughly in the following hierarchy:
 
 
 struct wave_table_entry {
-  uint32_t flags1; // apparently
+  uint8_t unknown1;
+  uint8_t type;
+  uint8_t base_note;
+  uint8_t unknown2;
   uint32_t flags2;
   uint32_t offset;
   uint32_t size;
+  uint32_t loop_flag; // 0xFFFFFFFF means has a loop?
+  uint32_t loop_start;
+  uint32_t loop_end;
+  uint32_t unknown3[4];
 
   uint32_t sample_rate() {
     return (this->flags2 >> 9) & 0x00007FFF;
   }
 
-  uint32_t type() {
-    return (this->flags1 >> 16) & 0xFF;
-  }
-
   void byteswap() {
-    this->flags1 = bswap32(this->flags1);
     this->flags2 = bswap32(this->flags2);
     this->offset = bswap32(this->offset);
     this->size = bswap32(this->size);
+    this->loop_flag = bswap32(this->loop_flag);
+    this->loop_start = bswap32(this->loop_start);
+    this->loop_end = bswap32(this->loop_end);
   }
 };
 
@@ -95,6 +100,7 @@ struct winf_header {
 struct cdf_record {
   uint16_t aw_file_index;
   uint16_t sound_id;
+  uint32_t unknown1[13];
 
   void byteswap() {
     this->aw_file_index = bswap16(this->aw_file_index);
@@ -222,6 +228,15 @@ vector<Sound> wsys_decode(void* vdata, size_t size,
       ret.emplace_back();
       Sound& ret_snd = ret.back();
       ret_snd.sample_rate = wav_entry->sample_rate();
+      ret_snd.base_note = wav_entry->base_note;
+      if (wav_entry->loop_flag == 0xFFFFFFFF) {
+        ret_snd.loop_start = wav_entry->loop_start;
+        ret_snd.loop_end = wav_entry->loop_end;
+      } else {
+        ret_snd.loop_start = 0;
+        ret_snd.loop_end = 0;
+      }
+
       ret_snd.source_filename = entry->filename;
       ret_snd.source_offset = wav_entry->offset;
       ret_snd.source_size = wav_entry->size;
@@ -230,23 +245,30 @@ vector<Sound> wsys_decode(void* vdata, size_t size,
       ret_snd.wave_table_index = y;
       ret_snd.sound_id = sound_id;
 
-      uint8_t type = wav_entry->type();
-      if (type < 2) {
-        ret_snd.samples = afc_decode(
+      if (wav_entry->type < 2) {
+        vector<int16_t> int_samples = afc_decode(
             aw_file_contents.data() + wav_entry->offset, wav_entry->size,
-            (type == 1));
+            (wav_entry->type == 1));
+        ret_snd.samples = convert_samples_to_float(int_samples);
         ret_snd.num_channels = 1;
 
-      } else if (type == 3) {
+      } else if (wav_entry->type == 3) {
         // uncompressed big-endian stereo apparently
         if (wav_entry->size & 3) {
           throw invalid_argument("data size not a multiple of 4");
         }
-        ret_snd.samples.resize(wav_entry->size / 2);
-        memcpy(const_cast<int16_t*>(ret_snd.samples.data()),
-            aw_file_contents.data() + wav_entry->offset, wav_entry->size);
-        for (auto& sample : ret_snd.samples) {
-          sample = bswap16(sample);
+
+        size_t num_samples = wav_entry->size / 2;
+        ret_snd.samples.reserve(num_samples);
+        const int16_t* samples = reinterpret_cast<const int16_t*>(
+            aw_file_contents.data() + wav_entry->offset);
+        for (size_t z = 0; z < num_samples; z++) {
+          if (samples[z] == 0x0080) {
+            ret_snd.samples.emplace_back(-1.0f);
+          } else {
+            ret_snd.samples.emplace_back(
+                static_cast<float>(bswap16(samples[z])) / 32767.0f);
+          }
         }
         ret_snd.num_channels = 2;
       }

@@ -1,8 +1,8 @@
 CFLAGS=-g -Wall -Werror
 CXXFLAGS=-g -Wall -Werror -std=c++14
-EXECUTABLES=afsdump gcmdump gsldump gvmdump pae2gvm smsgetseqs smsrenderbms smsdumpbanks
+EXECUTABLES=afsdump gcmdump gsldump gvmdump pae2gvm
 
-all: $(EXECUTABLES) prs
+all: $(EXECUTABLES) prs sms
 
 afsdump: afsdump.c
 	gcc $(CFLAGS) -o afsdump afsdump.c
@@ -19,14 +19,8 @@ gvmdump: gvmdump.c
 pae2gvm: pae2gvm.c
 	gcc $(CFLAGS) -o pae2gvm pae2gvm.c prs/prs.c prs/data_log.c
 
-smsgetseqs: smsgetseqs.cc
-	g++ $(CXXFLAGS) -o smsgetseqs smsgetseqs.cc -lphosg
-
-smsdumpbanks: smsdumpbanks.cc
-	g++ $(CXXFLAGS) -o smsdumpbanks wav.cc smsdumpbanks.cc -lphosg
-
-smsrenderbms: smsrenderbms.cc
-	g++ $(CXXFLAGS) -o smsrenderbms wav.cc smsrenderbms.cc -lphosg
+sms:
+	cd sms && make && cd ..
 
 prs:
 	cd prs && make && cd ..
@@ -36,7 +30,8 @@ install: all
 	cp $(EXECUTABLES) /usr/bin/
 
 clean:
-	-rm -f *.o $(EXECUTABLES)
+	-rm -rf *.o $(EXECUTABLES) *.dSYM
 	cd prs && make clean && cd ..
+	cd sms && make clean && cd ..
 
-.PHONY: clean prs
+.PHONY: clean prs sms

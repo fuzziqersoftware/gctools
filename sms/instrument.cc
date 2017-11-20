@@ -14,8 +14,9 @@ using namespace std;
 
 
 VelocityRegion::VelocityRegion(uint8_t vel_low, uint8_t vel_high,
-    uint16_t sound_id, float freq_mult) : vel_low(vel_low), vel_high(vel_high),
-    sound_id(sound_id), freq_mult(freq_mult), sound(NULL) { }
+    uint16_t sound_id, float freq_mult, int8_t base_note) : vel_low(vel_low),
+    vel_high(vel_high), sound_id(sound_id), freq_mult(freq_mult),
+    base_note(base_note), sound(NULL) { }
 
 KeyRegion::KeyRegion(uint8_t key_low, uint8_t key_high) : key_low(key_low),
     key_high(key_high) { }
@@ -209,14 +210,14 @@ InstrumentBank ibnk_decode(void* vdata, size_t size) {
 
           float freq_mult = vel_region->freq_mult * key_region->freq_mult;
           result_key_region.vel_regions.emplace_back(vel_low,
-              vel_region->vel_high, vel_region->sample_num, freq_mult);
+              vel_region->vel_high, vel_region->sample_num, freq_mult, x);
 
           vel_low = vel_region->vel_high + 1;
         }
       }
 
     } else {
-      throw invalid_argument("unknown unstrument format");
+      throw invalid_argument("unknown instrument format");
     }
   }
   return result_bank;

@@ -13,9 +13,14 @@
 
 
 struct Sound {
-  std::vector<int16_t> samples;
+  std::vector<float> samples;
   size_t num_channels;
   size_t sample_rate;
+
+  uint8_t base_note;
+  // if both of the following are zero, there's no loop
+  size_t loop_start;
+  size_t loop_end;
 
   int64_t sound_id;
 
@@ -33,10 +38,11 @@ struct VelocityRegion {
   uint16_t sound_id;
   float freq_mult;
 
+  int8_t base_note;
   const Sound* sound;
 
   VelocityRegion(uint8_t vel_low, uint8_t vel_high, uint16_t sound_id,
-      float freq_mult);
+      float freq_mult, int8_t base_note = -1);
 };
 
 struct KeyRegion {
