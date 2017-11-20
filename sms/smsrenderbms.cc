@@ -384,7 +384,7 @@ public:
   virtual vector<float> render(size_t count, float volume, float panning) = 0;
 
   void off() {
-    // TODO: for now we use a constant release time of 1/4 second; we probably
+    // TODO: for now we use a constant release time of 1/5 second; we probably
     // should get this from the AAF somewhere but I don't know where
     this->note_off_decay_remaining = this->note_off_decay_total;
   }

@@ -18,32 +18,6 @@ using namespace std;
 
 
 
-/*
-
-an aaf file is composed of multiple chunks, roughly in the following hierarchy:
-
-- chunk headers, pointing to multiple top-level chunks
-- ibnk_header (has bank id)
-- - inst *
-- - - TODO
-- - per2 *
-- - - per2_key_region {100}
-- - - - TODO
-- wsys_header (sampled sound information)
-- - winf_header
-- - - aw_file_entry *
-- - - - wave_table_entry *
-- - - - - offset, size, encoding of a sample block in a .aw file
-- - wbct_header
-- - - scne_header *
-- - - - cdf_header
-- - - - - cdf_record *
-- - - - - - pointer to aw file by index, and sound id
-
-*/
-
-
-
 struct wave_table_entry {
   uint8_t unknown1;
   uint8_t type;
@@ -52,7 +26,7 @@ struct wave_table_entry {
   uint32_t flags2;
   uint32_t offset;
   uint32_t size;
-  uint32_t loop_flag; // 0xFFFFFFFF means has a loop?
+  uint32_t loop_flag; // 0xFFFFFFFF means has a loop
   uint32_t loop_start;
   uint32_t loop_end;
   uint32_t unknown3[4];
