@@ -594,12 +594,10 @@ public:
     }
     uint64_t usecs_per_qnote = 60000000 / this->tempo;
     double usecs_per_pulse = static_cast<double>(usecs_per_qnote) / this->pulse_rate;
-    double samples_per_pulse = usecs_per_pulse / (1000000 / this->sample_rate);
-    uint64_t end_total_samples = (this->current_time + 1) * samples_per_pulse;
-    uint64_t samples_to_produce = end_total_samples - this->samples_rendered / 2;
+    size_t samples_per_pulse = usecs_per_pulse / (1000000 / this->sample_rate);
 
     // render this timestep
-    vector<float> step_samples(2 * samples_to_produce, 0);
+    vector<float> step_samples(2 * samples_per_pulse, 0);
     char notes_table[0x81];
     memset(notes_table, ' ', 0x80);
     notes_table[0x80] = 0;
@@ -610,10 +608,12 @@ public:
         }
 
         auto v = track_it.second->voices[x];
-        vector<float> voice_samples = v->render(samples_to_produce,
+        vector<float> voice_samples = v->render(samples_per_pulse,
             track_it.second->volume, track_it.second->panning);
         if (voice_samples.size() != step_samples.size()) {
-          throw logic_error("voice produced incorrect sample count");
+          throw logic_error(string_printf(
+              "voice produced incorrect sample count (returned %zu samples, expected %zu samples)",
+              voice_samples.size(), step_samples.size()));
         }
         for (size_t y = 0; y < voice_samples.size(); y++) {
           step_samples[y] += voice_samples[y];
@@ -642,14 +642,14 @@ public:
             "D EF G A BC D EF G A BC D EF G A BC D EF G A BC D EF G A BC D EF G A"
             " BC D EF G A BC D EF\n");
       }
-      double when = static_cast<double>(this->samples_rendered / 2) / this->sample_rate;
+      double when = static_cast<double>(this->samples_rendered) / this->sample_rate;
       fprintf(stderr, "%08" PRIX64 ": %s @ %g (#%zu)\n",
           current_time, notes_table, when, this->samples_rendered);
     }
 
     // advance to the next time step
     this->current_time++;
-    this->samples_rendered += step_samples.size();
+    this->samples_rendered += step_samples.size() / 2;
 
     return step_samples;
   }
@@ -699,7 +699,8 @@ private:
       t->panning = value;
     } else {
       if (debug_flags & DebugFlag::ShowUnknownPerfOptions) {
-        fprintf(stderr, "unknown perf type option: %02hhX\n", type);
+        fprintf(stderr, "unknown perf type option: %02hhX (value=%g)\n", type,
+            value);
       }
     }
   }
@@ -711,7 +712,8 @@ private:
       t->instrument = value;
     } else {
       if (debug_flags & DebugFlag::ShowUnknownParamOptions) {
-        fprintf(stderr, "unknown param type option: %02hhX\n", param);
+        fprintf(stderr, "unknown param type option: %02hhX (value=%hu)\n",
+            param, value);
       }
     }
   }
@@ -873,20 +875,12 @@ private:
       }
 
       case 0xFD: {
-        uint16_t new_pulse_rate = t->r.get_u16();
-        if (this->current_time && (new_pulse_rate != this->pulse_rate)) {
-          throw invalid_argument("pulse rate changed during execution");
-        }
-        this->pulse_rate = new_pulse_rate;
+        this->pulse_rate = t->r.get_u16();
         break;
       }
 
       case 0xFE: {
-        uint16_t new_tempo = t->r.get_u16();
-        if (this->current_time && (new_tempo != this->tempo)) {
-          throw invalid_argument("tempo changed during execution");
-        }
-        this->tempo = new_tempo;
+        this->tempo = t->r.get_u16();
         break;
       }
 
@@ -956,26 +950,13 @@ int main(int argc, char** argv) {
     Renderer r(data, sample_rate, env, disable_tracks);
 
     init_al();
-    al_stream stream(sample_rate, AL_FORMAT_STEREO16);
-    vector<float> pending_samples;
+    al_stream stream(sample_rate, AL_FORMAT_STEREO16, 32);
     for (;;) {
       auto step_samples = r.render_time_step();
       if (step_samples.empty()) {
         break;
       }
-      pending_samples.insert(pending_samples.end(), step_samples.begin(), step_samples.end());
-
-      // enqueue 1/8 of a second at a time
-      if (pending_samples.size() > sample_rate / 4) {
-        vector<int16_t> al_samples = convert_samples_to_int(pending_samples);
-        stream.add_samples(al_samples.data(), al_samples.size() / 2);
-        pending_samples.clear();
-      }
-    }
-
-    // enqueue any remaining samples
-    if (pending_samples.empty()) {
-      vector<int16_t> al_samples = convert_samples_to_int(pending_samples);
+      vector<int16_t> al_samples = convert_samples_to_int(step_samples);
       stream.add_samples(al_samples.data(), al_samples.size() / 2);
     }
     stream.wait();
