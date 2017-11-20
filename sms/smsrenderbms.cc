@@ -375,13 +375,33 @@ void disassemble_stream(StringReader& r) {
 
 
 
+class SampleCache {
+public:
+  SampleCache() = default;
+  ~SampleCache() = default;
+
+  const vector<float>& at(const Sound* s, float conversion_rate) {
+    return this->cache.at(s).at(conversion_rate);
+  }
+
+  void add(const Sound* s, float conversion_rate, vector<float>&& data) {
+    this->cache[s].emplace(conversion_rate, move(data));
+  }
+
+private:
+  unordered_map<const Sound*, unordered_map<float, vector<float>>> cache;
+};
+
+
+
 class Voice {
 public:
   Voice(size_t sample_rate, int8_t note, int8_t vel) : sample_rate(sample_rate),
       note(note), vel(vel), note_off_decay_total(this->sample_rate / 5),
       note_off_decay_remaining(-1) { }
 
-  virtual vector<float> render(size_t count, float volume, float panning) = 0;
+  virtual vector<float> render(size_t count, float volume, float pitch_bend,
+      float panning) = 0;
 
   void off() {
     // TODO: for now we use a constant release time of 1/5 second; we probably
@@ -412,7 +432,9 @@ public:
   SineVoice(size_t sample_rate, int8_t note, int8_t vel) :
       Voice(sample_rate, note, vel), offset(0) { }
 
-  virtual vector<float> render(size_t count, float volume, float panning) {
+  virtual vector<float> render(size_t count, float volume, float pitch_bend,
+      float panning) {
+    // TODO: implement pitch bend somehow
     vector<float> data(count * 2, 0.0f);
 
     double frequency = frequency_for_note(this->note);
@@ -433,19 +455,22 @@ public:
 
 class SampleVoice : public Voice {
 public:
-  SampleVoice(size_t sample_rate, const SoundEnvironment* env, uint16_t bank_id,
-      uint16_t instrument_id, int8_t note, int8_t vel) :
-      Voice(sample_rate, note, vel),
+  SampleVoice(size_t sample_rate, shared_ptr<const SoundEnvironment> env,
+      shared_ptr<SampleCache> cache, uint16_t bank_id, uint16_t instrument_id,
+      int8_t note, int8_t vel) : Voice(sample_rate, note, vel),
       instrument_bank(&env->instrument_banks.at(bank_id)),
       instrument(&this->instrument_bank->id_to_instrument.at(instrument_id)),
       key_region(&this->instrument->region_for_key(note)),
-      vel_region(&this->key_region->region_for_velocity(vel)), offset(0) {
+      vel_region(&this->key_region->region_for_velocity(vel)), src_ratio(1.0f),
+      offset(0), cache(cache) {
 
     if (this->vel_region->sound->num_channels != 1) {
       // TODO: this probably wouldn't be that hard to support
       throw invalid_argument("sampled sound is multi-channel");
     }
+  }
 
+  const vector<float>& get_samples(float pitch_bend) {
     // stretch it out by the sample rate difference
     float sample_rate_factor = static_cast<float>(sample_rate) /
         static_cast<float>(this->vel_region->sound->sample_rate);
@@ -458,42 +483,52 @@ public:
     float note_factor = frequency_for_note(base_note) /
         frequency_for_note(this->note);
 
-    float src_ratio = note_factor * sample_rate_factor / this->vel_region->freq_mult;
-    this->loop_start_offset = this->vel_region->sound->loop_start * src_ratio;
-    this->loop_end_offset = this->vel_region->sound->loop_end * src_ratio;
-
-    if (debug_flags & DebugFlag::ShowResampleEvents) {
-      string key_low_str = name_for_note(this->key_region->key_low);
-      string key_high_str = name_for_note(this->key_region->key_high);
-      fprintf(stderr, "[%s:%" PRIX64 "] resampling note %02hhX in range "
-          "[%02hhX,%02hhX] [%s,%s] (base %02hhX from %s) (%g), with freq_mult %g, from "
-          "%zuHz to %zuHz (%g) with loop at [%zu,%zu]->[%zu,%zu] for an overall "
-          "ratio of %g\n", this->vel_region->sound->source_filename.c_str(),
-          this->vel_region->sound->sound_id, this->note,
-          this->key_region->key_low, this->key_region->key_high,
-          key_low_str.c_str(), key_high_str.c_str(), base_note,
-          (this->vel_region->base_note == -1) ? "sample" : "vel region", note_factor,
-          this->vel_region->freq_mult, this->vel_region->sound->sample_rate,
-          this->sample_rate, sample_rate_factor,
-          this->vel_region->sound->loop_start, this->vel_region->sound->loop_end,
-          this->loop_start_offset, this->loop_end_offset, src_ratio);
+    {
+      float new_src_ratio = note_factor * sample_rate_factor * pow(2, -pitch_bend) /
+          this->vel_region->freq_mult;
+      this->loop_start_offset = this->vel_region->sound->loop_start * new_src_ratio;
+      this->loop_end_offset = this->vel_region->sound->loop_end * new_src_ratio;
+      this->offset = this->offset * (new_src_ratio / this->src_ratio);
+      this->src_ratio = new_src_ratio;
     }
 
-    this->samples = resample(this->vel_region->sound->samples,
-        this->vel_region->sound->num_channels, src_ratio);
+    try {
+      return this->cache->at(this->vel_region->sound, this->src_ratio);
+    } catch (const out_of_range&) {
+      if (debug_flags & DebugFlag::ShowResampleEvents) {
+        string key_low_str = name_for_note(this->key_region->key_low);
+        string key_high_str = name_for_note(this->key_region->key_high);
+        fprintf(stderr, "[%s:%" PRIX64 "] resampling note %02hhX in range "
+            "[%02hhX,%02hhX] [%s,%s] (base %02hhX from %s) (%g), with freq_mult %g, from "
+            "%zuHz to %zuHz (%g) with loop at [%zu,%zu]->[%zu,%zu] for an overall "
+            "ratio of %g\n", this->vel_region->sound->source_filename.c_str(),
+            this->vel_region->sound->sound_id, this->note,
+            this->key_region->key_low, this->key_region->key_high,
+            key_low_str.c_str(), key_high_str.c_str(), base_note,
+            (this->vel_region->base_note == -1) ? "sample" : "vel region", note_factor,
+            this->vel_region->freq_mult, this->vel_region->sound->sample_rate,
+            this->sample_rate, sample_rate_factor,
+            this->vel_region->sound->loop_start, this->vel_region->sound->loop_end,
+            this->loop_start_offset, this->loop_end_offset, this->src_ratio);
+      }
+
+      auto samples = resample(this->vel_region->sound->samples,
+          this->vel_region->sound->num_channels, this->src_ratio);
+      this->cache->add(this->vel_region->sound, this->src_ratio, move(samples));
+      return this->cache->at(this->vel_region->sound, this->src_ratio);
+    }
   }
 
-  virtual vector<float> render(size_t count, float volume, float panning) {
-    // TODO: implement pitch bend here somehow... probably have to resample
-    // again, sigh
-
+  virtual vector<float> render(size_t count, float volume, float pitch_bend,
+      float panning) {
     vector<float> data(count * 2, 0.0f);
 
+    const auto& samples = this->get_samples(pitch_bend);
     float vel_factor = static_cast<float>(this->vel) / 0x7F;
-    for (size_t x = 0; (x < count) && (this->offset < this->samples.size()); x++) {
+    for (size_t x = 0; (x < count) && (this->offset < samples.size()); x++) {
       float off_factor = this->advance_note_off_factor();
-      data[2 * x + 0] = vel_factor * off_factor * (1.0f - panning) * volume * this->samples[this->offset];
-      data[2 * x + 1] = vel_factor * off_factor * panning * volume * this->samples[this->offset];
+      data[2 * x + 0] = vel_factor * off_factor * (1.0f - panning) * volume * samples[this->offset];
+      data[2 * x + 1] = vel_factor * off_factor * panning * volume * samples[this->offset];
 
       this->offset++;
       if ((this->loop_end_offset > 0) && (this->offset > this->loop_end_offset)) {
@@ -508,11 +543,13 @@ public:
   const Instrument* instrument;
   const KeyRegion* key_region;
   const VelocityRegion* vel_region;
+  float src_ratio;
 
-  vector<float> samples;
   size_t loop_start_offset;
   size_t loop_end_offset;
   size_t offset;
+
+  shared_ptr<SampleCache> cache;
 };
 
 class Renderer {
@@ -554,14 +591,15 @@ private:
   shared_ptr<const SoundEnvironment> env;
   unordered_set<int16_t> disable_tracks;
 
-  vector<float> samples;
+  shared_ptr<SampleCache> cache;
 
 public:
   explicit Renderer(shared_ptr<string> data, size_t sample_rate,
       shared_ptr<const SoundEnvironment> env,
       const unordered_set<int16_t>& disable_tracks) : data(data),
       sample_rate(sample_rate), current_time(0), samples_rendered(0), tempo(0),
-      pulse_rate(0), env(env), disable_tracks(disable_tracks) {
+      pulse_rate(0), env(env), disable_tracks(disable_tracks),
+      cache(new SampleCache()) {
     // the default track has a track id of -1; all others are uint8_t
     if (!this->disable_tracks.count(-1)) {
       shared_ptr<Track> default_track(new Track(-1, data, 0));
@@ -609,7 +647,8 @@ public:
 
         auto v = track_it.second->voices[x];
         vector<float> voice_samples = v->render(samples_per_pulse,
-            track_it.second->volume, track_it.second->panning);
+            track_it.second->volume, track_it.second->pitch_bend,
+            track_it.second->panning);
         if (voice_samples.size() != step_samples.size()) {
           throw logic_error(string_printf(
               "voice produced incorrect sample count (returned %zu samples, expected %zu samples)",
@@ -733,8 +772,8 @@ private:
       // figure out which sample to use
       if (this->env) {
         try {
-          SampleVoice* v = new SampleVoice(this->sample_rate, this->env.get(),
-              t->bank, t->instrument, opcode, vel);
+          SampleVoice* v = new SampleVoice(this->sample_rate, this->env,
+              this->cache, t->bank, t->instrument, opcode, vel);
           t->voices[voice].reset(v);
         } catch (const out_of_range& e) {
           fprintf(stderr, "warning: can\'t find sample (%s): bank=%" PRIX32
