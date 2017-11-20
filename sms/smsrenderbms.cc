@@ -934,19 +934,26 @@ int main(int argc, char** argv) {
     throw invalid_argument("no filename given");
   }
 
-  shared_ptr<string> data(new string(load_file(filename)));
+  shared_ptr<const SoundEnvironment> env(aaf_directory ?
+      new SoundEnvironment(aaf_decode_directory(aaf_directory)) : NULL);
+
+  // try to get the sequence from the env if it's there
+  shared_ptr<string> data;
+  if (env.get()) {
+    try {
+      data.reset(new string(env->sequence_programs.at(filename)));
+    } catch (const out_of_range&) { }
+  }
+  if (!data.get()) {
+    data.reset(new string(load_file(filename)));
+  }
 
   if (output_filename) {
-    shared_ptr<const SoundEnvironment> env(aaf_directory ?
-        new SoundEnvironment(aaf_decode_directory(aaf_directory)) : NULL);
     Renderer r(data, sample_rate, env, disable_tracks);
-
     auto samples = r.render_until_seconds(time_limit);
     save_wav(output_filename, samples, sample_rate, 2);
 
   } else if (play) {
-    shared_ptr<const SoundEnvironment> env(aaf_directory ?
-        new SoundEnvironment(aaf_decode_directory(aaf_directory)) : NULL);
     Renderer r(data, sample_rate, env, disable_tracks);
 
     init_al();

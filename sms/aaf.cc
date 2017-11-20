@@ -162,7 +162,7 @@ struct wsys_header {
 
 
 vector<Sound> wsys_decode(void* vdata, size_t size,
-    const char* aw_directory) {
+    const char* base_directory) {
   uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
 
   wsys_header* wsys = reinterpret_cast<wsys_header*>(data);
@@ -215,7 +215,8 @@ vector<Sound> wsys_decode(void* vdata, size_t size,
         data + winf->aw_file_entry_offsets[x]);
     entry->byteswap();
 
-    string aw_filename = string_printf("%s/%s", aw_directory, entry->filename);
+    string aw_filename = string_printf("%s/Banks/%s", base_directory,
+        entry->filename);
     string aw_file_contents = load_file(aw_filename.c_str());
 
     for (size_t y = 0; y < entry->wav_count; y++) {
@@ -278,7 +279,62 @@ vector<Sound> wsys_decode(void* vdata, size_t size,
   return ret;
 }
 
-SoundEnvironment aaf_decode(void* vdata, size_t size, const char* aw_directory) {
+
+
+struct barc_entry {
+  char name[14];
+  uint16_t unknown1;
+  uint32_t unknown2[2];
+  uint32_t offset;
+  uint32_t size;
+
+  void byteswap() {
+    this->offset = bswap32(this->offset);
+    this->size = bswap32(this->size);
+  }
+};
+
+struct barc_header {
+  uint32_t magic; // 'BARC'
+  uint32_t unknown1; // '----'
+  uint32_t unknown2;
+  uint32_t entry_count;
+  char archive_filename[0x10];
+  barc_entry entries[0];
+
+  void byteswap() {
+    this->entry_count = bswap32(this->entry_count);
+    for (size_t x = 0; x < this->entry_count; x++) {
+      this->entries[x].byteswap();
+    }
+  }
+};
+
+unordered_map<string, string> barc_decode(void* vdata, size_t size,
+    const char* base_directory) {
+
+  barc_header* barc = reinterpret_cast<barc_header*>(vdata);
+  if (barc->magic != 'CRAB') {
+    throw invalid_argument("BARC file not at expected offset");
+  }
+  barc->byteswap();
+
+  string sequence_archive_filename = string_printf("%s/Seqs/%s", base_directory,
+      barc->archive_filename);
+  scoped_fd sequence_archive_fd(sequence_archive_filename.c_str(), O_RDONLY);
+
+  unordered_map<string, string> ret;
+  for (size_t x = 0; x < barc->entry_count; x++) {
+    const auto& e = barc->entries[x];
+    ret.emplace(e.name, preadx(sequence_archive_fd, e.size, e.offset));
+  }
+
+  return ret;
+}
+
+
+
+SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory) {
   uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
   size_t offset = 0;
 
@@ -289,7 +345,6 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* aw_directory) 
 
     switch (chunk_type) {
       case 1:
-      case 4:
       case 5:
       case 6:
       case 7:
@@ -318,10 +373,19 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* aw_directory) 
             ret.instrument_banks.emplace(ibnk.id, move(ibnk));
           } else {
             ret.sample_banks.emplace_back(wsys_decode(
-                data + chunk_offset, chunk_size, aw_directory));
+                data + chunk_offset, chunk_size, base_directory));
           }
           offset += 0x0C;
         }
+        break;
+
+      case 4:
+        chunk_offset = bswap32(*reinterpret_cast<const uint32_t*>(data + offset + 4));
+        chunk_size = bswap32(*reinterpret_cast<const uint32_t*>(data + offset + 8));
+        for (auto& it : barc_decode(data + chunk_offset, chunk_size, base_directory)) {
+          ret.sequence_programs.emplace(it.first, it.second);
+        }
+        offset += 0x10;
         break;
 
       case 0:
@@ -369,8 +433,8 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* aw_directory) 
   return ret;
 }
 
-SoundEnvironment aaf_decode_directory(const char* aw_directory) {
-  string aaf_data = load_file(string_printf("%s/JaiInit.aaf", aw_directory));
+SoundEnvironment aaf_decode_directory(const char* base_directory) {
+  string aaf_data = load_file(string_printf("%s/msound.aaf", base_directory));
   return aaf_decode(const_cast<char*>(aaf_data.data()), aaf_data.size(),
-      aw_directory);
+      base_directory);
 }

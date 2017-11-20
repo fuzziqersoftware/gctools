@@ -16,12 +16,10 @@ using namespace std;
 
 
 
-std::vector<Sound> wsys_decode(void* vdata, size_t size,
-    const char* aw_directory);
-
 struct SoundEnvironment {
   unordered_map<uint32_t, InstrumentBank> instrument_banks;
   vector<vector<Sound>> sample_banks;
+  unordered_map<string, string> sequence_programs;
 };
 
 SoundEnvironment aaf_decode(void* vdata, size_t size, const char* aw_directory);

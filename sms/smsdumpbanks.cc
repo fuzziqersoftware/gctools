@@ -1,7 +1,3 @@
-// Super Mario Sunshine AAF disassembler
-// heavily based on wwdumpsnd by hcs
-// https://github.com/hcs64/vgm_ripping/blob/master/soundbank/wwdumpsnd/wwdumpsnd.c
-
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -69,6 +65,11 @@ int main(int argc, char** argv) {
           s.aw_file_index, s.wave_table_index);
       save_wav(filename.c_str(), s.samples, s.sample_rate, s.num_channels);
     }
+  }
+
+  for (const auto& s : env.sequence_programs) {
+    string fn = string_printf("%s/sequence-%s.bms", argv[2], s.first.c_str());
+    save_file(fn, s.second);
   }
 
   return 0;
