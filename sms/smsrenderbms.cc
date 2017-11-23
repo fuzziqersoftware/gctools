@@ -409,6 +409,10 @@ public:
     this->note_off_decay_remaining = this->note_off_decay_total;
   }
 
+  bool off_complete() const {
+    return (this->note_off_decay_remaining == 0);
+  }
+
   float advance_note_off_factor() {
     if (this->note_off_decay_remaining == 0) {
       return 0.0f;
@@ -484,7 +488,7 @@ public:
         frequency_for_note(this->note);
 
     {
-      float new_src_ratio = note_factor * sample_rate_factor * pow(2, -pitch_bend) /
+      float new_src_ratio = note_factor * sample_rate_factor * pow(4, -pitch_bend) /
           this->vel_region->freq_mult;
       this->loop_start_offset = this->vel_region->sound->loop_start * new_src_ratio;
       this->loop_end_offset = this->vel_region->sound->loop_end * new_src_ratio;
@@ -535,6 +539,9 @@ public:
         this->offset = this->loop_start_offset;
       }
     }
+    if (this->offset == samples.size()) {
+      this->note_off_decay_remaining = 0;
+    }
 
     return data;
   }
@@ -566,6 +573,7 @@ private:
     int32_t instrument; // technically uint16, but uninitialized as -1
 
     shared_ptr<Voice> voices[8];
+    unordered_set<shared_ptr<Voice>> voices_off;
     vector<uint32_t> call_stack;
 
     Track(int16_t id, shared_ptr<string> data, size_t start_offset) :
@@ -640,12 +648,15 @@ public:
     memset(notes_table, ' ', 0x80);
     notes_table[0x80] = 0;
     for (const auto& track_it : this->id_to_track) {
+      unordered_set<shared_ptr<Voice>> all_voices = track_it.second->voices_off;
       for (size_t x = 0; x < 8; x++) {
         if (!track_it.second->voices[x].get()) {
           continue;
         }
+        all_voices.insert(track_it.second->voices[x]);
+      }
 
-        auto v = track_it.second->voices[x];
+      for (auto v : all_voices) {
         vector<float> voice_samples = v->render(samples_per_pulse,
             track_it.second->volume, track_it.second->pitch_bend,
             track_it.second->panning);
@@ -660,7 +671,7 @@ public:
 
         // only render the note if it's on
         if (v->note_off_decay_remaining < 0) {
-          int8_t note = track_it.second->voices[x]->note;
+          int8_t note = v->note;
           char track_char = '0' + track_it.second->id;
           if (notes_table[note] == track_char) {
             continue;
@@ -670,6 +681,14 @@ public:
           } else {
             notes_table[note] = '+';
           }
+        }
+      }
+
+      for (auto it = track_it.second->voices_off.begin(); it != track_it.second->voices_off.end();) {
+        if ((*it)->off_complete()) {
+          it = track_it.second->voices_off.erase(it);
+        } else {
+          it++;
         }
       }
     }
@@ -682,8 +701,8 @@ public:
             " BC D EF G A BC D EF\n");
       }
       double when = static_cast<double>(this->samples_rendered) / this->sample_rate;
-      fprintf(stderr, "%08" PRIX64 ": %s @ %g (#%zu)\n",
-          current_time, notes_table, when, this->samples_rendered);
+      fprintf(stderr, "%08" PRIX64 ": %s @ %g (#%zu)\n", current_time,
+          notes_table, when, this->samples_rendered);
     }
 
     // advance to the next time step
@@ -810,6 +829,7 @@ private:
           throw invalid_argument("nonexistent voice was disabled");
         }
         t->voices[voice]->off();
+        t->voices_off.emplace(move(t->voices[voice]));
         break;
       }
 
@@ -959,6 +979,8 @@ int main(int argc, char** argv) {
       output_filename = &argv[x][18];
     } else if (!strcmp(argv[x], "--verbose")) {
       debug_flags = 0xFFFFFFFFFFFFFFFF;
+    } else if (!strncmp(argv[x], "--debug-flags=", 14)) {
+      debug_flags = atoi(&argv[x][14]);
     } else if (!strncmp(argv[x], "--linear", 8)) {
       resample_method = SRC_LINEAR;
     } else if (!strcmp(argv[x], "--play")) {
