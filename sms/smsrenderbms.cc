@@ -924,10 +924,16 @@ private:
         break;
       }
 
-      // case 0xE6: // vibrato
       case 0xE7: { // sync_gpu
         t->r.get_u16();
         // TODO: what should we do here? anything?
+        break;
+      }
+
+      // TODO: these opcodes probably do important things; don't ignore them
+      case 0xDD:
+      case 0xEF: {
+        t->r.get_u24();
         break;
       }
 
@@ -948,7 +954,8 @@ private:
       }
 
       default:
-        throw invalid_argument("unknown opcode: " + to_string(opcode));
+        throw invalid_argument(string_printf("unknown opcode at offset 0x%zX: 0x%hhX",
+            t->r.where() - 1, opcode));
     }
   }
 };
