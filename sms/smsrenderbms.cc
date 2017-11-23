@@ -672,7 +672,8 @@ public:
         // only render the note if it's on
         if (v->note_off_decay_remaining < 0) {
           int8_t note = v->note;
-          char track_char = '0' + track_it.second->id;
+          char track_char = (track_it.second->id < 10) ?
+              ('0' + track_it.second->id) : ('A' + track_it.second->id - 10);
           if (notes_table[note] == track_char) {
             continue;
           }
@@ -695,14 +696,11 @@ public:
 
     // render the text view. if this is a regular step, render the headers also
     if (debug_flags & DebugFlag::ShowNotesOn) {
-      if (this->current_time % 20 == 0) {
-        fprintf(stderr, "        : C D EF G A BC D EF G A BC D EF G A BC "
-            "D EF G A BC D EF G A BC D EF G A BC D EF G A BC D EF G A BC D EF G A"
-            " BC D EF G A BC D EF\n");
-      }
       double when = static_cast<double>(this->samples_rendered) / this->sample_rate;
-      fprintf(stderr, "%08" PRIX64 ": %s @ %g (#%zu)\n", current_time,
-          notes_table, when, this->samples_rendered);
+      fprintf(stderr, "%08" PRIX64 ": %s @ %-7g\n", current_time, notes_table, when);
+      fprintf(stderr, "TIMESTEP: C D EF G A BC D EF G A BC D EF G A BC "
+          "D EF G A BC D EF G A BC D EF G A BC D EF G A BC D EF G A BC D EF G A"
+          " BC D EF G A BC D EF G @ SECONDS\r");
     }
 
     // advance to the next time step
