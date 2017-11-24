@@ -221,10 +221,9 @@ vector<Sound> wsys_decode(void* vdata, size_t size,
       ret_snd.sound_id = sound_id;
 
       if (wav_entry->type < 2) {
-        vector<int16_t> int_samples = afc_decode(
+        ret_snd.samples = afc_decode(
             aw_file_contents.data() + wav_entry->offset, wav_entry->size,
             (wav_entry->type == 1));
-        ret_snd.samples = convert_samples_to_float(int_samples);
         ret_snd.num_channels = 1;
 
       } else if (wav_entry->type == 3) {

@@ -6,7 +6,7 @@ using namespace std;
 
 
 
-vector<int16_t> afc_decode(const void* data, size_t size, bool small_frames) {
+vector<float> afc_decode(const void* data, size_t size, bool small_frames) {
   static const int16_t coef[16][2] = {
     { 0x0000,  0x0000},
     { 0x0800,  0x0000},
@@ -34,7 +34,7 @@ vector<int16_t> afc_decode(const void* data, size_t size, bool small_frames) {
   size_t output_sample_count = frame_count * 16;
 
   int16_t history[2] = {0, 0};
-  vector<int16_t> output_samples(output_sample_count, 0);
+  vector<float> output_samples(output_sample_count, 0);
   for (size_t frame_index = 0; frame_index < frame_count; frame_index++) {
     const int8_t* frame_data = reinterpret_cast<const int8_t*>(data) +
         (frame_index * frame_size);
@@ -77,10 +77,10 @@ vector<int16_t> afc_decode(const void* data, size_t size, bool small_frames) {
       if (sample > 0x7FFF) {
         sample = 0x7FFF;
       }
-      if (sample < -0x8000) {
-        sample = -0x8000;
+      if (sample <= -0x8000) {
+        sample = -0x7FFF;
       }
-      output_samples[16 * frame_index + x] = static_cast<int16_t>(sample);
+      output_samples[16 * frame_index + x] = static_cast<float>(sample) / 0x7FFF;
       history[1] = history[0];
       history[0] = static_cast<int16_t>(sample);
     }
