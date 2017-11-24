@@ -39,8 +39,9 @@ int main(int argc, char* argv[]) {
 
   AfsHeader *afs = (AfsHeader*)malloc(sizeof(AfsHeader));
   fread(afs, sizeof(AfsHeader), 1, f);
-  if (afs->magic != 0x00534641)
+  if (afs->magic != 0x00534641) {
     fprintf(stderr, "warning: afs header may be corrupt\n");
+  }
   afs = (AfsHeader*)realloc(afs, sizeof(AfsHeader) + afs->numfiles * sizeof(FileEntry));
 
   fread(afs->entries, afs->numfiles, sizeof(FileEntry), f);
@@ -56,10 +57,11 @@ int main(int argc, char* argv[]) {
       fseek(f, filename_offset + 0x30 * x, SEEK_SET);
       fread(filename_buf, 0x30, 1, f);
     } else {
-      if (argc > 2)
+      if (argc > 2) {
         sprintf(filename_buf, "%s_%d%s", argv[1], x, argv[2]);
-      else
+      } else {
         sprintf(filename_buf, "%s_%d", argv[1], x);
+      }
     }
 
     printf("> %04d: %08X %08X %s\n", x + 1, afs->entries[x].offset, afs->entries[x].size, filename_buf);

@@ -38,8 +38,9 @@ int main(int argc, char* argv[]) {
 
   int x;
   for (x = 0; x < 0x100; x++) {
-    if (!entries[x].name[0])
+    if (!entries[x].name[0]) {
       continue;
+    }
 
     entries[x].size = byteswap(entries[x].size);
     printf("> %08X %s\n", entries[x].size, entries[x].name);

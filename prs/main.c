@@ -53,10 +53,11 @@ int main(int argc, char* argv[]) {
       verbose = 1;
 
     } else if (!strncmp(argv[x], "--start-offset=", 15)) {
-      if (argv[x][15] == '0' && argv[x][16] == 'x')
+      if (argv[x][15] == '0' && argv[x][16] == 'x') {
         sscanf(&argv[x][17], "%llx", &start_offset);
-      else
+      } else {
         start_offset = atoi(&argv[x][15]);
+      }
 
     } else if (!strcmp(argv[x], "--yaz0")) {
       format = FORMAT_YAZ0;
@@ -68,10 +69,11 @@ int main(int argc, char* argv[]) {
       format = FORMAT_PRS;
 
     } else if (!strncmp(argv[x], "--raw-bytes=", 12)) {
-      if (argv[x][12] == '0' && argv[x][13] == 'x')
+      if (argv[x][12] == '0' && argv[x][13] == 'x') {
         sscanf(&argv[x][14], "%llx", &raw_bytes);
-      else
+      } else {
         raw_bytes = atoi(&argv[x][12]);
+      }
 
     } else if (!strncmp(argv[x], "--pr2-format", 12))
       pr2_format = 1;
@@ -81,18 +83,22 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  if (pr2_format && (format != FORMAT_PRS))
+  if (pr2_format && (format != FORMAT_PRS)) {
     fprintf(stderr, "prs: warning: using pr2 format for non-prs stream\n");
+  }
 
   if (verbose) {
     const char* action_str = (decompress ? "decompress" : "compress");
     const char* format_str;
-    if (format == FORMAT_PRS)
+    if (format == FORMAT_PRS) {
       format_str = "FORMAT_PRS";
-    if (format == FORMAT_YAZ0)
+    }
+    if (format == FORMAT_YAZ0) {
       format_str = "FORMAT_YAZ0";
-    if (format == FORMAT_YAY0)
+    }
+    if (format == FORMAT_YAY0) {
       format_str = "FORMAT_YAY0";
+    }
     fprintf(stderr, "prs: action=%s, format=%s, start_offset=%016llX, "
         "raw_bytes=%016llX\n", action_str, format_str, start_offset, raw_bytes);
   }
@@ -113,29 +119,32 @@ int main(int argc, char* argv[]) {
       size = 0;
     }
 
-    if (format == FORMAT_PRS)
+    if (format == FORMAT_PRS) {
       ret = prs_decompress_stream(in, out, size);
-    else if (format == FORMAT_YAZ0)
+    } else if (format == FORMAT_YAZ0) {
       ret = yaz0_decompress_stream(in, out, size);
-    else if (format == FORMAT_YAY0)
+    } else if (format == FORMAT_YAY0) {
       ret = yay0_decompress_stream(in, out, size);
+    }
 
   } else {
-    if (format == FORMAT_PRS)
+    if (format == FORMAT_PRS) {
       ret = prs_compress_stream(in, out, -1);
-    else if (format == FORMAT_YAZ0)
+    } else if (format == FORMAT_YAZ0) {
       fprintf(stderr, "prs: yaz0 compression not supported\n");
-    else if (format == FORMAT_YAY0)
+    } else if (format == FORMAT_YAY0) {
       fprintf(stderr, "prs: yay0 compression not supported\n");
+    }
   }
 
-  if (ret < 0)
+  if (ret < 0) {
     fprintf(stderr, "prs: operation failed with error %lld\n", ret);
-  else if (verbose) {
-    if (ret > 0)
+  } else if (verbose) {
+    if (ret > 0) {
       fprintf(stderr, "prs: %lld (0x%llX) bytes written\n", ret, ret);
-    else
+    } else {
       fprintf(stderr, "prs: warning: result was empty\n");
+    }
   }
 
   return 0;

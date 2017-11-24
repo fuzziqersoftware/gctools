@@ -51,8 +51,9 @@ int main(int argc, char* argv[]) {
   struct GvmHeader *gvm = (struct GvmHeader*)malloc(sizeof(struct GvmHeader));
   fread(gvm, sizeof(struct GvmHeader), 1, f);
   gvm->num_files = byteswap16(gvm->num_files);
-  if (gvm->magic != 0x484D5647)
+  if (gvm->magic != 0x484D5647) {
     fprintf(stderr, "warning: gvm header may be corrupt\n");
+  }
 
   gvm = (struct GvmHeader*)realloc(gvm, sizeof(struct GvmHeader) + gvm->num_files * sizeof(struct GvmFileEntry));
   fread(&gvm->entries, gvm->num_files, sizeof(struct GvmFileEntry), f);
@@ -67,8 +68,9 @@ int main(int argc, char* argv[]) {
 
     struct GvrHeader gvr;
     fread(&gvr, sizeof(struct GvrHeader), 1, f);
-    if (gvr.magic != 0x54525647)
+    if (gvr.magic != 0x54525647) {
       fprintf(stderr, "warning: gvr header may be corrupt\n");
+    }
     uint32_t size = gvr.size;
 
     printf("> %04d: %08X %s\n", x + 1, size, filename_buf);

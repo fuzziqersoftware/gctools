@@ -108,8 +108,9 @@ uint32_t dol_file_size(DOLHeader* dol) {
   for (x = 0; x < num_sections; x++) {
     uint32_t section_end_offset = byteswap(dol->text_offset[x]) +
         byteswap(dol->text_size[x]);
-    if (section_end_offset > max_offset)
+    if (section_end_offset > max_offset) {
       max_offset = section_end_offset;
+    }
   }
   return max_offset;
 }

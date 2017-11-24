@@ -22,14 +22,17 @@ int64_t yaz0_decompress_stream(FILE* in, FILE* out, int64_t stop_after_size) {
   struct yaz0_header header;
   fread(&header, sizeof(struct yaz0_header), 1, in);
   if (header.magic[0] != 'Y' || header.magic[1] != 'a' ||
-      header.magic[2] != 'z' || header.magic[3] != '0')
+      header.magic[2] != 'z' || header.magic[3] != '0') {
     return ERROR_UNRECOGNIZED;
+  }
 
   uint32_t total_size = byteswap32(header.uncompressed_size);
-  if (total_size == 0)
+  if (total_size == 0) {
     return 0;
-  if (stop_after_size && total_size > stop_after_size)
+  }
+  if (stop_after_size && total_size > stop_after_size) {
     total_size = stop_after_size;
+  }
 
   struct data_log log;
   log_init(&log);
@@ -54,10 +57,11 @@ int64_t yaz0_decompress_stream(FILE* in, FILE* out, int64_t stop_after_size) {
       uint16_t nr = (fgetc(in) << 8);
       nr |= fgetc(in);
       int16_t n, r = (nr & 0x0FFF) + 1;
-      if ((nr & 0xF000) == 0)
+      if ((nr & 0xF000) == 0) {
         n = fgetc(in) + 0x12;
-      else
+      } else {
         n = ((nr & 0xF000) >> 12) + 2;
+      }
 
       if (r > bytes_written) {
         delete_log(&log);

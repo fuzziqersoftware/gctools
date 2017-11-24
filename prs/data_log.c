@@ -14,8 +14,9 @@ void log_init(struct data_log* log) {
 }
 
 void delete_log(struct data_log* log) {
-  if (log->data)
+  if (log->data) {
     free(log->data);
+  }
 }
 
 void log_byte(struct data_log* log, int ch) {
@@ -30,8 +31,9 @@ void log_byte(struct data_log* log, int ch) {
 
 void log_bytes(struct data_log* log, void* data, size_t size) {
   uint8_t* bytes = (uint8_t*)data;
-  for (; size > 0; bytes++, size--)
+  for (; size > 0; bytes++, size--) {
     log_byte(log, *bytes);
+  }
 }
 
 void fill_log(struct data_log* log, FILE* f, size_t max_read) {
@@ -42,9 +44,11 @@ void fill_log(struct data_log* log, FILE* f, size_t max_read) {
   }
   if (log->size < 0x8000) {
     int bytes_to_read = 0x8000 - log->size;
-    if (bytes_to_read > max_read)
+    if (bytes_to_read > max_read) {
       bytes_to_read = max_read;
-    if (bytes_to_read)
+    }
+    if (bytes_to_read) {
       log->size += fread(&log->data[0x8000 - bytes_to_read], 1, bytes_to_read, f);
+    }
   }
 }

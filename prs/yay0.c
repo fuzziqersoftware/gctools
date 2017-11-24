@@ -19,18 +19,22 @@ int64_t yay0_decompress(void* _in, void** _out, int64_t stop_after_size) {
 
   struct yay0_header* header = (struct yay0_header*)_in;
   if (header->magic[0] != 'Y' || header->magic[1] != 'a' ||
-      header->magic[2] != 'y' || header->magic[3] != '0')
+      header->magic[2] != 'y' || header->magic[3] != '0') {
     return ERROR_UNRECOGNIZED;
+  }
 
   uint32_t total_size = byteswap32(header->uncompressed_size);
-  if (total_size == 0)
+  if (total_size == 0) {
     return 0;
-  if (stop_after_size && total_size > stop_after_size)
+  }
+  if (stop_after_size && total_size > stop_after_size) {
     total_size = stop_after_size;
+  }
 
   *_out = malloc(total_size);
-  if (!*_out)
+  if (!*_out) {
     return ERROR_MEMORY;
+  }
 
   uint32_t count_offset = byteswap32(header->count_offset);
   uint32_t data_offset = byteswap32(header->data_offset);
@@ -60,15 +64,18 @@ int64_t yay0_decompress(void* _in, void** _out, int64_t stop_after_size) {
       nr |= *(count_stream++);
       uint16_t r = (nr & 0x0FFF) + 1;
       uint16_t n = (nr & 0xF000) >> 12;
-      if (n == 0)
+      if (n == 0) {
         n = *(data_stream++) + 0x12; // TODO is this really read from the data stream? (not the count stream?)
-      else
+      } else {
         n += 2;
+      }
 
-      if (r > bytes_written)
+      if (r > bytes_written) {
         return ERROR_BACKREFERENCE_TOO_DISTANT;
-      if (bytes_written + n > total_size && stop_after_size == total_size)
+      }
+      if (bytes_written + n > total_size && stop_after_size == total_size) {
         return ERROR_OVERFLOW;
+      }
 
       for (; n > 0; n--) {
         out_stream[bytes_written] = out_stream[bytes_written - r];
@@ -87,8 +94,9 @@ int64_t yay0_decompress_stream(FILE* in, FILE* out, int64_t stop_after_size) {
 
   void* input_data;
   int64_t input_size = read_entire_stream(in, &input_data);
-  if (input_size < 0)
+  if (input_size < 0) {
     return input_size;
+  }
 
   void* output_data = NULL;
   int64_t ret = yay0_decompress(input_data, &output_data, stop_after_size);
