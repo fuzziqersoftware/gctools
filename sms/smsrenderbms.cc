@@ -71,6 +71,10 @@ public:
     return this->offset;
   }
 
+  size_t size() const {
+    return this->data->size();
+  }
+
   void go(size_t offset) {
     this->offset = offset;
   }
@@ -597,6 +601,7 @@ private:
   uint16_t pulse_rate;
 
   shared_ptr<const SoundEnvironment> env;
+  unordered_set<int16_t> mute_tracks;
   unordered_set<int16_t> disable_tracks;
 
   shared_ptr<SampleCache> cache;
@@ -604,10 +609,11 @@ private:
 public:
   explicit Renderer(shared_ptr<string> data, size_t sample_rate,
       shared_ptr<const SoundEnvironment> env,
+      const unordered_set<int16_t>& mute_tracks,
       const unordered_set<int16_t>& disable_tracks) : data(data),
       sample_rate(sample_rate), current_time(0), samples_rendered(0), tempo(0),
-      pulse_rate(0), env(env), disable_tracks(disable_tracks),
-      cache(new SampleCache()) {
+      pulse_rate(0), env(env), mute_tracks(mute_tracks),
+      disable_tracks(disable_tracks), cache(new SampleCache()) {
     // the default track has a track id of -1; all others are uint8_t
     if (!this->disable_tracks.count(-1)) {
       shared_ptr<Track> default_track(new Track(-1, data, 0));
@@ -640,7 +646,7 @@ public:
     }
     uint64_t usecs_per_qnote = 60000000 / this->tempo;
     double usecs_per_pulse = static_cast<double>(usecs_per_qnote) / this->pulse_rate;
-    size_t samples_per_pulse = usecs_per_pulse / (1000000 / this->sample_rate);
+    size_t samples_per_pulse = (usecs_per_pulse * this->sample_rate) / 1000000;
 
     // render this timestep
     vector<float> step_samples(2 * samples_per_pulse, 0);
@@ -665,8 +671,10 @@ public:
               "voice produced incorrect sample count (returned %zu samples, expected %zu samples)",
               voice_samples.size(), step_samples.size()));
         }
-        for (size_t y = 0; y < voice_samples.size(); y++) {
-          step_samples[y] += voice_samples[y];
+        if (!this->mute_tracks.count(track_it.first)) {
+          for (size_t y = 0; y < voice_samples.size(); y++) {
+            step_samples[y] += voice_samples[y];
+          }
         }
 
         // only render the note if it's on
@@ -721,7 +729,7 @@ public:
 
   vector<float> render_until_seconds(float seconds) {
     vector<float> samples;
-    size_t target_size = seconds * this->sample_rate * 2;
+    size_t target_size = seconds * this->sample_rate;
     while (!this->next_event_to_track.empty() && (this->samples_rendered < target_size)) {
       auto step_samples = this->render_time_step();
       samples.insert(samples.end(), step_samples.begin(), step_samples.end());
@@ -823,11 +831,12 @@ private:
       case 0x86:
       case 0x87: {
         uint8_t voice = (opcode & 7) - 1;
-        if (!t->voices[voice].get()) {
-          throw invalid_argument("nonexistent voice was disabled");
+        // some tracks do voice_off for nonexistent voices because of bad
+        // looping; just do nothing
+        if (t->voices[voice].get()) {
+          t->voices[voice]->off();
+          t->voices_off.emplace(move(t->voices[voice]));
         }
-        t->voices[voice]->off();
-        t->voices_off.emplace(move(t->voices[voice]));
         break;
       }
 
@@ -873,6 +882,11 @@ private:
       case 0xC1: {
         uint8_t track_id = t->r.get_u8();
         uint32_t offset = t->r.get_u24();
+        if (offset >= t->r.size()) {
+          throw invalid_argument(string_printf(
+              "cannot start track at pc=0x%" PRIX32 " (from pc=0x%zX)",
+              offset, t->r.where() - 5));
+        }
         if (!this->disable_tracks.count(track_id)) {
           shared_ptr<Track> new_track(new Track(track_id, this->data, offset));
           auto emplace_ret = this->id_to_track.emplace(track_id, new_track);
@@ -893,6 +907,12 @@ private:
 
         int16_t cond = is_conditional ? t->r.get_u8() : -1;
         uint32_t offset = t->r.get_u24();
+
+        if (offset >= t->r.size()) {
+          throw invalid_argument(string_printf(
+              "cannot jump to pc=0x%" PRIX32 " (from pc=0x%zX)", offset,
+              t->r.where() - 5));
+        }
 
         if (cond > 0) {
           throw invalid_argument(string_printf(
@@ -962,18 +982,43 @@ private:
 
 
 
+void print_usage(const char* argv0) {
+  fprintf(stderr, "\
+usage:\n\
+  to disassemble: %s sequence.bms [options]\n\
+  to render: %s sequence.bms --output-filename=file.wav [options]\n\
+  to play: %s sequence.bms --play [options]\n\
+\n\
+options:\n\
+  --disable-track=N: disable track N completely.\n\
+  --mute-track=N: execute track N, but don't render any of its sound.\n\
+  --time-limit=N: stop playing or rendering after this many seconds.\n\
+  --sample-rate=N: render or play at this sample rate.\n\
+  --audiores-directory=DIR: AudioRes directory extracted from Sunshine disc.\n\
+      if given, the bms filename argument may also be the name of a sequence\n\
+      defined in the aaf file (the program will check for this first).\n\
+      if not given, all instruments will be sine waves, which sounds funny but\n\
+      probably isn\'t what you want.\n\
+  --verbose: print debugging events and the like.\n\
+  --linear: use linear interpolation (makes playing faster).\n\
+", argv0, argv0, argv0);
+}
+
 int main(int argc, char** argv) {
 
   const char* filename = NULL;
   const char* output_filename = NULL;
   const char* aaf_directory = NULL;
   unordered_set<int16_t> disable_tracks;
+  unordered_set<int16_t> mute_tracks;
   float time_limit = 60.0f;
   size_t sample_rate = 192000;
   bool play = false;
   for (int x = 1; x < argc; x++) {
     if (!strncmp(argv[x], "--disable-track=", 16)) {
       disable_tracks.emplace(atoi(&argv[x][16]));
+    } else if (!strncmp(argv[x], "--mute-track=", 13)) {
+      mute_tracks.emplace(atoi(&argv[x][13]));
     } else if (!strncmp(argv[x], "--time-limit=", 13)) {
       time_limit = atof(&argv[x][13]);
     } else if (!strncmp(argv[x], "--sample-rate=", 14)) {
@@ -997,6 +1042,7 @@ int main(int argc, char** argv) {
     }
   }
   if (!filename) {
+    print_usage(argv[0]);
     throw invalid_argument("no filename given");
   }
 
@@ -1015,12 +1061,12 @@ int main(int argc, char** argv) {
   }
 
   if (output_filename) {
-    Renderer r(data, sample_rate, env, disable_tracks);
+    Renderer r(data, sample_rate, env, mute_tracks, disable_tracks);
     auto samples = r.render_until_seconds(time_limit);
     save_wav(output_filename, samples, sample_rate, 2);
 
   } else if (play) {
-    Renderer r(data, sample_rate, env, disable_tracks);
+    Renderer r(data, sample_rate, env, mute_tracks, disable_tracks);
 
     init_al();
     al_stream stream(sample_rate, AL_FORMAT_STEREO16, 32);
