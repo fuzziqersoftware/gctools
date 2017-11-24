@@ -1,4 +1,5 @@
 #include <inttypes.h>
+#include <math.h>
 #include <stdio.h>
 
 #include <samplerate.h>
@@ -10,7 +11,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "../wav.hh"
+#include "wav.hh"
 #include "aaf.hh"
 #include "audio.hh"
 

@@ -2,6 +2,8 @@
 
 #include <inttypes.h>
 
+#include <stdexcept>
+
 using namespace std;
 
 

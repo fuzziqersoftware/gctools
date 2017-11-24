@@ -10,7 +10,6 @@
 #include <vector>
 #include <map>
 
-#include "../wav.hh"
 #include "afc.hh"
 #include "instrument.hh"
 
@@ -140,13 +139,13 @@ vector<Sound> wsys_decode(void* vdata, size_t size,
   uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
 
   wsys_header* wsys = reinterpret_cast<wsys_header*>(data);
-  if (wsys->magic != 'SYSW') {
+  if (wsys->magic != 0x53595357) {
     throw invalid_argument("WSYS file not at expected offset");
   }
   wsys->byteswap();
 
   winf_header* winf = reinterpret_cast<winf_header*>(data + wsys->winf_offset);
-  if (winf->magic != 'FNIW') {
+  if (winf->magic != 0x464E4957) {
     throw invalid_argument("WINF file not at expected offset");
   }
   winf->byteswap();
@@ -156,20 +155,20 @@ vector<Sound> wsys_decode(void* vdata, size_t size,
   map<pair<size_t, size_t>, size_t> sound_ids;
 
   wbct_header* wbct = reinterpret_cast<wbct_header*>(data + wsys->wbct_offset);
-  if (wbct->magic != 'TCBW') {
+  if (wbct->magic != 0x54434257) {
     throw invalid_argument("WBCT file not at expected offset");
   }
   wbct->byteswap();
 
   for (size_t x = 0; x < wbct->scne_count; x++) {
     scne_header* scne = reinterpret_cast<scne_header*>(data + wbct->scne_offsets[x]);
-    if (scne->magic != 'ENCS') {
+    if (scne->magic != 0x454E4353) {
       throw invalid_argument("SCNE file not at expected offset");
     }
     scne->byteswap();
 
     cdf_header* cdf = reinterpret_cast<cdf_header*>(data + scne->cdf_offset);
-    if (cdf->magic != 'FD-C') {
+    if (cdf->magic != 0x46442D43) {
       throw invalid_argument("C-DF file not at expected offset");
     }
     cdf->byteswap();
@@ -287,7 +286,7 @@ unordered_map<string, string> barc_decode(void* vdata, size_t size,
     const char* base_directory) {
 
   barc_header* barc = reinterpret_cast<barc_header*>(vdata);
-  if (barc->magic != 'CRAB') {
+  if (barc->magic != 0x43524142) {
     throw invalid_argument("BARC file not at expected offset");
   }
   barc->byteswap();

@@ -7,7 +7,7 @@
 #include <phosg/Strings.hh>
 #include <vector>
 
-#include "../wav.hh"
+#include "wav.hh"
 #include "aaf.hh"
 
 using namespace std;

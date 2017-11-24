@@ -153,7 +153,8 @@ InstrumentBank ibnk_decode(void* vdata, size_t size) {
       continue;
     }
 
-    auto& result_inst = result_bank.id_to_instrument.emplace(z, z).first->second;
+    auto& result_inst = result_bank.id_to_instrument.emplace(piecewise_construct,
+        forward_as_tuple(z), forward_as_tuple(z)).first->second;
 
     // decode instrument struct at vdata + ins_offset
     // TODO: apparently instrument numbers are (x & 0x7F)
