@@ -79,10 +79,14 @@ vector<float> afc_decode(const void* data, size_t size, bool small_frames) {
       if (sample > 0x7FFF) {
         sample = 0x7FFF;
       }
-      if (sample <= -0x8000) {
-        sample = -0x7FFF;
+      if (sample < -0x8000) {
+        sample = -0x8000;
       }
-      output_samples[16 * frame_index + x] = static_cast<float>(sample) / 0x7FFF;
+      if (sample == -0x8000) {
+        output_samples[16 * frame_index + x] = -1.0f;
+      } else {
+        output_samples[16 * frame_index + x] = static_cast<float>(sample) / 0x7FFF;
+      }
       history[1] = history[0];
       history[0] = static_cast<int16_t>(sample);
     }
