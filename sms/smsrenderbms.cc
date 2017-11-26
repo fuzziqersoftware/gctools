@@ -372,6 +372,14 @@ void disassemble_stream(StringReader& r) {
         break;
       }
 
+      case 0xDD:
+      case 0xEF: {
+        uint32_t param = r.get_u24();
+        printf("%08zX: .unknown        0x%02hhX, 0x%06" PRIX32 "\n",
+            opcode_offset, opcode, param);
+        break;
+      }
+
       default:
         printf("%08zX: .unknown        0x%02hhX\n", opcode_offset, opcode);
     }
