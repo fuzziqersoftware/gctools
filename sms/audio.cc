@@ -10,10 +10,10 @@
 
 #include <errno.h>
 #include <math.h>
-#include <sched.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 using namespace std;
 
@@ -135,6 +135,6 @@ void al_stream::wait_until_buffers_available(int num_buffers) const {
     if (buffers_processed >= num_buffers) {
       return;
     }
-    sched_yield();
+    usleep(1);
   }
 }
