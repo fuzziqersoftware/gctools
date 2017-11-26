@@ -10,7 +10,6 @@
 #include <vector>
 #include <map>
 
-#include "afc.hh"
 #include "instrument.hh"
 
 using namespace std;
@@ -220,9 +219,9 @@ vector<Sound> wsys_decode(void* vdata, size_t size,
       ret_snd.sound_id = sound_id;
 
       if (wav_entry->type < 2) {
-        ret_snd.samples = afc_decode(
-            aw_file_contents.data() + wav_entry->offset, wav_entry->size,
-            (wav_entry->type == 1));
+        ret_snd.afc_data = string(aw_file_contents.data() + wav_entry->offset,
+            wav_entry->size);
+        ret_snd.afc_large_frames = (wav_entry->type == 1);
         ret_snd.num_channels = 1;
 
       } else if (wav_entry->type == 3) {
@@ -232,14 +231,14 @@ vector<Sound> wsys_decode(void* vdata, size_t size,
         }
 
         size_t num_samples = wav_entry->size / 2;
-        ret_snd.samples.reserve(num_samples);
+        ret_snd.decoded_samples.reserve(num_samples);
         const int16_t* samples = reinterpret_cast<const int16_t*>(
             aw_file_contents.data() + wav_entry->offset);
         for (size_t z = 0; z < num_samples; z++) {
           if (samples[z] == 0x0080) {
-            ret_snd.samples.emplace_back(-1.0f);
+            ret_snd.decoded_samples.emplace_back(-1.0f);
           } else {
-            ret_snd.samples.emplace_back(
+            ret_snd.decoded_samples.emplace_back(
                 static_cast<float>(bswap16(samples[z])) / 32767.0f);
           }
         }

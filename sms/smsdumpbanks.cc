@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
       string filename = string_printf("%s/sample-%s-%" PRIX64 "-%08" PRIX32
           "-%08" PRIX32 ".wav", argv[2], s.source_filename.c_str(), s.sound_id,
           s.aw_file_index, s.wave_table_index);
-      save_wav(filename.c_str(), s.samples, s.sample_rate, s.num_channels);
+      save_wav(filename.c_str(), s.samples(), s.sample_rate, s.num_channels);
     }
   }
 

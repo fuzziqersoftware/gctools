@@ -7,13 +7,16 @@
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
 #include <phosg/Strings.hh>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
 
 
 struct Sound {
-  std::vector<float> samples;
+  mutable std::string afc_data;
+  bool afc_large_frames;
+  mutable std::vector<float> decoded_samples;
   size_t num_channels;
   size_t sample_rate;
 
@@ -30,6 +33,8 @@ struct Sound {
 
   uint32_t aw_file_index;
   uint32_t wave_table_index;
+
+  const std::vector<float>& samples() const;
 };
 
 struct VelocityRegion {

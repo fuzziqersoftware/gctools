@@ -9,7 +9,20 @@
 #include <phosg/Strings.hh>
 #include <vector>
 
+#include "afc.hh"
+
 using namespace std;
+
+
+
+const vector<float>& Sound::samples() const {
+  if (this->decoded_samples.empty()) {
+    this->decoded_samples = afc_decode(this->afc_data.data(),
+        this->afc_data.size(), this->afc_large_frames);
+    this->afc_data.clear();
+  }
+  return this->decoded_samples;
+}
 
 
 

@@ -529,7 +529,7 @@ public:
             this->loop_start_offset, this->loop_end_offset, this->src_ratio);
       }
 
-      auto samples = resample(this->vel_region->sound->samples,
+      auto samples = resample(this->vel_region->sound->samples(),
           this->vel_region->sound->num_channels, this->src_ratio);
       this->cache->add(this->vel_region->sound, this->src_ratio, move(samples));
       return this->cache->at(this->vel_region->sound, this->src_ratio);
