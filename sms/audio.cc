@@ -135,6 +135,6 @@ void al_stream::wait_until_buffers_available(int num_buffers) const {
     if (buffers_processed >= num_buffers) {
       return;
     }
-    usleep(1);
+    usleep(100);
   }
 }
