@@ -8,7 +8,7 @@ afsdump: afsdump.c
 	gcc $(CFLAGS) -o afsdump afsdump.c
 
 gcmdump: gcmdump.cc
-	g++ $(CXXFLAGS) -o gcmdump gcmdump.cc
+	g++ $(CXXFLAGS) -o gcmdump gcmdump.cc -lphosg
 
 gsldump: gsldump.c
 	gcc $(CFLAGS) -o gsldump gsldump.c

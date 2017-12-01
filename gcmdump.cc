@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/types.h>
 
+#include <phosg/Filesystem.hh>
 #include <string>
 #include <unordered_set>
 
@@ -102,7 +103,7 @@ int32_t byteswap(int32_t a) {
          ((a << 8) & 0x00FF0000) | ((a << 24) & 0xFF000000);
 }
 
-uint32_t dol_file_size(DOLHeader* dol) {
+uint32_t dol_file_size(const DOLHeader* dol) {
   static const int num_sections = 18;
   uint32_t x, max_offset = 0;
   for (x = 0; x < num_sections; x++) {
@@ -115,8 +116,9 @@ uint32_t dol_file_size(DOLHeader* dol) {
   return max_offset;
 }
 
-void parse_until(FILE* f, FSTEntry* fst, const char* string_table, int start,
-    int end, int64_t base_offset, const unordered_set<string>& target_filenames) {
+void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
+    int start, int end, int64_t base_offset,
+    const unordered_set<string>& target_filenames) {
 
   int x;
   char pwd[0x100];
@@ -139,7 +141,7 @@ void parse_until(FILE* f, FSTEntry* fst, const char* string_table, int start,
       strcpy(&pwd[pwd_end], &string_table[this_entry.file.string_offset]);
       mkdir(pwd, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
       chdir(pwd);
-      parse_until(f, fst, string_table, x + 1, this_entry.dir.next_offset,
+      parse_until(fd, fst, string_table, x + 1, this_entry.dir.next_offset,
           base_offset, target_filenames);
       pwd[pwd_end] = 0;
       chdir(pwd);
@@ -154,16 +156,16 @@ void parse_until(FILE* f, FSTEntry* fst, const char* string_table, int start,
 
       if (target_filenames.empty() ||
           target_filenames.count(&string_table[this_entry.file.string_offset])) {
-        void* data = malloc(this_entry.file.file_size);
-        int data_offset = this_entry.file.file_offset + base_offset;
-        fseek(f, data_offset, SEEK_SET);
-        fread(data, this_entry.file.file_size, 1, f);
+        // some games have non-ascii chars in filenames; get rid of them
+        string filename(&string_table[this_entry.file.string_offset]);
+        for (auto& ch : filename) {
+          if (ch < 0x20 || ch > 0x7E) {
+            ch = '_';
+          }
+        }
 
-        FILE* out = fopen(&string_table[this_entry.file.string_offset], "wb");
-        fwrite(data, this_entry.file.file_size, 1, out);
-        fclose(out);
-
-        free(data);
+        save_file(filename, preadx(fd, this_entry.file.file_size,
+            this_entry.file.file_offset + base_offset));
       }
     }
   }
@@ -202,14 +204,10 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  FILE* f = fopen(filename, "rb");
-  if (!f) {
-    fprintf(stderr, "failed to open %s (error %d)\n", filename, errno);
-    return -2;
-  }
+  scoped_fd fd(filename, O_RDONLY);
 
   ImageHeader header;
-  fread(&header, sizeof(ImageHeader), 1, f);
+  read(fd, &header, sizeof(ImageHeader));
   if (format == Format::Unknown) {
     if (header.gcm.gc_magic == 0x3D9F33C2) {
       format = Format::GCM;
@@ -245,35 +243,30 @@ int main(int argc, char* argv[]) {
   // if there are target filenames and default.dol isn't specified, don't
   // extract it
   if (target_filenames.empty() || target_filenames.count("default.dol")) {
-    fseek(f, dol_offset, SEEK_SET);
-    DOLHeader dol;
-    fread(&dol, sizeof(DOLHeader), 1, f);
-    uint32_t dol_size = dol_file_size(&dol) - sizeof(DOLHeader);
+    string dol_data = preadx(fd, sizeof(DOLHeader), dol_offset);
+    uint32_t dol_size = dol_file_size(reinterpret_cast<const DOLHeader*>(
+        dol_data.data()));
 
-    void* dol_data = malloc(dol_size);
-    fread(dol_data, dol_size, 1, f);
+    dol_data += preadx(fd, dol_size - sizeof(DOLHeader),
+        dol_offset + sizeof(DOLHeader));
 
-    FILE* dol_file = fopen("default.dol", "wb");
-    fwrite(&dol, sizeof(DOLHeader), 1, dol_file);
-    fwrite(dol_data, dol_size, 1, dol_file);
-
-    fclose(dol_file);
-    free(dol_data);
+    save_file("default.dol", dol_data);
   }
 
-  fseek(f, fst_offset, SEEK_SET);
+  string fst_data = preadx(fd, fst_size, fst_offset);
+  const FSTEntry* fst = reinterpret_cast<const FSTEntry*>(fst_data.data());
 
-  FSTEntry* fst = (FSTEntry*)malloc(fst_size);
-  fread(fst, fst_size, 1, f);
+  // if there are target filenames and fst.bin isn't specified, don't extract it
+  if (target_filenames.empty() || target_filenames.count("fst.bin")) {
+    save_file("fst.bin", fst_data);
+  }
 
   int num_entries = byteswap(fst[0].root.num_entries);
   printf("> root: %08X files\n", num_entries);
 
   char* string_table = (char*)fst + (sizeof(FSTEntry) * num_entries);
-  parse_until(f, fst, string_table, 1, num_entries, base_offset,
+  parse_until(fd, fst, string_table, 1, num_entries, base_offset,
       target_filenames);
-
-  fclose(f);
 
   return 0;
 }
