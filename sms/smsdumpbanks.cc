@@ -49,10 +49,17 @@ int main(int argc, char** argv) {
             key_region.key_low, key_region.key_high, key_region.key_low,
             key_region.key_high, key_low_str.c_str(), key_high_str.c_str());
         for (const auto& vel_region : key_region.vel_regions) {
-          fprintf(f.get(), "    velocity region [%hhd,%hhd] / [0x%02hhX,0x%02hhX]: sound id 0x%hX, frequency multiplier %g, base note %02hhX, sound base note %02hhX\n",
-              vel_region.vel_low, vel_region.vel_high, vel_region.vel_low,
-              vel_region.vel_high, vel_region.sound_id, vel_region.freq_mult,
-              vel_region.base_note, vel_region.sound->base_note);
+          if (vel_region.sound) {
+            fprintf(f.get(), "    velocity region [%hhd,%hhd] / [0x%02hhX,0x%02hhX]: sound id 0x%hX, frequency multiplier %g, base note %02hhX, sound base note %02hhX\n",
+                vel_region.vel_low, vel_region.vel_high, vel_region.vel_low,
+                vel_region.vel_high, vel_region.sound_id, vel_region.freq_mult,
+                vel_region.base_note, vel_region.sound->base_note);
+          } else {
+            fprintf(f.get(), "    velocity region [%hhd,%hhd] / [0x%02hhX,0x%02hhX]: sound id 0x%hX, frequency multiplier %g, base note %02hhX, sound base note missing\n",
+                vel_region.vel_low, vel_region.vel_high, vel_region.vel_low,
+                vel_region.vel_high, vel_region.sound_id, vel_region.freq_mult,
+                vel_region.base_note);
+          }
         }
       }
     }

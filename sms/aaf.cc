@@ -405,7 +405,12 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
 }
 
 SoundEnvironment aaf_decode_directory(const char* base_directory) {
-  string aaf_data = load_file(string_printf("%s/msound.aaf", base_directory));
+  string aaf_data;
+  try {
+    aaf_data = load_file(string_printf("%s/JaiInit.aaf", base_directory));
+  } catch (const cannot_open_file&) {
+    aaf_data = load_file(string_printf("%s/msound.aaf", base_directory));
+  }
   return aaf_decode(const_cast<char*>(aaf_data.data()), aaf_data.size(),
       base_directory);
 }
