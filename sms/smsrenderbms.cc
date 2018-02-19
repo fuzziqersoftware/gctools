@@ -822,8 +822,12 @@ private:
     unordered_map<uint8_t, int16_t> registers;
 
     Track(int16_t id, shared_ptr<string> data, size_t start_offset, uint32_t bank = -1) :
-        id(id), r(data, start_offset), volume(0), pitch_bend(0), panning(0.5f),
-        bank(bank), instrument(-1), pitch_bend_semitone_range(24.0) {
+        id(id), r(data, start_offset), volume(0), volume_target(0),
+        volume_target_frames(0), pitch_bend(0), pitch_bend_target(0),
+        pitch_bend_target_frames(0), reverb(0), reverb_target(0),
+        reverb_target_frames(0), panning(0.5f), panning_target(0.5f),
+        panning_target_frames(0), bank(bank), instrument(-1),
+        pitch_bend_semitone_range(48.0) {
       for (size_t x = 0; x < 8; x++) {
         this->voices[x].reset();
       }
@@ -1067,7 +1071,10 @@ private:
     } else if (param == 0x21) {
       t->instrument = value;
     } else if (param == 0x07) {
-      t->pitch_bend_semitone_range = static_cast<float>(value);
+      // TODO: this is a guess... a range of 48.0 sounds correct for most tracks
+      // in Super Mario Sunshine, and they all set this to 12. so I added * 4.0;
+      // we'll see if that holds up for other games
+      t->pitch_bend_semitone_range = static_cast<float>(value) * 4.0;
     } else {
       if (debug_flags & DebugFlag::ShowUnknownParamOptions) {
         fprintf(stderr, "unknown param type option: %02hhX (value=%hu)\n",
@@ -1363,6 +1370,7 @@ int main(int argc, char** argv) {
   unordered_set<int16_t> disable_tracks;
   unordered_set<int16_t> mute_tracks;
   float time_limit = 60.0f;
+  float start_time = 0.0f;
   size_t sample_rate = 192000;
   bool play = false;
   int32_t default_bank = -1;
@@ -1373,6 +1381,8 @@ int main(int argc, char** argv) {
       mute_tracks.emplace(atoi(&argv[x][13]));
     } else if (!strncmp(argv[x], "--time-limit=", 13)) {
       time_limit = atof(&argv[x][13]);
+    } else if (!strncmp(argv[x], "--start-time=", 13)) {
+      start_time = atof(&argv[x][13]);
     } else if (!strncmp(argv[x], "--sample-rate=", 14)) {
       sample_rate = atoi(&argv[x][14]);
     } else if (!strncmp(argv[x], "--audiores-directory=", 21)) {
@@ -1420,11 +1430,20 @@ int main(int argc, char** argv) {
 
   if (output_filename) {
     Renderer r(seq, sample_rate, env, mute_tracks, disable_tracks);
+
+    if (start_time) {
+      r.render_until_seconds(start_time);
+    }
+
     auto samples = r.render_until_seconds(time_limit);
     save_wav(output_filename, samples, sample_rate, 2);
 
   } else if (play) {
     Renderer r(seq, sample_rate, env, mute_tracks, disable_tracks);
+
+    if (start_time) {
+      r.render_until_seconds(start_time);
+    }
 
     init_al();
     al_stream stream(sample_rate, AL_FORMAT_STEREO16, 32);
