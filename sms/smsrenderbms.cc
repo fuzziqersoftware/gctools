@@ -120,6 +120,10 @@ public:
     return ret;
   };
 
+  string pget(size_t offset, size_t size) {
+    return this->data->substr(offset, size);
+  }
+
 private:
   shared_ptr<string> data;
   size_t offset;
@@ -216,25 +220,22 @@ void disassemble_set_perf(size_t opcode_offset, uint8_t opcode, uint8_t type,
   printf("\n");
 }
 
-void disassemble_set_param(size_t opcode_offset, bool is16, uint8_t param,
-    uint16_t value) {
-  string value_str = is16 ? string_printf("0x%04hX", value) :
-      string_printf("0x%02hhX", static_cast<uint8_t>(value));
-
-  if (param == 0x20) {
-    printf("%08zX: set_param       bank, value=%s\n", opcode_offset,
-        value_str.c_str());
-  } else if (param == 0x21) {
-    printf("%08zX: set_param       insprog, value=%s\n", opcode_offset,
-        value_str.c_str());
-  } else {
-    printf("%08zX: set_param       param=0x%02hhX, value=%s\n", opcode_offset,
-        param, value_str.c_str());
-  }
-}
-
 void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
   unordered_map<size_t, string> track_start_labels;
+
+  static const unordered_map<uint8_t, const char*> register_opcode_names({
+    {0x00, "mov     "},
+    {0x01, "add     "},
+    {0x02, "sub     "},
+    {0x03, "cmp     "},
+    {0x04, "mul     "},
+    {0x05, "and     "},
+    {0x06, "or      "},
+    {0x07, "xor     "},
+    {0x08, "rnd     "},
+    {0x09, "shl     "},
+    {0x0A, "shr     "},
+  });
 
   if (default_bank >= 0) {
     printf("/* note: default bank is %" PRId32 " */\n", default_bank);
@@ -251,25 +252,24 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
       }
     }
 
+    string disassembly;
+
     uint8_t opcode = r.get_u8();
     if (opcode < 0x80) {
       uint8_t voice = r.get_u8(); // between 1 and 8 inclusive
       uint8_t vel = r.get_u8();
       string note_name = name_for_note(opcode);
-      printf("%08zX: note            note=%s, voice=%hhu, vel=0x%02hhX\n",
-          opcode_offset, note_name.c_str(), voice, vel);
-      continue;
-    }
-
-    switch (opcode) {
+      disassembly = string_printf("note            note=%s, voice=%hhu, vel=0x%02hhX",
+          note_name.c_str(), voice, vel);
+    } else switch (opcode) {
       case 0x80: {
         uint8_t wait_time = r.get_u8();
-        printf("%08zX: wait            %hhu\n", opcode_offset, wait_time);
+        disassembly = string_printf("wait            %hhu", wait_time);
         break;
       }
       case 0x88: {
         uint16_t wait_time = r.get_u16();
-        printf("%08zX: wait            %hu\n", opcode_offset, wait_time);
+        disassembly = string_printf("wait            %hu", wait_time);
         break;
       }
 
@@ -281,7 +281,7 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
       case 0x86:
       case 0x87: {
         uint8_t voice = opcode & 7;
-        printf("%08zX: voice_off       %hhu\n", opcode_offset, voice);
+        disassembly = string_printf("voice_off       %hhu", voice);
         break;
       }
 
@@ -312,8 +312,33 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
           duration = r.get_u16();
         }
 
-        disassemble_set_perf(opcode_offset, opcode, type, data_type, value,
-            duration_flags, duration);
+        static const unordered_map<uint8_t, string> param_names({
+          {0x00, "volume"},
+          {0x01, "pitch_bend"},
+          {0x02, "reverb"},
+          {0x03, "panning"},
+        });
+        string param_name;
+        try {
+          param_name = param_names.at(type);
+        } catch (const out_of_range&) {
+          param_name=string_printf("[%02hhX]", type);
+        }
+
+        disassembly = string_printf("set_perf        %s=", param_name.c_str());
+        if (data_type == 4) {
+          disassembly += string_printf("0x%02hhX (u8)", static_cast<uint8_t>(value));
+        } else if (data_type == 8) {
+          disassembly += string_printf("0x%02hhX (s8)", static_cast<int8_t>(value));
+        } else if (data_type == 12) {
+          disassembly += string_printf("0x%04hX (s16)", static_cast<int16_t>(value));
+        }
+        if (duration_flags == 2) {
+          disassembly += string_printf(", duration=0x%02hhX", static_cast<uint8_t>(duration));
+        } else if (duration == 3) {
+          disassembly += string_printf(", duration=0x%04hX", static_cast<uint16_t>(duration));
+        }
+
         break;
       }
 
@@ -321,15 +346,28 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
       case 0xAC: {
         uint8_t param = r.get_u8();
         uint16_t value = (opcode & 0x08) ? r.get_u16() : r.get_u8();
-        disassemble_set_param(opcode_offset, (opcode & 0x08), param, value);
+
+        string value_str = (opcode & 0x08) ? string_printf("0x%04hX", value) :
+            string_printf("0x%02hhX", static_cast<uint8_t>(value));
+
+        if (param == 0x20) {
+          disassembly = string_printf("set_param       bank, value=%s",
+              value_str.c_str());
+        } else if (param == 0x21) {
+          disassembly = string_printf("set_param       insprog, value=%s",
+              value_str.c_str());
+        } else {
+          disassembly = string_printf("set_param       param=0x%02hhX, value=%s",
+              param, value_str.c_str());
+        }
         break;
       }
 
       case 0xC1: {
         uint8_t track_id = r.get_u8();
         uint32_t offset = r.get_u24();
-        printf("%08zX: start_track     %hhu, offset=0x%" PRIX32 "\n",
-            opcode_offset, track_id, offset);
+        disassembly = string_printf("start_track     %hhu, offset=0x%" PRIX32,
+            track_id, offset);
         track_start_labels.emplace(offset, string_printf("track_%02hhX_start",
             track_id));
         break;
@@ -344,44 +382,111 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
             string_printf("cond=0x%02hhX, ", r.get_u8());
 
         uint32_t offset = r.get_u24();
-        printf("%08zX: %s            %soffset=0x%" PRIX32 "\n",
-            opcode_offset, opcode_name, conditional_str.c_str(), offset);
+        disassembly = string_printf("%s            %soffset=0x%" PRIX32,
+            opcode_name, conditional_str.c_str(), offset);
         break;
       }
 
       case 0xC5:
-        printf("%08zX: ret\n", opcode_offset);
+        disassembly = "ret";
         break;
 
       case 0xC6: {
         string conditional_str = string_printf("cond=0x%02hhX", r.get_u8());
-        printf("%08zX: ret             %s\n", opcode_offset, conditional_str.c_str());
+        disassembly = string_printf("ret             %s", conditional_str.c_str());
         break;
       }
 
       case 0xE7: {
         uint16_t arg = r.get_u16();
-        printf("%08zX: sync_gpu        0x%04hX\n", opcode_offset, arg);
+        disassembly = string_printf("sync_gpu        0x%04hX", arg);
         break;
       }
 
       case 0xFD: {
         uint16_t pulse_rate = r.get_u16();
-        printf("%08zX: set_pulse_rate  %hu\n", opcode_offset,
-            pulse_rate);
+        disassembly = string_printf("set_pulse_rate  %hu", pulse_rate);
         break;
       }
 
       case 0xFE: {
         uint16_t tempo = r.get_u16();
         uint64_t usec_pqn = 60000000 / tempo;
-        printf("%08zX: set_tempo       %hu /* usecs per quarter note = %"
-            PRIu64 " */\n", opcode_offset, tempo, usec_pqn);
+        disassembly = string_printf("set_tempo       %hu /* usecs per quarter note = %"
+            PRIu64 " */", tempo, usec_pqn);
         break;
       }
 
       case 0xFF: {
-        printf("%08zX: end_track\n", opcode_offset);
+        disassembly = "end_track";
+        break;
+      }
+
+      // everything below here are register opcodes
+
+      case 0xD0:
+      case 0xD1:
+      case 0xD4:
+      case 0xD5:
+      case 0xD6:
+      case 0xD7: {
+        static const unordered_map<uint8_t, const char*> opcode_names({
+          {0xD0, "read_port    "},
+          {0xD1, "write_port   "},
+          {0xD4, "write_port_pr"},
+          {0xD5, "write_port_ch"},
+          {0xD6, "read_port_pr "},
+          {0xD7, "read_port_ch "},
+        });
+        uint8_t port = r.get_u8();
+        uint8_t reg = r.get_u8();
+        disassembly = string_printf("%s  r%hhu, %hhu", opcode_names.at(opcode),
+            reg, port);
+        break;
+      }
+
+      case 0xD2:
+        disassembly = string_printf(".check_port_in 0x%hX", r.get_u16());
+        break;
+
+      case 0xD3:
+        disassembly = string_printf(".check_port_ex 0x%hX", r.get_u16());
+        break;
+
+      case 0xD8: {
+        uint8_t reg = r.get_u8();
+        int16_t val = r.get_s16();
+        disassembly = string_printf("mov            r%hhu, 0x%hX", reg, val);
+        break;
+      }
+
+      case 0xD9: {
+        uint8_t op = r.get_u8();
+        uint8_t dst_reg = r.get_u8();
+        uint8_t src_reg = r.get_u8();
+
+        const char* opcode_name = ".unknown";
+        try {
+          opcode_name = register_opcode_names.at(op);
+        } catch (const out_of_range&) { }
+
+        disassembly = string_printf("%s            r%hhu, r%hhu", opcode_name,
+            dst_reg, src_reg);
+        break;
+      }
+
+      case 0xDA: {
+        uint8_t op = r.get_u8();
+        uint8_t dst_reg = r.get_u8();
+        int16_t val = r.get_s16();
+
+        const char* opcode_name = ".unknown";
+        try {
+          opcode_name = register_opcode_names.at(op);
+        } catch (const out_of_range&) { }
+
+        disassembly = string_printf("%s            r%hhu, 0x%hX", opcode_name,
+            dst_reg, val);
         break;
       }
 
@@ -389,22 +494,17 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
 
       case 0xC2:
       case 0xCF:
-      case 0xDA:
       case 0xDB:
       case 0xE2:
       case 0xE3:
       case 0xF1:
       case 0xF4: {
         uint8_t param = r.get_u8();
-        printf("%08zX: .unknown        0x%02hhX, 0x%02hhX\n",
-            opcode_offset, opcode, param);
+        disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX",
+            opcode, param);
         break;
       }
 
-      case 0xD0:
-      case 0xD1:
-      case 0xD2:
-      case 0xD5:
       case 0xA0:
       case 0xA3:
       case 0xA5:
@@ -416,19 +516,18 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
       case 0xE6:
       case 0xF9: {
         uint16_t param = r.get_u16();
-        printf("%08zX: .unknown        0x%02hhX, 0x%04hX\n", opcode_offset,
+        disassembly = string_printf(".unknown        0x%02hhX, 0x%04hX",
             opcode, param);
         break;
       }
 
       case 0xAD:
       case 0xAF:
-      case 0xD8:
       case 0xDD:
       case 0xEF: {
         uint32_t param = r.get_u24();
-        printf("%08zX: .unknown        0x%02hhX, 0x%06" PRIX32 "\n",
-            opcode_offset, opcode, param);
+        disassembly = string_printf(".unknown        0x%02hhX, 0x%06" PRIX32,
+            opcode, param);
         break;
       }
 
@@ -436,8 +535,8 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
       case 0xAA:
       case 0xDF: {
         uint32_t param = r.get_u32();
-        printf("%08zX: .unknown        0x%02hhX, 0x%08" PRIX32 "\n",
-            opcode_offset, opcode, param);
+        disassembly = string_printf(".unknown        0x%02hhX, 0x%08" PRIX32,
+            opcode, param);
         break;
       }
 
@@ -445,15 +544,15 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
         uint8_t param1 = r.get_u8();
         if (param1 == 0x40) {
           uint16_t param2 = r.get_u16();
-          printf("%08zX: .unknown        0x%02hhX, 0x%02hhX, 0x%04hX\n",
-              opcode_offset, opcode, param1, param2);
+          disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX, 0x%04hX",
+              opcode, param1, param2);
         } else if (param1 == 0x80) {
           uint32_t param2 = r.get_u32();
-          printf("%08zX: .unknown        0x%02hhX, 0x%02hhX, 0x%08" PRIX32 "\n",
-              opcode_offset, opcode, param1, param2);
+          disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX, 0x%08" PRIX32,
+              opcode, param1, param2);
         } else {
-          printf("%08zX: .unknown        0x%02hhX, 0x%02hhX\n",
-              opcode_offset, opcode, param1);
+          disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX",
+              opcode, param1);
         }
         break;
       }
@@ -467,13 +566,27 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
         }
         result |= b;
 
-        printf("%08zX: wait            %" PRIu64 "\n", opcode_offset, result);
+        disassembly = string_printf("wait            %" PRIu64, result);
         break;
       }
 
       default:
-        printf("%08zX: .unknown        0x%02hhX\n", opcode_offset, opcode);
+        disassembly = string_printf(".unknown        0x%02hhX", opcode);
     }
+
+    if (disassembly.empty()) {
+      throw runtime_error("disassembly failure");
+    }
+
+    size_t opcode_size = r.where() - opcode_offset;
+    string data = r.pget(opcode_offset, opcode_size);
+    string data_str;
+    for (char ch : data) {
+      data_str += string_printf("%02X ", static_cast<uint8_t>(ch));
+    }
+    data_str.resize(18, ' ');
+
+    printf("%08zX: %s  %s\n", opcode_offset, data_str.c_str(), disassembly.c_str());
   }
 }
 
@@ -685,6 +798,8 @@ private:
     shared_ptr<Voice> voices[8];
     unordered_set<shared_ptr<Voice>> voices_off;
     vector<uint32_t> call_stack;
+
+    unordered_map<uint8_t, int16_t> registers;
 
     Track(int16_t id, shared_ptr<string> data, size_t start_offset, uint32_t bank = -1) :
         id(id), r(data, start_offset), volume(0), pitch_bend(0), panning(0.5f),
