@@ -187,6 +187,12 @@ vector<Sound> wsys_decode(void* vdata, size_t size,
         data + winf->aw_file_entry_offsets[x]);
     entry->byteswap();
 
+    // pikmin has a case where the aw filename is blank and the entry count is
+    // zero. wtf? just handle it manually I guess
+    if (entry->wav_count == 0) {
+      continue;
+    }
+
     string aw_filename = string_printf("%s/Banks/%s", base_directory,
         entry->filename);
     string aw_file_contents = load_file(aw_filename.c_str());
@@ -224,25 +230,34 @@ vector<Sound> wsys_decode(void* vdata, size_t size,
         ret_snd.afc_large_frames = (wav_entry->type == 1);
         ret_snd.num_channels = 1;
 
-      } else if (wav_entry->type == 3) {
-        // uncompressed big-endian stereo apparently
-        if (wav_entry->size & 3) {
-          throw invalid_argument("data size not a multiple of 4");
+      } else if (wav_entry->type < 4) {
+        // uncompressed big-endian mono/stereo apparently
+        bool is_stereo = (wav_entry->type == 3);
+        if (is_stereo && (wav_entry->size & 3)) {
+          throw invalid_argument("stereo data size not a multiple of 4");
+        } else if (!is_stereo && (wav_entry->size & 2)) {
+          throw invalid_argument("mono data size not a multiple of 2");
         }
 
-        size_t num_samples = wav_entry->size / 2;
+        // hack: type 2 are too fast, so half their sample rate. I suspect they
+        // might be stereo also, but then why are they a different type?
+        if (wav_entry->type == 2) {
+          ret_snd.sample_rate /= 2;
+        }
+
+        size_t num_samples = wav_entry->size / 2; // 16-bit samples
         ret_snd.decoded_samples.reserve(num_samples);
         const int16_t* samples = reinterpret_cast<const int16_t*>(
             aw_file_contents.data() + wav_entry->offset);
         for (size_t z = 0; z < num_samples; z++) {
-          if (samples[z] == 0x0080) {
-            ret_snd.decoded_samples.emplace_back(-1.0f);
-          } else {
-            ret_snd.decoded_samples.emplace_back(
-                static_cast<float>(bswap16(samples[z])) / 32767.0f);
-          }
+          int16_t sample = bswap16(samples[z]);
+          float decoded = (sample == -0x8000) ? -1.0 : (static_cast<float>(sample) / 32767.0f);
+          ret_snd.decoded_samples.emplace_back(decoded);
         }
-        ret_snd.num_channels = 2;
+        ret_snd.num_channels = is_stereo ? 2 : 1;
+
+      } else {
+        throw runtime_error(string_printf("unknown wav entry type: 0x%" PRIX32, wav_entry->type));
       }
     }
   }
@@ -281,7 +296,7 @@ struct barc_header {
   }
 };
 
-unordered_map<string, string> barc_decode(void* vdata, size_t size,
+unordered_map<string, SequenceProgram> barc_decode(void* vdata, size_t size,
     const char* base_directory) {
 
   barc_header* barc = reinterpret_cast<barc_header*>(vdata);
@@ -294,13 +309,62 @@ unordered_map<string, string> barc_decode(void* vdata, size_t size,
       barc->archive_filename);
   scoped_fd sequence_archive_fd(sequence_archive_filename.c_str(), O_RDONLY);
 
-  unordered_map<string, string> ret;
+  unordered_map<string, SequenceProgram> ret;
   for (size_t x = 0; x < barc->entry_count; x++) {
     const auto& e = barc->entries[x];
-    ret.emplace(e.name, preadx(sequence_archive_fd, e.size, e.offset));
+    ret.emplace(piecewise_construct, forward_as_tuple(e.name),
+        forward_as_tuple(x, preadx(sequence_archive_fd, e.size, e.offset)));
   }
 
   return ret;
+}
+
+
+
+SequenceProgram::SequenceProgram(uint32_t index, std::string&& data) :
+    index(index), data(move(data)) { }
+
+void SoundEnvironment::resolve_pointers() {
+  // postprocessing: resolve all sample bank pointers
+  for (auto& bank_it : this->instrument_banks) {
+    uint32_t bank_id = bank_it.first;
+    auto& bank = bank_it.second;
+    const auto& wsys_bank = this->sample_banks[bank.chunk_id];
+    // fprintf(stderr, "[SoundEnvironment] bank %" PRIX32 " maps to wsys %" PRIX32 "\n",
+    //     bank_id, bank.chunk_id);
+
+    // build an index of sound_id -> index
+    unordered_map<int64_t, size_t> sound_id_to_index;
+    for (size_t x = 0; x < wsys_bank.size(); x++) {
+      // fprintf(stderr, "[SoundEnvironment] wsys item %" PRIX32 ":%zX maps to sound %" PRIX64 "\n",
+      //     bank.chunk_id, x, wsys_bank[x].sound_id);
+      sound_id_to_index.emplace(wsys_bank[x].sound_id, x);
+
+      // TODO: figure out if this is actually a problem and uncomment the code
+      // below if it is
+      /* if (!sound_id_to_index.emplace(wsys_bank[x].sound_id, x).second) {
+        fprintf(stderr, "duplicate sound id %" PRIX64 " (indexes %zu and %zu)\n",
+            wsys_bank[x].sound_id, sound_id_to_index[wsys_bank[x].sound_id], x);
+      } */
+    }
+
+    // link all the VelocityRegions to their Sound objects
+    for (auto& instrument_it : bank.id_to_instrument) {
+      for (auto& key_region : instrument_it.second.key_regions) {
+        for (auto& vel_region : key_region.vel_regions) {
+          try {
+            vel_region.sound = &wsys_bank[sound_id_to_index.at(vel_region.sound_id)];
+          } catch (const out_of_range&) {
+            fprintf(stderr, "[SoundEnvironment] error: can\'t resolve sound: bank=%" PRIX32
+                " inst=%" PRIX32 " key_rgn=[%hhX,%hhX] vel_rgn=[%hhX, %hhX, base=%hhX, sound_id=%hX]\n",
+                bank_id, instrument_it.first, key_region.key_low, key_region.key_high,
+                vel_region.vel_low, vel_region.vel_high, vel_region.base_note,
+                vel_region.sound_id);
+          }
+        }
+      }
+    }
+  }
 }
 
 
@@ -353,9 +417,7 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
       case 4:
         chunk_offset = bswap32(*reinterpret_cast<const uint32_t*>(data + offset + 4));
         chunk_size = bswap32(*reinterpret_cast<const uint32_t*>(data + offset + 8));
-        for (auto& it : barc_decode(data + chunk_offset, chunk_size, base_directory)) {
-          ret.sequence_programs.emplace(it.first, it.second);
-        }
+        ret.sequence_programs = barc_decode(data + chunk_offset, chunk_size, base_directory);
         offset += 0x10;
         break;
 
@@ -368,49 +430,102 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
     }
   }
 
-  // postprocessing: resolve all sample bank pointers
-  for (auto& bank_it : ret.instrument_banks) {
-    const auto& wsys_bank = ret.sample_banks[bank_it.second.chunk_id];
-
-    // build an index of sound_id -> index
-    unordered_map<int64_t, size_t> sound_id_to_index;
-    for (size_t x = 0; x < wsys_bank.size(); x++) {
-      sound_id_to_index.emplace(wsys_bank[x].sound_id, x);
-
-      // TODO: figure out if this is actually a problem and uncomment the code
-      // below if it is
-      /* if (!sound_id_to_index.emplace(wsys_bank[x].sound_id, x).second) {
-        fprintf(stderr, "duplicate sound id %" PRIX64 " (indexes %zu and %zu)\n",
-            wsys_bank[x].sound_id, sound_id_to_index[wsys_bank[x].sound_id], x);
-      } */
-    }
-
-    // link all the VelocityRegions to their Sound objects
-    for (auto& instrument_it : bank_it.second.id_to_instrument) {
-      for (auto& key_region : instrument_it.second.key_regions) {
-        for (auto& vel_region : key_region.vel_regions) {
-          if (vel_region.sound_id < wsys_bank.size()) {
-            size_t index = sound_id_to_index[vel_region.sound_id];
-            vel_region.sound = &wsys_bank[index];
-          } else {
-            fprintf(stderr, "[AAF] error: can\'t resolve sound id %" PRIX32 "\n",
-                vel_region.sound_id);
-          }
-        }
-      }
-    }
-  }
-
+  ret.resolve_pointers();
   return ret;
 }
 
-SoundEnvironment aaf_decode_directory(const char* base_directory) {
-  string aaf_data;
-  try {
-    aaf_data = load_file(string_printf("%s/JaiInit.aaf", base_directory));
-  } catch (const cannot_open_file&) {
-    aaf_data = load_file(string_printf("%s/msound.aaf", base_directory));
+struct bx_header {
+  uint32_t wsys_table_offset;
+  uint32_t wsys_count;
+  uint32_t ibnk_table_offset;
+  uint32_t ibnk_count;
+
+  void byteswap() {
+    this->wsys_table_offset = bswap32(this->wsys_table_offset);
+    this->wsys_count = bswap32(this->wsys_count);
+    this->ibnk_table_offset = bswap32(this->ibnk_table_offset);
+    this->ibnk_count = bswap32(this->ibnk_count);
   }
-  return aaf_decode(const_cast<char*>(aaf_data.data()), aaf_data.size(),
-      base_directory);
+};
+
+struct bx_table_entry {
+  uint32_t offset;
+  uint32_t size;
+
+  void byteswap() {
+    this->offset = bswap32(this->offset);
+    this->size = bswap32(this->size);
+  }
+};
+
+SoundEnvironment bx_decode(void* vdata, size_t size, const char* base_directory) {
+  uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
+  bx_header* header = reinterpret_cast<bx_header*>(vdata);
+  header->byteswap();
+
+  SoundEnvironment ret;
+  bx_table_entry* entry = reinterpret_cast<bx_table_entry*>(data + header->wsys_table_offset);
+  for (size_t x = 0; x < header->wsys_count; x++) {
+    entry->byteswap();
+    if (entry->size == 0) {
+      ret.sample_banks.emplace_back();
+    } else {
+      ret.sample_banks.emplace_back(wsys_decode(data + entry->offset,
+          entry->size, base_directory));
+    }
+    entry++;
+  }
+
+  entry = reinterpret_cast<bx_table_entry*>(data + header->ibnk_table_offset);
+  for (size_t x = 0; x < header->ibnk_count; x++) {
+    entry->byteswap();
+    if (entry->size != 0) {
+      auto ibnk = ibnk_decode(data + entry->offset, entry->size);
+      ibnk.chunk_id = x;
+      ret.instrument_banks.emplace(x, move(ibnk));
+    } else {
+      ret.instrument_banks.emplace(x, x);
+    }
+    entry++;
+  }
+
+  ret.resolve_pointers();
+  return ret;
+}
+
+
+
+SoundEnvironment load_sound_environment(const char* base_directory) {
+  // Pikmin: pikibank.bx has almost everything; the sequence index is inside
+  // default.dol (sigh) so it has to be manually extracted. search for 'BARC' in
+  // default.dol in a hex editor and copy the resulting data (through the end of
+  // the sequence names) to sequence.barc in the Seqs directory
+  string filename = string_printf("%s/Banks/pikibank.bx", base_directory);
+  if (isfile(filename)) {
+    string data = load_file(filename);
+    auto env = bx_decode(const_cast<char*>(data.data()), data.size(), base_directory);
+
+    data = load_file(string_printf("%s/Seqs/sequence.barc", base_directory));
+    env.sequence_programs = barc_decode(const_cast<char*>(data.data()), data.size(), base_directory);
+
+    return env;
+  }
+
+  static const vector<string> filenames = {
+    "/JaiInit.aaf",
+    "/msound.aaf", // Super Mario Sunshine
+  };
+
+  for (const auto& filename : filenames) {
+    string data;
+    try {
+      data = load_file(base_directory + filename);
+    } catch (const cannot_open_file&) {
+      continue;
+    }
+
+    return aaf_decode(const_cast<char*>(data.data()), data.size(), base_directory);
+  }
+
+  throw runtime_error("no index file found");
 }

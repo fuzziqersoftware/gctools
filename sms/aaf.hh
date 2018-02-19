@@ -16,11 +16,19 @@ using namespace std;
 
 
 
+struct SequenceProgram {
+  uint32_t index;
+  std::string data;
+
+  SequenceProgram(uint32_t index, std::string&& data);
+};
+
 struct SoundEnvironment {
   unordered_map<uint32_t, InstrumentBank> instrument_banks;
   vector<vector<Sound>> sample_banks;
-  unordered_map<string, string> sequence_programs;
+  unordered_map<string, SequenceProgram> sequence_programs;
+
+  void resolve_pointers();
 };
 
-SoundEnvironment aaf_decode(void* vdata, size_t size, const char* aw_directory);
-SoundEnvironment aaf_decode_directory(const char* aw_directory);
+SoundEnvironment load_sound_environment(const char* aw_directory);

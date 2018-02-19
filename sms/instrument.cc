@@ -21,6 +21,7 @@ const vector<float>& Sound::samples() const {
         this->afc_data.size(), this->afc_large_frames);
     this->afc_data.clear();
   }
+
   return this->decoded_samples;
 }
 
@@ -128,6 +129,21 @@ struct per2_header {
   }
 };
 
+struct perc_header {
+  // total guess: PERC instruments are just 0x7F key regions after the magic
+  // number. there don't appear to be any size/count fields in the structure.
+  // another guess: the key region format appears to match the per2 key region
+  // format; assume they're the same
+  uint32_t magic;
+  uint32_t key_region_offsets[0x7F];
+
+  void byteswap() {
+    for (size_t x = 0; x < 0x7F; x++) {
+      this->key_region_offsets[x] = bswap32(this->key_region_offsets[x]);
+    }
+  }
+};
+
 struct ins_bank {
   uint32_t magic; // 'IBNK'
   uint32_t size;
@@ -172,6 +188,7 @@ InstrumentBank ibnk_decode(void* vdata, size_t size) {
     // decode instrument struct at vdata + ins_offset
     // TODO: apparently instrument numbers are (x & 0x7F)
     uint8_t* inst_data = data + bank->inst_offsets[z];
+
     if (!memcmp(inst_data, "INST", 4)) {
       inst_header* inst = reinterpret_cast<inst_header*>(inst_data);
       inst->byteswap();
@@ -199,40 +216,51 @@ InstrumentBank ibnk_decode(void* vdata, size_t size) {
         }
         key_low = key_region->key_high + 1;
       }
+      continue;
+    }
 
+    uint32_t* offset_table = NULL;
+    uint32_t count = 0;
+    if (!memcmp(inst_data, "PERC", 4)) {
+      perc_header* perc = reinterpret_cast<perc_header*>(inst_data);
+      perc->byteswap();
+      offset_table = perc->key_region_offsets;
+      count = 0x7F;
     } else if (!memcmp(inst_data, "PER2", 4)) {
-
       per2_header* per2 = reinterpret_cast<per2_header*>(inst_data);
       per2->byteswap();
+      offset_table = per2->key_region_offsets;
+      count = 0x64;
+    } else {
+      throw invalid_argument(string_printf("unknown instrument format: %4s", inst_data));
+    }
 
-      for (uint32_t x = 0; x < 100; x++) {
-        if (!per2->key_region_offsets[x]) {
-          continue;
-        }
-        per2_key_region* key_region = reinterpret_cast<per2_key_region*>(
-            data + per2->key_region_offsets[x]);
-        key_region->byteswap();
-
-        result_inst.key_regions.emplace_back(x, x);
-        auto& result_key_region = result_inst.key_regions.back();
-
-        uint8_t vel_low = 0;
-        for (uint32_t y = 0; y < key_region->vel_region_count; y++) {
-          inst_vel_region* vel_region = reinterpret_cast<inst_vel_region*>(
-              data + key_region->vel_region_offsets[y]);
-          vel_region->byteswap();
-
-          float freq_mult = vel_region->freq_mult * key_region->freq_mult;
-          result_key_region.vel_regions.emplace_back(vel_low,
-              vel_region->vel_high, vel_region->sample_num, freq_mult, x);
-
-          vel_low = vel_region->vel_high + 1;
-        }
+    for (uint32_t x = 0; x < count; x++) {
+      if (!offset_table[x]) {
+        continue;
       }
 
-    } else {
-      throw invalid_argument("unknown instrument format");
+      per2_key_region* key_region = reinterpret_cast<per2_key_region*>(
+          data + offset_table[x]);
+      key_region->byteswap();
+
+      result_inst.key_regions.emplace_back(x, x);
+      auto& result_key_region = result_inst.key_regions.back();
+
+      uint8_t vel_low = 0;
+      for (uint32_t y = 0; y < key_region->vel_region_count; y++) {
+        inst_vel_region* vel_region = reinterpret_cast<inst_vel_region*>(
+            data + key_region->vel_region_offsets[y]);
+        vel_region->byteswap();
+
+        float freq_mult = vel_region->freq_mult * key_region->freq_mult;
+        result_key_region.vel_regions.emplace_back(vel_low,
+            vel_region->vel_high, vel_region->sample_num, freq_mult, x);
+
+        vel_low = vel_region->vel_high + 1;
+      }
     }
   }
+
   return result_bank;
 }

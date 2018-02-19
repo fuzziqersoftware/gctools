@@ -27,10 +27,11 @@ string name_for_note(uint8_t note) {
 
 int main(int argc, char** argv) {
   if (argc != 3) {
-    throw invalid_argument("bank directory and output directory required");
+    fprintf(stderr, "usage: %s bank_directory output_directory\n", argv[0]);
+    return 1;
   }
 
-  auto env = aaf_decode_directory(argv[1]);
+  auto env = load_sound_environment(argv[1]);
 
   for (const auto& ibank_it : env.instrument_banks) {
     const auto& ibank = ibank_it.second;
@@ -67,16 +68,24 @@ int main(int argc, char** argv) {
 
   for (const auto& wsys : env.sample_banks) {
     for (const auto& s : wsys) {
+      auto samples = s.samples();
+      if (samples.empty()) {
+        fprintf(stderr, "warning: can\'t decode %s:%" PRIX32 ":%" PRIX32 "\n",
+            s.source_filename.c_str(), s.source_offset, s.source_size);
+        continue;
+      }
       string filename = string_printf("%s/sample-%s-%" PRIX64 "-%08" PRIX32
-          "-%08" PRIX32 ".wav", argv[2], s.source_filename.c_str(), s.sound_id,
+          "-%08" PRIX32 "-%08" PRIX32 ".wav", argv[2],
+          s.source_filename.c_str(), s.source_offset, s.sound_id,
           s.aw_file_index, s.wave_table_index);
-      save_wav(filename.c_str(), s.samples(), s.sample_rate, s.num_channels);
+      save_wav(filename.c_str(), samples, s.sample_rate, s.num_channels);
     }
   }
 
   for (const auto& s : env.sequence_programs) {
-    string fn = string_printf("%s/sequence-%s.bms", argv[2], s.first.c_str());
-    save_file(fn, s.second);
+    string fn = string_printf("%s/sequence-%" PRIu32 "-%s.bms", argv[2],
+        s.second.index, s.first.c_str());
+    save_file(fn, s.second.data);
   }
 
   return 0;

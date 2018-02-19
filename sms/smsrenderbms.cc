@@ -20,12 +20,13 @@ using namespace std;
 
 
 enum DebugFlag {
-  ShowResampleEvents      = 0x0000000000000001,
-  ShowNotesOn             = 0x0000000000000002,
-  ShowUnknownPerfOptions  = 0x0000000000000004,
-  ShowUnknownParamOptions = 0x0000000000000008,
+  ShowResampleEvents          = 0x0000000000000001,
+  ShowNotesOn                 = 0x0000000000000002,
+  ShowUnknownPerfOptions      = 0x0000000000000004,
+  ShowUnknownParamOptions     = 0x0000000000000008,
+  ShowUnimplementedConditions = 0x0000000000000010,
 
-  Default                 = 0x0000000000000002,
+  Default                     = 0x0000000000000002,
 };
 
 uint64_t debug_flags = DebugFlag::Default;
@@ -112,6 +113,13 @@ public:
     return low | (high << 16);
   };
 
+  uint32_t get_u32() {
+    uint32_t ret = bswap32(*reinterpret_cast<const uint32_t*>(
+        this->data->data() + this->offset));
+    this->offset += 4;
+    return ret;
+  };
+
 private:
   shared_ptr<string> data;
   size_t offset;
@@ -173,6 +181,8 @@ double frequency_for_note(uint8_t note) {
   return freq_table[note];
 }
 
+
+
 void disassemble_set_perf(size_t opcode_offset, uint8_t opcode, uint8_t type,
     uint8_t data_type, int16_t value, uint8_t duration_flags,
     uint16_t duration) {
@@ -223,8 +233,12 @@ void disassemble_set_param(size_t opcode_offset, bool is16, uint8_t param,
   }
 }
 
-void disassemble_stream(StringReader& r) {
+void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
   unordered_map<size_t, string> track_start_labels;
+
+  if (default_bank >= 0) {
+    printf("/* note: default bank is %" PRId32 " */\n", default_bank);
+  }
 
   while (!r.eof()) {
     size_t opcode_offset = r.where();
@@ -345,8 +359,7 @@ void disassemble_stream(StringReader& r) {
         break;
       }
 
-      // case 0xE6: // vibrato
-      case 0xE7: { // sync_gpu
+      case 0xE7: {
         uint16_t arg = r.get_u16();
         printf("%08zX: sync_gpu        0x%04hX\n", opcode_offset, arg);
         break;
@@ -372,11 +385,89 @@ void disassemble_stream(StringReader& r) {
         break;
       }
 
+      // everything below here are unknown opcodes
+
+      case 0xC2:
+      case 0xCF:
+      case 0xDA:
+      case 0xDB:
+      case 0xE2:
+      case 0xE3:
+      case 0xF1:
+      case 0xF4: {
+        uint8_t param = r.get_u8();
+        printf("%08zX: .unknown        0x%02hhX, 0x%02hhX\n",
+            opcode_offset, opcode, param);
+        break;
+      }
+
+      case 0xD0:
+      case 0xD1:
+      case 0xD2:
+      case 0xD5:
+      case 0xA0:
+      case 0xA3:
+      case 0xA5:
+      case 0xA7:
+      case 0xB8:
+      case 0xCB:
+      case 0xCC:
+      case 0xE0:
+      case 0xE6:
+      case 0xF9: {
+        uint16_t param = r.get_u16();
+        printf("%08zX: .unknown        0x%02hhX, 0x%04hX\n", opcode_offset,
+            opcode, param);
+        break;
+      }
+
+      case 0xAD:
+      case 0xAF:
+      case 0xD8:
       case 0xDD:
       case 0xEF: {
         uint32_t param = r.get_u24();
         printf("%08zX: .unknown        0x%02hhX, 0x%06" PRIX32 "\n",
             opcode_offset, opcode, param);
+        break;
+      }
+
+      case 0xA9:
+      case 0xAA:
+      case 0xDF: {
+        uint32_t param = r.get_u32();
+        printf("%08zX: .unknown        0x%02hhX, 0x%08" PRIX32 "\n",
+            opcode_offset, opcode, param);
+        break;
+      }
+
+      case 0xB1: {
+        uint8_t param1 = r.get_u8();
+        if (param1 == 0x40) {
+          uint16_t param2 = r.get_u16();
+          printf("%08zX: .unknown        0x%02hhX, 0x%02hhX, 0x%04hX\n",
+              opcode_offset, opcode, param1, param2);
+        } else if (param1 == 0x80) {
+          uint32_t param2 = r.get_u32();
+          printf("%08zX: .unknown        0x%02hhX, 0x%02hhX, 0x%08" PRIX32 "\n",
+              opcode_offset, opcode, param1, param2);
+        } else {
+          printf("%08zX: .unknown        0x%02hhX, 0x%02hhX\n",
+              opcode_offset, opcode, param1);
+        }
+        break;
+      }
+
+      case 0xF0: {
+        uint64_t result = 0;
+        uint8_t b = r.get_u8();
+        while (b & 0x80) {
+          result = (result << 7) | (b & 0x7F);
+          b = r.get_u8();
+        }
+        result |= b;
+
+        printf("%08zX: wait            %" PRIu64 "\n", opcode_offset, result);
         break;
       }
 
@@ -481,9 +572,15 @@ public:
       vel_region(&this->key_region->region_for_velocity(vel)), src_ratio(1.0f),
       offset(0), cache(cache) {
 
+    if (!this->vel_region->sound) {
+      throw out_of_range("instrument sound is missing");
+    }
     if (this->vel_region->sound->num_channels != 1) {
       // TODO: this probably wouldn't be that hard to support
-      throw invalid_argument("sampled sound is multi-channel");
+      throw invalid_argument(string_printf(
+          "sampled sound is multi-channel: %s:%" PRIX32,
+          this->vel_region->sound->source_filename.c_str(),
+          this->vel_region->sound->source_offset));
     }
   }
 
@@ -589,16 +686,17 @@ private:
     unordered_set<shared_ptr<Voice>> voices_off;
     vector<uint32_t> call_stack;
 
-    Track(int16_t id, shared_ptr<string> data, size_t start_offset) :
+    Track(int16_t id, shared_ptr<string> data, size_t start_offset, uint32_t bank = -1) :
         id(id), r(data, start_offset), volume(0), pitch_bend(0), panning(0.5f),
-        bank(-1), instrument(-1) {
+        bank(bank), instrument(-1) {
       for (size_t x = 0; x < 8; x++) {
         this->voices[x].reset();
       }
     }
   };
 
-  shared_ptr<string> data;
+  shared_ptr<SequenceProgram> seq;
+  shared_ptr<string> seq_data;
   string output_data;
   unordered_map<int16_t, shared_ptr<Track>> id_to_track;
   multimap<uint64_t, shared_ptr<Track>> next_event_to_track;
@@ -616,16 +714,17 @@ private:
   shared_ptr<SampleCache> cache;
 
 public:
-  explicit Renderer(shared_ptr<string> data, size_t sample_rate,
+  explicit Renderer(shared_ptr<SequenceProgram> seq, size_t sample_rate,
       shared_ptr<const SoundEnvironment> env,
       const unordered_set<int16_t>& mute_tracks,
-      const unordered_set<int16_t>& disable_tracks) : data(data),
-      sample_rate(sample_rate), current_time(0), samples_rendered(0), tempo(0),
-      pulse_rate(0), env(env), mute_tracks(mute_tracks),
-      disable_tracks(disable_tracks), cache(new SampleCache()) {
+      const unordered_set<int16_t>& disable_tracks) : seq(seq),
+      seq_data(new string(seq->data)), sample_rate(sample_rate),
+      current_time(0), samples_rendered(0), tempo(0), pulse_rate(0), env(env),
+      mute_tracks(mute_tracks), disable_tracks(disable_tracks),
+      cache(new SampleCache()) {
     // the default track has a track id of -1; all others are uint8_t
     if (!this->disable_tracks.count(-1)) {
-      shared_ptr<Track> default_track(new Track(-1, data, 0));
+      shared_ptr<Track> default_track(new Track(-1, this->seq_data, 0, this->seq->index));
       id_to_track.emplace(default_track->id, default_track);
       next_event_to_track.emplace(0, default_track);
     }
@@ -639,7 +738,8 @@ public:
     }
 
     // run all opcodes that should execute on the current time step
-    while (current_time == this->next_event_to_track.begin()->first) {
+    while (!this->next_event_to_track.empty() &&
+           (current_time == this->next_event_to_track.begin()->first)) {
       this->execute_opcode(this->next_event_to_track.begin());
     }
 
@@ -714,10 +814,10 @@ public:
     // render the text view. if this is a regular step, render the headers also
     if (debug_flags & DebugFlag::ShowNotesOn) {
       double when = static_cast<double>(this->samples_rendered) / this->sample_rate;
-      fprintf(stderr, "%08" PRIX64 ": %s @ %-7g\n", current_time, notes_table, when);
+      fprintf(stderr, "\r%08" PRIX64 ": %s @ %-7g\n", current_time, notes_table, when);
       fprintf(stderr, "TIMESTEP: C D EF G A BC D EF G A BC D EF G A BC "
           "D EF G A BC D EF G A BC D EF G A BC D EF G A BC D EF G A BC D EF G A"
-          " BC D EF G A BC D EF G @ SECONDS\r");
+          " BC D EF G A BC D EF G @ SECONDS");
     }
 
     // advance to the next time step
@@ -800,7 +900,7 @@ private:
       uint8_t voice = t->r.get_u8() - 1; // between 1 and 8 inclusive
       uint8_t vel = t->r.get_u8();
       if (voice >= 0x08) {
-        throw invalid_argument("voice out of range");
+        return; // throw invalid_argument(string_printf("[%zX] voice out of range: %02hhX", where, voice));
       }
 
       // figure out which sample to use
@@ -897,7 +997,7 @@ private:
               offset, t->r.where() - 5));
         }
         if (!this->disable_tracks.count(track_id)) {
-          shared_ptr<Track> new_track(new Track(track_id, this->data, offset));
+          shared_ptr<Track> new_track(new Track(track_id, this->seq_data, offset, this->seq->index));
           auto emplace_ret = this->id_to_track.emplace(track_id, new_track);
           if (!emplace_ret.second) {
             throw invalid_argument("attempted to start track that already existed");
@@ -924,14 +1024,17 @@ private:
         }
 
         if (cond > 0) {
-          throw invalid_argument(string_printf(
-              "unimplemented condition: 0x%02hhX", cond));
-        }
+          if (debug_flags & DebugFlag::ShowUnimplementedConditions) {
+            fprintf(stderr, "unimplemented condition: 0x%02hX\n", cond);
+          }
 
-        if (is_call) {
-          t->call_stack.emplace_back(t->r.where());
+        // TODO: we should actually check the condition here
+        } else {
+          if (is_call) {
+            t->call_stack.emplace_back(t->r.where());
+          }
+          t->r.go(offset);
         }
-        t->r.go(offset);
         break;
       }
 
@@ -941,28 +1044,24 @@ private:
         int16_t cond = is_conditional ? t->r.get_u8() : -1;
 
         if (cond > 0) {
-          throw invalid_argument(string_printf(
-              "unimplemented condition: 0x%02hhX", cond));
-        }
+          if (debug_flags & DebugFlag::ShowUnimplementedConditions) {
+            fprintf(stderr, "unimplemented condition: 0x%02hX\n", cond);
+          }
 
-        if (t->call_stack.empty()) {
-          throw invalid_argument("return executed with empty call stack");
+        // TODO: we should actually check the condition here
+        } else {
+          if (t->call_stack.empty()) {
+            throw invalid_argument("return executed with empty call stack");
+          }
+          t->r.go(t->call_stack.back());
+          t->call_stack.pop_back();
         }
-        t->r.go(t->call_stack.back());
-        t->call_stack.pop_back();
         break;
       }
 
       case 0xE7: { // sync_gpu
         t->r.get_u16();
         // TODO: what should we do here? anything?
-        break;
-      }
-
-      // TODO: these opcodes probably do important things; don't ignore them
-      case 0xDD:
-      case 0xEF: {
-        t->r.get_u24();
         break;
       }
 
@@ -981,6 +1080,64 @@ private:
         this->next_event_to_track.erase(track_it);
         break;
       }
+
+      // everything below here are unknown opcodes
+
+      case 0xC2:
+      case 0xCF:
+      case 0xDA:
+      case 0xDB:
+      case 0xE2:
+      case 0xE3:
+      case 0xF1:
+      case 0xF4:
+        t->r.get_u8();
+        break;
+
+      case 0xD0:
+      case 0xD1:
+      case 0xD2:
+      case 0xD5:
+      case 0xA0:
+      case 0xA3:
+      case 0xA5:
+      case 0xA7:
+      case 0xB8:
+      case 0xCB:
+      case 0xCC:
+      case 0xE0:
+      case 0xE6:
+      case 0xF9:
+        t->r.get_u16();
+        break;
+
+      case 0xAD:
+      case 0xAF:
+      case 0xD8:
+      case 0xDD:
+      case 0xEF:
+        t->r.get_u24();
+        break;
+
+      case 0xA9:
+      case 0xAA:
+      case 0xDF:
+        t->r.get_u32();
+        break;
+
+      case 0xB1: {
+        uint8_t param1 = t->r.get_u8();
+        if (param1 == 0x40) {
+          t->r.get_u16();
+        } else if (param1 == 0x80) {
+          t->r.get_u32();
+        }
+        break;
+      }
+
+      case 0xF0:
+        while (t->r.get_u8() & 0x80);
+        break;
 
       default:
         throw invalid_argument(string_printf("unknown opcode at offset 0x%zX: 0x%hhX",
@@ -1023,6 +1180,7 @@ int main(int argc, char** argv) {
   float time_limit = 60.0f;
   size_t sample_rate = 192000;
   bool play = false;
+  int32_t default_bank = -1;
   for (int x = 1; x < argc; x++) {
     if (!strncmp(argv[x], "--disable-track=", 16)) {
       disable_tracks.emplace(atoi(&argv[x][16]));
@@ -1042,6 +1200,8 @@ int main(int argc, char** argv) {
       debug_flags = atoi(&argv[x][14]);
     } else if (!strncmp(argv[x], "--linear", 8)) {
       resample_method = SRC_LINEAR;
+    } else if (!strncmp(argv[x], "--default-bank=", 15)) {
+      default_bank = atoi(&argv[x][15]);
     } else if (!strcmp(argv[x], "--play")) {
       play = true;
     } else if (!filename) {
@@ -1056,26 +1216,30 @@ int main(int argc, char** argv) {
   }
 
   shared_ptr<const SoundEnvironment> env(aaf_directory ?
-      new SoundEnvironment(aaf_decode_directory(aaf_directory)) : NULL);
+      new SoundEnvironment(load_sound_environment(aaf_directory)) : NULL);
 
   // try to get the sequence from the env if it's there
-  shared_ptr<string> data;
+  shared_ptr<SequenceProgram> seq;
   if (env.get()) {
     try {
-      data.reset(new string(env->sequence_programs.at(filename)));
+      seq.reset(new SequenceProgram(env->sequence_programs.at(filename)));
     } catch (const out_of_range&) { }
   }
-  if (!data.get()) {
-    data.reset(new string(load_file(filename)));
+  if (!seq.get()) {
+    seq.reset(new SequenceProgram(default_bank, load_file(filename)));
+  }
+
+  if (default_bank >= 0) {
+    seq->index = default_bank;
   }
 
   if (output_filename) {
-    Renderer r(data, sample_rate, env, mute_tracks, disable_tracks);
+    Renderer r(seq, sample_rate, env, mute_tracks, disable_tracks);
     auto samples = r.render_until_seconds(time_limit);
     save_wav(output_filename, samples, sample_rate, 2);
 
   } else if (play) {
-    Renderer r(data, sample_rate, env, mute_tracks, disable_tracks);
+    Renderer r(seq, sample_rate, env, mute_tracks, disable_tracks);
 
     init_al();
     al_stream stream(sample_rate, AL_FORMAT_STEREO16, 32);
@@ -1091,8 +1255,9 @@ int main(int argc, char** argv) {
     exit_al();
 
   } else {
-    StringReader r(data);
-    disassemble_stream(r);
+    shared_ptr<string> seq_data(new string(seq->data));
+    StringReader r(seq_data);
+    disassemble_stream(r, seq->index);
   }
 
   return 0;
