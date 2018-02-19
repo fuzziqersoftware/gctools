@@ -347,19 +347,24 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
         uint8_t param = r.get_u8();
         uint16_t value = (opcode & 0x08) ? r.get_u16() : r.get_u8();
 
+        // guess: 07 as pitch bend semitones seems to make sense - some seqs set
+        // it to 0x0C (one octave) immediately before/after a pitch bend opcode
+        static const unordered_map<uint8_t, string> param_names({
+          {0x07, "pitch_bend_semitones"},
+          {0x20, "bank"},
+          {0x21, "insprog"},
+        });
+        string param_name;
+        try {
+          param_name = param_names.at(param);
+        } catch (const out_of_range&) {
+          param_name=string_printf("[%02hhX]", param);
+        }
+
         string value_str = (opcode & 0x08) ? string_printf("0x%04hX", value) :
             string_printf("0x%02hhX", static_cast<uint8_t>(value));
-
-        if (param == 0x20) {
-          disassembly = string_printf("set_param       bank, value=%s",
-              value_str.c_str());
-        } else if (param == 0x21) {
-          disassembly = string_printf("set_param       insprog, value=%s",
-              value_str.c_str());
-        } else {
-          disassembly = string_printf("set_param       param=0x%02hhX, value=%s",
-              param, value_str.c_str());
-        }
+        disassembly = string_printf("set_param       %s, %s",
+            param_name.c_str(), value_str.c_str());
         break;
       }
 
@@ -618,7 +623,7 @@ public:
       note_off_decay_remaining(-1) { }
 
   virtual vector<float> render(size_t count, float volume, float pitch_bend,
-      float panning) = 0;
+      float pitch_bend_semitone_range, float panning) = 0;
 
   void off() {
     // TODO: for now we use a constant release time of 1/5 second; we probably
@@ -654,7 +659,7 @@ public:
       Voice(sample_rate, note, vel), offset(0) { }
 
   virtual vector<float> render(size_t count, float volume, float pitch_bend,
-      float panning) {
+      float pitch_bend_semitone_range, float panning) {
     // TODO: implement pitch bend somehow
     vector<float> data(count * 2, 0.0f);
 
@@ -697,7 +702,8 @@ public:
     }
   }
 
-  const vector<float>& get_samples(float pitch_bend) {
+  const vector<float>& get_samples(float pitch_bend,
+      float pitch_bend_semitone_range) {
     // stretch it out by the sample rate difference
     float sample_rate_factor = static_cast<float>(sample_rate) /
         static_cast<float>(this->vel_region->sound->sample_rate);
@@ -711,8 +717,9 @@ public:
         frequency_for_note(this->note);
 
     {
-      float new_src_ratio = note_factor * sample_rate_factor * pow(4, -pitch_bend) /
-          this->vel_region->freq_mult;
+      float pitch_bend_factor = pow(2, (pitch_bend * pitch_bend_semitone_range) / 12.0);
+      float new_src_ratio = note_factor * sample_rate_factor /
+          (this->vel_region->freq_mult * pitch_bend_factor);
       this->loop_start_offset = this->vel_region->sound->loop_start * new_src_ratio;
       this->loop_end_offset = this->vel_region->sound->loop_end * new_src_ratio;
       this->offset = this->offset * (new_src_ratio / this->src_ratio);
@@ -747,10 +754,10 @@ public:
   }
 
   virtual vector<float> render(size_t count, float volume, float pitch_bend,
-      float panning) {
+      float pitch_bend_semitone_range, float panning) {
     vector<float> data(count * 2, 0.0f);
 
-    const auto& samples = this->get_samples(pitch_bend);
+    const auto& samples = this->get_samples(pitch_bend, pitch_bend_semitone_range);
     float vel_factor = static_cast<float>(this->vel) / 0x7F;
     for (size_t x = 0; (x < count) && (this->offset < samples.size()); x++) {
       float off_factor = this->advance_note_off_factor();
@@ -789,11 +796,24 @@ private:
     StringReader r;
 
     float volume;
+    float volume_target;
+    uint16_t volume_target_frames;
+
     float pitch_bend;
+    float pitch_bend_target;
+    uint16_t pitch_bend_target_frames;
+
     float reverb;
+    float reverb_target;
+    uint16_t reverb_target_frames;
+
     float panning;
+    float panning_target;
+    uint16_t panning_target_frames;
+
     int32_t bank; // technically uint16, but uninitialized as -1
     int32_t instrument; // technically uint16, but uninitialized as -1
+    float pitch_bend_semitone_range;
 
     shared_ptr<Voice> voices[8];
     unordered_set<shared_ptr<Voice>> voices_off;
@@ -803,9 +823,28 @@ private:
 
     Track(int16_t id, shared_ptr<string> data, size_t start_offset, uint32_t bank = -1) :
         id(id), r(data, start_offset), volume(0), pitch_bend(0), panning(0.5f),
-        bank(bank), instrument(-1) {
+        bank(bank), instrument(-1), pitch_bend_semitone_range(24.0) {
       for (size_t x = 0; x < 8; x++) {
         this->voices[x].reset();
+      }
+    }
+
+    void attenuate_perf() {
+      if (this->volume_target_frames) {
+        this->volume += (this->volume_target - this->volume) / this->volume_target_frames;
+        this->volume_target_frames--;
+      }
+      if (this->pitch_bend_target_frames) {
+        this->pitch_bend += (this->pitch_bend_target - this->pitch_bend) / this->pitch_bend_target_frames;
+        this->pitch_bend_target_frames--;
+      }
+      if (this->reverb_target_frames) {
+        this->reverb += (this->reverb_target - this->reverb) / this->reverb_target_frames;
+        this->reverb_target_frames--;
+      }
+      if (this->panning_target_frames) {
+        this->panning += (this->panning_target - this->panning) / this->panning_target_frames;
+        this->panning_target_frames--;
       }
     }
   };
@@ -878,18 +917,21 @@ public:
     memset(notes_table, ' ', 0x80);
     notes_table[0x80] = 0;
     for (const auto& track_it : this->id_to_track) {
-      unordered_set<shared_ptr<Voice>> all_voices = track_it.second->voices_off;
+      shared_ptr<Track> t = track_it.second;
+
+      // get all voices, including those that are fading
+      unordered_set<shared_ptr<Voice>> all_voices = t->voices_off;
       for (size_t x = 0; x < 8; x++) {
-        if (!track_it.second->voices[x].get()) {
+        if (!t->voices[x].get()) {
           continue;
         }
-        all_voices.insert(track_it.second->voices[x]);
+        all_voices.insert(t->voices[x]);
       }
 
+      // render all the voices
       for (auto v : all_voices) {
         vector<float> voice_samples = v->render(samples_per_pulse,
-            track_it.second->volume, track_it.second->pitch_bend,
-            track_it.second->panning);
+            t->volume, t->pitch_bend, t->pitch_bend_semitone_range, t->panning);
         if (voice_samples.size() != step_samples.size()) {
           throw logic_error(string_printf(
               "voice produced incorrect sample count (returned %zu samples, expected %zu samples)",
@@ -901,11 +943,10 @@ public:
           }
         }
 
-        // only render the note if it's on
+        // only draw the note in the text view if it's on
         if (v->note_off_decay_remaining < 0) {
           int8_t note = v->note;
-          char track_char = (track_it.second->id < 10) ?
-              ('0' + track_it.second->id) : ('A' + track_it.second->id - 10);
+          char track_char = (t->id < 10) ? ('0' + t->id) : ('A' + t->id - 10);
           if (notes_table[note] == track_char) {
             continue;
           }
@@ -917,16 +958,20 @@ public:
         }
       }
 
-      for (auto it = track_it.second->voices_off.begin(); it != track_it.second->voices_off.end();) {
+      // attenuate off voices and delete those that are fully off
+      for (auto it = t->voices_off.begin(); it != t->voices_off.end();) {
         if ((*it)->off_complete()) {
-          it = track_it.second->voices_off.erase(it);
+          it = t->voices_off.erase(it);
         } else {
           it++;
         }
       }
+
+      // attenuate the perf parameters
+      t->attenuate_perf();
     }
 
-    // render the text view. if this is a regular step, render the headers also
+    // render the text view
     if (debug_flags & DebugFlag::ShowNotesOn) {
       double when = static_cast<double>(this->samples_rendered) / this->sample_rate;
       fprintf(stderr, "\r%08" PRIX64 ": %s @ %-7g\n", current_time, notes_table, when);
@@ -974,21 +1019,44 @@ private:
 
   void execute_set_perf(shared_ptr<Track> t, uint8_t type, float value,
       uint16_t duration) {
-    if (type == 0x00) {
-      t->volume = value;
-    } else if (type == 0x01) {
-      t->pitch_bend = value;
-      if (debug_flags & DebugFlag::ShowUnknownPerfOptions) {
-        fprintf(stderr, "pitch bend modified on track %hd: %g\n", t->id, value);
+    if (duration) {
+      if (type == 0x00) {
+        t->volume_target = value;
+        t->volume_target_frames = duration;
+      } else if (type == 0x01) {
+        t->pitch_bend_target = value;
+        t->pitch_bend_target_frames = duration;
+      } else if (type == 0x02) {
+        t->reverb_target = value;
+        t->reverb_target_frames = duration;
+      } else if (type == 0x03) {
+        t->panning_target = value;
+        t->panning_target_frames = duration;
+      } else {
+        if (debug_flags & DebugFlag::ShowUnknownPerfOptions) {
+          fprintf(stderr, "unknown perf type option: %02hhX (value=%g)\n", type,
+              value);
+        }
       }
-    } else if (type == 0x02) {
-      t->reverb = value;
-    } else if (type == 0x03) {
-      t->panning = value;
+
     } else {
-      if (debug_flags & DebugFlag::ShowUnknownPerfOptions) {
-        fprintf(stderr, "unknown perf type option: %02hhX (value=%g)\n", type,
-            value);
+      if (type == 0x00) {
+        t->volume = value;
+        t->volume_target_frames = 0;
+      } else if (type == 0x01) {
+        t->pitch_bend = value;
+        t->pitch_bend_target_frames = 0;
+      } else if (type == 0x02) {
+        t->reverb = value;
+        t->reverb_target_frames = 0;
+      } else if (type == 0x03) {
+        t->panning = value;
+        t->panning_target_frames = 0;
+      } else {
+        if (debug_flags & DebugFlag::ShowUnknownPerfOptions) {
+          fprintf(stderr, "unknown perf type option: %02hhX (value=%g)\n", type,
+              value);
+        }
       }
     }
   }
@@ -998,6 +1066,8 @@ private:
       t->bank = value;
     } else if (param == 0x21) {
       t->instrument = value;
+    } else if (param == 0x07) {
+      t->pitch_bend_semitone_range = static_cast<float>(value);
     } else {
       if (debug_flags & DebugFlag::ShowUnknownParamOptions) {
         fprintf(stderr, "unknown param type option: %02hhX (value=%hu)\n",
@@ -1174,7 +1244,7 @@ private:
         break;
       }
 
-      case 0xE7: { // sync_gpu
+      case 0xE7: { // sync_gpu; note: arookas writes this as "track init"
         t->r.get_u16();
         // TODO: what should we do here? anything?
         break;
