@@ -1071,9 +1071,10 @@ private:
     } else if (param == 0x21) {
       t->instrument = value;
     } else if (param == 0x07) {
-      // TODO: this is a guess... a range of 48.0 sounds correct for most tracks
-      // in Super Mario Sunshine, and they all set this to 12. so I added * 4.0;
-      // we'll see if that holds up for other games
+      // it looks like bms uses the same range for pitch bending as midi, which
+      // is [-0x2000, +0x2000), but we convert [-0x8000, +0x7FFF) into
+      // [-1.0, +1.0) linearly. so to correct for this, multiply by 4 here
+      // TODO: verify if this is actually correct
       t->pitch_bend_semitone_range = static_cast<float>(value) * 4.0;
     } else {
       if (debug_flags & DebugFlag::ShowUnknownParamOptions) {
