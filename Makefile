@@ -1,6 +1,6 @@
 CFLAGS=-g -Wall -Werror
-CXXFLAGS=-g -Wall -Werror -std=c++14
-EXECUTABLES=afsdump gcmdump gsldump gvmdump pae2gvm
+CXXFLAGS=-g -Wall -Werror -I/opt/local/include -L/opt/local/lib -std=c++14
+EXECUTABLES=afsdump gcmdump gsldump gvmdump rcfdump pae2gvm
 
 all: $(EXECUTABLES) prs sms
 
@@ -15,6 +15,9 @@ gsldump: gsldump.c
 
 gvmdump: gvmdump.c
 	gcc $(CFLAGS) -o gvmdump gvmdump.c
+
+rcfdump: rcfdump.cc
+	g++ $(CXXFLAGS) -o rcfdump rcfdump.cc -lphosg
 
 pae2gvm: pae2gvm.c
 	gcc $(CFLAGS) -o pae2gvm pae2gvm.c prs/prs.c prs/data_log.c

@@ -5,6 +5,7 @@ gctools is a set of tools for reading and translating video game files. These to
 - GCM and TGC GameCube disc images (gcmdump)
 - GSL files from Phantasy Star Online (gsldump)
 - GVM files from Phantasy Star Online (gvmdump)
+- RCF files from The Simpsons: Hit and Run (rcfdump)
 - PAE files from Phantasy Star Online Episode III (pae2gvm)
 - PRS files from Phantasy Star Online (prs)
 - Yay0 and Yaz0 files from various Nintendo games (prs)
@@ -30,6 +31,9 @@ gctools is a set of tools for reading and translating video game files. These to
 
 **gvmdump** - extracts all files in a GVM archive to the current directory. Note: not thoroughly tested; may fail for some archives.
 - Example: `mkdir out && cd out && gvmdump ../archive.gvm`
+
+**rcfdump** - extracts all files in a RCF archive to the current directory.
+- Example: `mkdir out && cd out && rcfdump ../archive.rcf`
 
 **pae2gvm** - extracts the embedded GVM from a PAE file. The decompressed PAE data is saved as <filename>.dec; the output GVM is saved as <filename>.gvm.
 - Example: `pae2gvm file.pae`
