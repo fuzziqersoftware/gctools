@@ -1422,7 +1422,25 @@ int main(int argc, char** argv) {
     } catch (const out_of_range&) { }
   }
   if (!seq.get()) {
-    seq.reset(new SequenceProgram(default_bank, load_file(filename)));
+    try {
+      seq.reset(new SequenceProgram(default_bank, load_file(filename)));
+    } catch (const cannot_open_file&) {
+      fprintf(stderr, "sequence does not exist in environment, nor on disk: %s\n",
+          filename);
+      fprintf(stderr, "there are %zu sequences in the environment:\n",
+          env->sequence_programs.size());
+
+      vector<string> sequence_names;
+      for (const auto& it : env->sequence_programs) {
+        sequence_names.emplace_back(it.first);
+      }
+      sort(sequence_names.begin(), sequence_names.end());
+
+      for (const auto& it : sequence_names) {
+        fprintf(stderr, "  %s\n", it.c_str());
+      }
+      return 2;
+    }
   }
 
   if (default_bank >= 0) {
