@@ -1,6 +1,7 @@
 #include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #include <samplerate.h>
 
@@ -25,8 +26,13 @@ enum DebugFlag {
   ShowUnknownPerfOptions      = 0x0000000000000004,
   ShowUnknownParamOptions     = 0x0000000000000008,
   ShowUnimplementedConditions = 0x0000000000000010,
+  ShowShortStatus             = 0x0000000000000020,
 
-  Default                     = 0x0000000000000002,
+  ColorField                  = 0x0000000000000040,
+  ColorStatus                 = 0x0000000000000080,
+  AllColorOptions             = 0x00000000000000C0,
+
+  Default                     = 0x0000000000000082,
 };
 
 uint64_t debug_flags = DebugFlag::Default;
@@ -60,74 +66,6 @@ vector<float> resample(const vector<float>& input_samples, size_t num_channels,
   output_samples.resize(data.output_frames_gen * num_channels);
   return output_samples;
 }
-
-
-
-class StringReader {
-public:
-  explicit StringReader(shared_ptr<string> data, size_t offset = 0) :
-      data(data), offset(offset) { }
-  ~StringReader() = default;
-
-  size_t where() const {
-    return this->offset;
-  }
-
-  size_t size() const {
-    return this->data->size();
-  }
-
-  void go(size_t offset) {
-    this->offset = offset;
-  }
-
-  bool eof() const {
-    return (this->offset >= this->data->size());
-  }
-
-  uint8_t get_u8() {
-    return static_cast<uint8_t>((*this->data)[this->offset++]);
-  }
-
-  int8_t get_s8() {
-    return static_cast<int8_t>((*this->data)[this->offset++]);
-  };
-
-  uint16_t get_u16() {
-    uint16_t ret = bswap16(*reinterpret_cast<const uint16_t*>(
-        this->data->data() + this->offset));
-    this->offset += 2;
-    return ret;
-  };
-
-  int16_t get_s16() {
-    int16_t ret = bswap16(*reinterpret_cast<const int16_t*>(
-        this->data->data() + this->offset));
-    this->offset += 2;
-    return ret;
-  };
-
-  uint32_t get_u24() {
-    uint32_t high = this->get_u8();
-    uint32_t low = this->get_u16();
-    return low | (high << 16);
-  };
-
-  uint32_t get_u32() {
-    uint32_t ret = bswap32(*reinterpret_cast<const uint32_t*>(
-        this->data->data() + this->offset));
-    this->offset += 4;
-    return ret;
-  };
-
-  string pget(size_t offset, size_t size) {
-    return this->data->substr(offset, size);
-  }
-
-private:
-  shared_ptr<string> data;
-  size_t offset;
-};
 
 
 
@@ -268,7 +206,7 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
         break;
       }
       case 0x88: {
-        uint16_t wait_time = r.get_u16();
+        uint16_t wait_time = r.get_u16r();
         disassembly = string_printf("wait            %hu", wait_time);
         break;
       }
@@ -304,12 +242,12 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
         } else if (data_type == 8) {
           value = r.get_s8();
         } else if (data_type == 12) {
-          value = r.get_s16();
+          value = r.get_s16r();
         }
         if (duration_flags == 2) {
           duration = r.get_u8();
         } else if (duration == 3) {
-          duration = r.get_u16();
+          duration = r.get_u16r();
         }
 
         static const unordered_map<uint8_t, string> param_names({
@@ -345,7 +283,7 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
       case 0xA4:
       case 0xAC: {
         uint8_t param = r.get_u8();
-        uint16_t value = (opcode & 0x08) ? r.get_u16() : r.get_u8();
+        uint16_t value = (opcode & 0x08) ? r.get_u16r() : r.get_u8();
 
         // guess: 07 as pitch bend semitones seems to make sense - some seqs set
         // it to 0x0C (one octave) immediately before/after a pitch bend opcode
@@ -370,7 +308,7 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
 
       case 0xC1: {
         uint8_t track_id = r.get_u8();
-        uint32_t offset = r.get_u24();
+        uint32_t offset = r.get_u24r();
         disassembly = string_printf("start_track     %hhu, offset=0x%" PRIX32,
             track_id, offset);
         track_start_labels.emplace(offset, string_printf("track_%02hhX_start",
@@ -386,7 +324,7 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
         string conditional_str = (opcode & 1) ? "" :
             string_printf("cond=0x%02hhX, ", r.get_u8());
 
-        uint32_t offset = r.get_u24();
+        uint32_t offset = r.get_u24r();
         disassembly = string_printf("%s            %soffset=0x%" PRIX32,
             opcode_name, conditional_str.c_str(), offset);
         break;
@@ -403,19 +341,19 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
       }
 
       case 0xE7: {
-        uint16_t arg = r.get_u16();
+        uint16_t arg = r.get_u16r();
         disassembly = string_printf("sync_gpu        0x%04hX", arg);
         break;
       }
 
       case 0xFD: {
-        uint16_t pulse_rate = r.get_u16();
+        uint16_t pulse_rate = r.get_u16r();
         disassembly = string_printf("set_pulse_rate  %hu", pulse_rate);
         break;
       }
 
       case 0xFE: {
-        uint16_t tempo = r.get_u16();
+        uint16_t tempo = r.get_u16r();
         uint64_t usec_pqn = 60000000 / tempo;
         disassembly = string_printf("set_tempo       %hu /* usecs per quarter note = %"
             PRIu64 " */", tempo, usec_pqn);
@@ -451,16 +389,16 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
       }
 
       case 0xD2:
-        disassembly = string_printf(".check_port_in 0x%hX", r.get_u16());
+        disassembly = string_printf(".check_port_in 0x%hX", r.get_u16r());
         break;
 
       case 0xD3:
-        disassembly = string_printf(".check_port_ex 0x%hX", r.get_u16());
+        disassembly = string_printf(".check_port_ex 0x%hX", r.get_u16r());
         break;
 
       case 0xD8: {
         uint8_t reg = r.get_u8();
-        int16_t val = r.get_s16();
+        int16_t val = r.get_s16r();
         disassembly = string_printf("mov            r%hhu, 0x%hX", reg, val);
         break;
       }
@@ -483,7 +421,7 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
       case 0xDA: {
         uint8_t op = r.get_u8();
         uint8_t dst_reg = r.get_u8();
-        int16_t val = r.get_s16();
+        int16_t val = r.get_s16r();
 
         const char* opcode_name = ".unknown";
         try {
@@ -520,7 +458,7 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
       case 0xE0:
       case 0xE6:
       case 0xF9: {
-        uint16_t param = r.get_u16();
+        uint16_t param = r.get_u16r();
         disassembly = string_printf(".unknown        0x%02hhX, 0x%04hX",
             opcode, param);
         break;
@@ -530,7 +468,7 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
       case 0xAF:
       case 0xDD:
       case 0xEF: {
-        uint32_t param = r.get_u24();
+        uint32_t param = r.get_u24r();
         disassembly = string_printf(".unknown        0x%02hhX, 0x%06" PRIX32,
             opcode, param);
         break;
@@ -539,7 +477,7 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
       case 0xA9:
       case 0xAA:
       case 0xDF: {
-        uint32_t param = r.get_u32();
+        uint32_t param = r.get_u32r();
         disassembly = string_printf(".unknown        0x%02hhX, 0x%08" PRIX32,
             opcode, param);
         break;
@@ -548,11 +486,11 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
       case 0xB1: {
         uint8_t param1 = r.get_u8();
         if (param1 == 0x40) {
-          uint16_t param2 = r.get_u16();
+          uint16_t param2 = r.get_u16r();
           disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX, 0x%04hX",
               opcode, param1, param2);
         } else if (param1 == 0x80) {
-          uint32_t param2 = r.get_u32();
+          uint32_t param2 = r.get_u32r();
           disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX, 0x%08" PRIX32,
               opcode, param1, param2);
         } else {
@@ -890,7 +828,7 @@ public:
 
   ~Renderer() = default;
 
-  vector<float> render_time_step() {
+  vector<float> render_time_step(size_t queued_buffer_count = 0, size_t buffer_count = 0) {
     if (this->next_event_to_track.empty()) {
       return vector<float>();
     }
@@ -975,13 +913,68 @@ public:
       t->attenuate_perf();
     }
 
+    static const string bg_red = format_color_escape(TerminalFormat::BG_RED, TerminalFormat::END);
+    static const string bg_green = format_color_escape(TerminalFormat::BG_GREEN, TerminalFormat::END);
+    static const string bg_yellow = format_color_escape(TerminalFormat::BG_YELLOW, TerminalFormat::END);
+    static const string bg_blue = format_color_escape(TerminalFormat::BG_BLUE, TerminalFormat::END);
+    static const string bg_magenta = format_color_escape(TerminalFormat::BG_MAGENTA, TerminalFormat::END);
+    static const string bg_cyan = format_color_escape(TerminalFormat::BG_CYAN, TerminalFormat::END);
+    static const string green = format_color_escape(TerminalFormat::FG_GREEN, TerminalFormat::BOLD, TerminalFormat::END);
+    static const string yellow = format_color_escape(TerminalFormat::FG_YELLOW, TerminalFormat::BOLD, TerminalFormat::END);
+    static const string red = format_color_escape(TerminalFormat::FG_RED, TerminalFormat::BOLD, TerminalFormat::END);
+    static const string white = format_color_escape(TerminalFormat::NORMAL, TerminalFormat::END);
+
     // render the text view
     if (debug_flags & DebugFlag::ShowNotesOn) {
       double when = static_cast<double>(this->samples_rendered) / this->sample_rate;
-      fprintf(stderr, "\r%08" PRIX64 ": %s @ %-7g\n", current_time, notes_table, when);
-      fprintf(stderr, "TIMESTEP: C D EF G A BC D EF G A BC D EF G A BC "
-          "D EF G A BC D EF G A BC D EF G A BC D EF G A BC D EF G A BC D EF G A"
-          " BC D EF G A BC D EF G @ SECONDS");
+
+      const string* buffers_color;
+      if (queued_buffer_count > (2 * buffer_count) / 3) {
+        buffers_color = &green;
+      } else if (queued_buffer_count > buffer_count / 3) {
+        buffers_color = &yellow;
+      } else {
+        buffers_color = &red;
+      }
+
+      bool short_status = debug_flags & DebugFlag::ShowShortStatus;
+
+      if ((debug_flags & DebugFlag::ColorField) || (short_status && (debug_flags & DebugFlag::ColorStatus))) {
+        fprintf(stderr, "\r%08" PRIX64 ": %s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.8s%s @ %-7g + %s%zu/%zu%s%c",
+            current_time,
+            bg_magenta.c_str(), &notes_table[0], bg_red.c_str(), &notes_table[12],
+            bg_yellow.c_str(), &notes_table[24], bg_green.c_str(), &notes_table[36],
+            bg_cyan.c_str(), &notes_table[48], bg_blue.c_str(), &notes_table[60],
+            bg_magenta.c_str(), &notes_table[72], bg_red.c_str(), &notes_table[84],
+            bg_yellow.c_str(), &notes_table[96], bg_green.c_str(), &notes_table[108],
+            bg_cyan.c_str(), &notes_table[120], white.c_str(), when,
+            buffers_color->c_str(), queued_buffer_count, buffer_count, white.c_str(),
+            short_status ? ' ' : '\n');
+      } else if (debug_flags & DebugFlag::ColorStatus) {
+        fprintf(stderr, "\r%08" PRIX64 ": %s @ %-7g + %s%zu/%zu%s%c", current_time,
+            notes_table, when, buffers_color->c_str(), queued_buffer_count,
+            buffer_count, white.c_str(), short_status ? ' ' : '\n');
+      } else {
+        fprintf(stderr, "\r%08" PRIX64 ": %s @ %-7g + %zu/%zu%c", current_time,
+            notes_table, when, queued_buffer_count, buffer_count, short_status ? ' ' : '\n');
+      }
+
+      if (!short_status) {
+        if (debug_flags & DebugFlag::ColorStatus) {
+          fprintf(stderr, "TIMESTEP: %sC D EF G A B%sC D EF G A B%sC D EF G A B%sC "
+              "D EF G A B%sC D EF G A B%sC D EF G A B%sC D EF G A B%sC D EF G A B%s"
+              "C D EF G A B%sC D EF G A B%sC D EF G%s @ SECONDS + %sBUF%s",
+              bg_magenta.c_str(), bg_red.c_str(), bg_yellow.c_str(),
+              bg_green.c_str(), bg_cyan.c_str(), bg_blue.c_str(),
+              bg_magenta.c_str(), bg_red.c_str(), bg_yellow.c_str(),
+              bg_green.c_str(), bg_cyan.c_str(), white.c_str(),
+              buffers_color->c_str(), white.c_str());
+        } else {
+          fprintf(stderr, "TIMESTEP: C D EF G A BC D EF G A BC D EF G A BC D EF G"
+              " A BC D EF G A BC D EF G A BC D EF G A BC D EF G A BC D EF G A BC "
+              "D EF G A BC D EF G @ SECONDS + BUF");
+        }
+      }
     }
 
     // advance to the next time step
@@ -1118,7 +1111,7 @@ private:
     switch (opcode) {
       case 0x80:
       case 0x88: {
-        uint16_t wait_time = (opcode & 0x08) ? t->r.get_u16() : t->r.get_u8();
+        uint16_t wait_time = (opcode & 0x08) ? t->r.get_u16r() : t->r.get_u8();
         uint64_t reactivation_time = this->current_time + wait_time;
         this->next_event_to_track.erase(track_it);
         this->next_event_to_track.emplace(reactivation_time, t);
@@ -1161,12 +1154,12 @@ private:
         } else if (data_type == 8) {
           value = static_cast<float>(t->r.get_s8()) / 0x7F;
         } else if (data_type == 12) {
-          value = static_cast<float>(t->r.get_s16()) / 0x7FFF;
+          value = static_cast<float>(t->r.get_s16r()) / 0x7FFF;
         }
         if (duration_flags == 2) {
           duration = t->r.get_u8();
         } else if (duration == 3) {
-          duration = t->r.get_u16();
+          duration = t->r.get_u16r();
         }
 
         this->execute_set_perf(t, type, value, duration);
@@ -1176,14 +1169,14 @@ private:
       case 0xA4:
       case 0xAC: {
         uint8_t param = t->r.get_u8();
-        uint16_t value = (opcode & 0x08) ? t->r.get_u16() : t->r.get_u8();
+        uint16_t value = (opcode & 0x08) ? t->r.get_u16r() : t->r.get_u8();
         this->execute_set_param(t, param, value);
         break;
       }
 
       case 0xC1: {
         uint8_t track_id = t->r.get_u8();
-        uint32_t offset = t->r.get_u24();
+        uint32_t offset = t->r.get_u24r();
         if (offset >= t->r.size()) {
           throw invalid_argument(string_printf(
               "cannot start track at pc=0x%" PRIX32 " (from pc=0x%zX)",
@@ -1208,7 +1201,7 @@ private:
         bool is_conditional = !(opcode & 1);
 
         int16_t cond = is_conditional ? t->r.get_u8() : -1;
-        uint32_t offset = t->r.get_u24();
+        uint32_t offset = t->r.get_u24r();
 
         if (offset >= t->r.size()) {
           throw invalid_argument(string_printf(
@@ -1253,18 +1246,18 @@ private:
       }
 
       case 0xE7: { // sync_gpu; note: arookas writes this as "track init"
-        t->r.get_u16();
+        t->r.get_u16r();
         // TODO: what should we do here? anything?
         break;
       }
 
       case 0xFD: {
-        this->pulse_rate = t->r.get_u16();
+        this->pulse_rate = t->r.get_u16r();
         break;
       }
 
       case 0xFE: {
-        this->tempo = t->r.get_u16();
+        this->tempo = t->r.get_u16r();
         break;
       }
 
@@ -1301,7 +1294,7 @@ private:
       case 0xE0:
       case 0xE6:
       case 0xF9:
-        t->r.get_u16();
+        t->r.get_u16r();
         break;
 
       case 0xAD:
@@ -1309,21 +1302,21 @@ private:
       case 0xD8:
       case 0xDD:
       case 0xEF:
-        t->r.get_u24();
+        t->r.get_u24r();
         break;
 
       case 0xA9:
       case 0xAA:
       case 0xDF:
-        t->r.get_u32();
+        t->r.get_u32r();
         break;
 
       case 0xB1: {
         uint8_t param1 = t->r.get_u8();
         if (param1 == 0x40) {
-          t->r.get_u16();
+          t->r.get_u16r();
         } else if (param1 == 0x80) {
-          t->r.get_u32();
+          t->r.get_u32r();
         }
         break;
       }
@@ -1365,6 +1358,11 @@ options:\n\
 
 int main(int argc, char** argv) {
 
+  // default to no color if stderr isn't a tty
+  if (!isatty(fileno(stderr))) {
+    debug_flags &= ~DebugFlag::AllColorOptions;
+  }
+
   const char* filename = NULL;
   const char* output_filename = NULL;
   const char* aaf_directory = NULL;
@@ -1375,6 +1373,7 @@ int main(int argc, char** argv) {
   size_t sample_rate = 192000;
   bool play = false;
   int32_t default_bank = -1;
+  size_t num_buffers = 32;
   for (int x = 1; x < argc; x++) {
     if (!strncmp(argv[x], "--disable-track=", 16)) {
       disable_tracks.emplace(atoi(&argv[x][16]));
@@ -1390,16 +1389,28 @@ int main(int argc, char** argv) {
       aaf_directory = &argv[x][21];
     } else if (!strncmp(argv[x], "--output-filename=", 18)) {
       output_filename = &argv[x][18];
+
     } else if (!strcmp(argv[x], "--verbose")) {
       debug_flags = 0xFFFFFFFFFFFFFFFF;
     } else if (!strncmp(argv[x], "--debug-flags=", 14)) {
       debug_flags = atoi(&argv[x][14]);
+    } else if (!strcmp(argv[x], "--color-field")) {
+      debug_flags |= DebugFlag::ColorField;
+    } else if (!strcmp(argv[x], "--color-status")) {
+      debug_flags |= DebugFlag::ColorField;
+    } else if (!strcmp(argv[x], "--no-color")) {
+      debug_flags &= ~DebugFlag::AllColorOptions;
+    } else if (!strcmp(argv[x], "--short-status")) {
+      debug_flags |= DebugFlag::ShowShortStatus;
+
     } else if (!strncmp(argv[x], "--linear", 8)) {
       resample_method = SRC_LINEAR;
     } else if (!strncmp(argv[x], "--default-bank=", 15)) {
       default_bank = atoi(&argv[x][15]);
     } else if (!strcmp(argv[x], "--play")) {
       play = true;
+    } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
+      num_buffers = atoi(&argv[x][15]);
     } else if (!filename) {
       filename = argv[x];
     } else {
@@ -1465,9 +1476,10 @@ int main(int argc, char** argv) {
     }
 
     init_al();
-    al_stream stream(sample_rate, AL_FORMAT_STEREO16, 32);
+    al_stream stream(sample_rate, AL_FORMAT_STEREO16, num_buffers);
     for (;;) {
-      auto step_samples = r.render_time_step();
+      stream.check_buffers();
+      auto step_samples = r.render_time_step(stream.queued_buffer_count(), stream.buffer_count());
       if (step_samples.empty()) {
         break;
       }
