@@ -32,7 +32,7 @@ enum DebugFlag {
   ColorStatus                 = 0x0000000000000080,
   AllColorOptions             = 0x00000000000000C0,
 
-  Default                     = 0x0000000000000082,
+  Default                     = 0x00000000000000C2,
 };
 
 uint64_t debug_flags = DebugFlag::Default;
@@ -913,12 +913,12 @@ public:
       t->attenuate_perf();
     }
 
-    static const string bg_red = format_color_escape(TerminalFormat::BG_RED, TerminalFormat::END);
-    static const string bg_green = format_color_escape(TerminalFormat::BG_GREEN, TerminalFormat::END);
-    static const string bg_yellow = format_color_escape(TerminalFormat::BG_YELLOW, TerminalFormat::END);
-    static const string bg_blue = format_color_escape(TerminalFormat::BG_BLUE, TerminalFormat::END);
-    static const string bg_magenta = format_color_escape(TerminalFormat::BG_MAGENTA, TerminalFormat::END);
-    static const string bg_cyan = format_color_escape(TerminalFormat::BG_CYAN, TerminalFormat::END);
+    static const string field_red = format_color_escape(TerminalFormat::FG_RED, TerminalFormat::BOLD, TerminalFormat::END);
+    static const string field_green = format_color_escape(TerminalFormat::FG_GREEN, TerminalFormat::BOLD, TerminalFormat::END);
+    static const string field_yellow = format_color_escape(TerminalFormat::FG_YELLOW, TerminalFormat::BOLD, TerminalFormat::END);
+    static const string field_blue = format_color_escape(TerminalFormat::FG_BLUE, TerminalFormat::BOLD, TerminalFormat::END);
+    static const string field_magenta = format_color_escape(TerminalFormat::FG_MAGENTA, TerminalFormat::BOLD, TerminalFormat::END);
+    static const string field_cyan = format_color_escape(TerminalFormat::FG_CYAN, TerminalFormat::BOLD, TerminalFormat::END);
     static const string green = format_color_escape(TerminalFormat::FG_GREEN, TerminalFormat::BOLD, TerminalFormat::END);
     static const string yellow = format_color_escape(TerminalFormat::FG_YELLOW, TerminalFormat::BOLD, TerminalFormat::END);
     static const string red = format_color_escape(TerminalFormat::FG_RED, TerminalFormat::BOLD, TerminalFormat::END);
@@ -942,12 +942,12 @@ public:
       if ((debug_flags & DebugFlag::ColorField) || (short_status && (debug_flags & DebugFlag::ColorStatus))) {
         fprintf(stderr, "\r%08" PRIX64 ": %s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.8s%s @ %-7g + %s%zu/%zu%s%c",
             current_time,
-            bg_magenta.c_str(), &notes_table[0], bg_red.c_str(), &notes_table[12],
-            bg_yellow.c_str(), &notes_table[24], bg_green.c_str(), &notes_table[36],
-            bg_cyan.c_str(), &notes_table[48], bg_blue.c_str(), &notes_table[60],
-            bg_magenta.c_str(), &notes_table[72], bg_red.c_str(), &notes_table[84],
-            bg_yellow.c_str(), &notes_table[96], bg_green.c_str(), &notes_table[108],
-            bg_cyan.c_str(), &notes_table[120], white.c_str(), when,
+            field_magenta.c_str(), &notes_table[0], field_red.c_str(), &notes_table[12],
+            field_yellow.c_str(), &notes_table[24], field_green.c_str(), &notes_table[36],
+            field_cyan.c_str(), &notes_table[48], field_blue.c_str(), &notes_table[60],
+            field_magenta.c_str(), &notes_table[72], field_red.c_str(), &notes_table[84],
+            field_yellow.c_str(), &notes_table[96], field_green.c_str(), &notes_table[108],
+            field_cyan.c_str(), &notes_table[120], white.c_str(), when,
             buffers_color->c_str(), queued_buffer_count, buffer_count, white.c_str(),
             short_status ? ' ' : '\n');
       } else if (debug_flags & DebugFlag::ColorStatus) {
@@ -964,10 +964,10 @@ public:
           fprintf(stderr, "TIMESTEP: %sC D EF G A B%sC D EF G A B%sC D EF G A B%sC "
               "D EF G A B%sC D EF G A B%sC D EF G A B%sC D EF G A B%sC D EF G A B%s"
               "C D EF G A B%sC D EF G A B%sC D EF G%s @ SECONDS + %sBUF%s",
-              bg_magenta.c_str(), bg_red.c_str(), bg_yellow.c_str(),
-              bg_green.c_str(), bg_cyan.c_str(), bg_blue.c_str(),
-              bg_magenta.c_str(), bg_red.c_str(), bg_yellow.c_str(),
-              bg_green.c_str(), bg_cyan.c_str(), white.c_str(),
+              field_magenta.c_str(), field_red.c_str(), field_yellow.c_str(),
+              field_green.c_str(), field_cyan.c_str(), field_blue.c_str(),
+              field_magenta.c_str(), field_red.c_str(), field_yellow.c_str(),
+              field_green.c_str(), field_cyan.c_str(), white.c_str(),
               buffers_color->c_str(), white.c_str());
         } else {
           fprintf(stderr, "TIMESTEP: C D EF G A BC D EF G A BC D EF G A BC D EF G"
@@ -1394,10 +1394,6 @@ int main(int argc, char** argv) {
       debug_flags = 0xFFFFFFFFFFFFFFFF;
     } else if (!strncmp(argv[x], "--debug-flags=", 14)) {
       debug_flags = atoi(&argv[x][14]);
-    } else if (!strcmp(argv[x], "--color-field")) {
-      debug_flags |= DebugFlag::ColorField;
-    } else if (!strcmp(argv[x], "--color-status")) {
-      debug_flags |= DebugFlag::ColorField;
     } else if (!strcmp(argv[x], "--no-color")) {
       debug_flags &= ~DebugFlag::AllColorOptions;
     } else if (!strcmp(argv[x], "--short-status")) {
@@ -1485,6 +1481,9 @@ int main(int argc, char** argv) {
       }
       vector<int16_t> al_samples = convert_samples_to_int(step_samples);
       stream.add_samples(al_samples.data(), al_samples.size() / 2);
+    }
+    if (debug_flags & DebugFlag::ShowNotesOn) {
+      fprintf(stderr, "\nrendering complete; waiting for buffers to drain\n");
     }
     stream.wait();
     exit_al();
