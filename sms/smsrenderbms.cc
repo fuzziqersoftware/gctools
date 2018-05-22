@@ -1352,7 +1352,13 @@ options:\n\
       if not given, all instruments will be sine waves, which sounds funny but\n\
       probably isn\'t what you want.\n\
   --verbose: print debugging events and the like.\n\
-  --linear: use linear interpolation (makes playing faster).\n\
+  --linear: use linear interpolation. realtime play will likely lag unless this\n\
+      option is used, especially if the sequence uses pitch bending.\n\
+  --play-buffers=N: generate up to N steps ahead of playback at once\n\
+  --default-bank=N: override automatic instrument bank detection and use bank\n\
+      N instead.
+  --no-color: don\'t use terminal escape codes for color in the output.\n\
+  --short-status: only show one line of status information.\n\
 ", argv0, argv0, argv0);
 }
 
