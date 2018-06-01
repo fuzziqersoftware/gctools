@@ -1356,7 +1356,7 @@ options:\n\
       option is used, especially if the sequence uses pitch bending.\n\
   --play-buffers=N: generate up to N steps ahead of playback at once\n\
   --default-bank=N: override automatic instrument bank detection and use bank\n\
-      N instead.
+      N instead.\n\
   --no-color: don\'t use terminal escape codes for color in the output.\n\
   --short-status: only show one line of status information.\n\
 ", argv0, argv0, argv0);
