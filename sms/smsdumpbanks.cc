@@ -31,7 +31,8 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  auto env = load_sound_environment(argv[1]);
+  unordered_map<uint32_t, uint32_t> wsys_link_overrides;
+  auto env = load_sound_environment(argv[1], wsys_link_overrides);
 
   for (const auto& ibank_it : env.instrument_banks) {
     const auto& ibank = ibank_it.second;
@@ -66,8 +67,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  for (const auto& wsys : env.sample_banks) {
-    for (const auto& s : wsys) {
+  for (const auto& wsys_it : env.sample_banks) {
+    for (const auto& s : wsys_it.second) {
       auto samples = s.samples();
       if (samples.empty()) {
         fprintf(stderr, "warning: can\'t decode %s:%" PRIX32 ":%" PRIX32 "\n",

@@ -23,16 +23,17 @@ using namespace std;
 enum DebugFlag {
   ShowResampleEvents          = 0x0000000000000001,
   ShowNotesOn                 = 0x0000000000000002,
-  ShowUnknownPerfOptions      = 0x0000000000000004,
-  ShowUnknownParamOptions     = 0x0000000000000008,
-  ShowUnimplementedConditions = 0x0000000000000010,
-  ShowShortStatus             = 0x0000000000000020,
+  ShowKeyPresses              = 0x0000000000000004,
+  ShowUnknownPerfOptions      = 0x0000000000000008,
+  ShowUnknownParamOptions     = 0x0000000000000010,
+  ShowUnimplementedConditions = 0x0000000000000020,
+  ShowShortStatus             = 0x0000000000000040,
 
-  ColorField                  = 0x0000000000000040,
-  ColorStatus                 = 0x0000000000000080,
-  AllColorOptions             = 0x00000000000000C0,
+  ColorField                  = 0x0000000000000080,
+  ColorStatus                 = 0x0000000000000100,
+  AllColorOptions             = 0x0000000000000180,
 
-  Default                     = 0x00000000000000C2,
+  Default                     = 0x0000000000000182,
 };
 
 uint64_t debug_flags = DebugFlag::Default;
@@ -383,7 +384,7 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
         });
         uint8_t port = r.get_u8();
         uint8_t reg = r.get_u8();
-        disassembly = string_printf("%s  r%hhu, %hhu", opcode_names.at(opcode),
+        disassembly = string_printf("%s   r%hhu, %hhu", opcode_names.at(opcode),
             reg, port);
         break;
       }
@@ -1269,6 +1270,11 @@ private:
 
       // everything below here are unknown opcodes
 
+      case 0xE1:
+      case 0xFA:
+      case 0xBF:
+        break;
+
       case 0xC2:
       case 0xCF:
       case 0xDA:
@@ -1291,6 +1297,7 @@ private:
       case 0xB8:
       case 0xCB:
       case 0xCC:
+      case 0xD6:
       case 0xE0:
       case 0xE6:
       case 0xF9:
@@ -1357,6 +1364,8 @@ options:\n\
   --play-buffers=N: generate up to N steps ahead of playback at once\n\
   --default-bank=N: override automatic instrument bank detection and use bank\n\
       N instead.\n\
+  --wsys-link=A:B: override automatic sample bank detection and use samples\n\
+      from bank B for instrument bank A instead.\n\
   --no-color: don\'t use terminal escape codes for color in the output.\n\
   --short-status: only show one line of status information.\n\
 ", argv0, argv0, argv0);
@@ -1379,6 +1388,7 @@ int main(int argc, char** argv) {
   size_t sample_rate = 192000;
   bool play = false;
   int32_t default_bank = -1;
+  unordered_map<uint32_t, uint32_t> wsys_link_overrides;
   size_t num_buffers = 32;
   for (int x = 1; x < argc; x++) {
     if (!strncmp(argv[x], "--disable-track=", 16)) {
@@ -1409,6 +1419,10 @@ int main(int argc, char** argv) {
       resample_method = SRC_LINEAR;
     } else if (!strncmp(argv[x], "--default-bank=", 15)) {
       default_bank = atoi(&argv[x][15]);
+    } else if (!strncmp(argv[x], "--wsys-link=", 12)) {
+      uint32_t ibnk_id, wsys_id;
+      sscanf(&argv[x][12], "%" PRIX32 ":%" PRIX32, &ibnk_id, &wsys_id);
+      wsys_link_overrides.emplace(ibnk_id, wsys_id);
     } else if (!strcmp(argv[x], "--play")) {
       play = true;
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
@@ -1425,7 +1439,7 @@ int main(int argc, char** argv) {
   }
 
   shared_ptr<const SoundEnvironment> env(aaf_directory ?
-      new SoundEnvironment(load_sound_environment(aaf_directory)) : NULL);
+      new SoundEnvironment(load_sound_environment(aaf_directory, wsys_link_overrides)) : NULL);
 
   // try to get the sequence from the env if it's there
   shared_ptr<SequenceProgram> seq;

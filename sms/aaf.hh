@@ -25,10 +25,11 @@ struct SequenceProgram {
 
 struct SoundEnvironment {
   unordered_map<uint32_t, InstrumentBank> instrument_banks;
-  vector<vector<Sound>> sample_banks;
+  unordered_map<uint32_t, vector<Sound>> sample_banks;
   unordered_map<string, SequenceProgram> sequence_programs;
 
-  void resolve_pointers();
+  void resolve_pointers(const std::unordered_map<uint32_t, uint32_t>& wsys_link_overrides);
 };
 
-SoundEnvironment load_sound_environment(const char* aw_directory);
+SoundEnvironment load_sound_environment(const char* aw_directory,
+	const std::unordered_map<uint32_t, uint32_t>& wsys_link_overrides);

@@ -120,12 +120,14 @@ struct wbct_header {
 struct wsys_header {
   uint32_t magic; // 'WSYS'
   uint32_t size;
-  uint32_t unknown1[2];
+  uint32_t wsys_id;
+  uint32_t unknown1;
   uint32_t winf_offset;
   uint32_t wbct_offset;
 
   void byteswap() {
     this->size = bswap32(this->size);
+    this->wsys_id = bswap32(this->wsys_id);
     this->winf_offset = bswap32(this->winf_offset);
     this->wbct_offset = bswap32(this->wbct_offset);
   }
@@ -133,7 +135,7 @@ struct wsys_header {
 
 
 
-vector<Sound> wsys_decode(void* vdata, size_t size,
+pair<uint32_t, vector<Sound>> wsys_decode(void* vdata, size_t size,
     const char* base_directory) {
   uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
 
@@ -142,6 +144,8 @@ vector<Sound> wsys_decode(void* vdata, size_t size,
     throw invalid_argument("WSYS file not at expected offset");
   }
   wsys->byteswap();
+
+  fprintf(stderr, "[SoundEnvironment] wsys_id is %" PRIX32 "\n", wsys->wsys_id);
 
   winf_header* winf = reinterpret_cast<winf_header*>(data + wsys->winf_offset);
   if (winf->magic != 0x464E4957) {
@@ -262,7 +266,7 @@ vector<Sound> wsys_decode(void* vdata, size_t size,
     }
   }
 
-  return ret;
+  return make_pair(wsys->wsys_id, ret);
 }
 
 
@@ -324,28 +328,40 @@ unordered_map<string, SequenceProgram> barc_decode(void* vdata, size_t size,
 SequenceProgram::SequenceProgram(uint32_t index, std::string&& data) :
     index(index), data(move(data)) { }
 
-void SoundEnvironment::resolve_pointers() {
+void SoundEnvironment::resolve_pointers(
+    const std::unordered_map<uint32_t, uint32_t>& wsys_link_overrides) {
   // postprocessing: resolve all sample bank pointers
   for (auto& bank_it : this->instrument_banks) {
     uint32_t bank_id = bank_it.first;
     auto& bank = bank_it.second;
-    const auto& wsys_bank = this->sample_banks[bank.chunk_id];
-    // fprintf(stderr, "[SoundEnvironment] bank %" PRIX32 " maps to wsys %" PRIX32 "\n",
-    //     bank_id, bank.chunk_id);
+
+    uint32_t wsys_id;
+    try {
+      wsys_id = wsys_link_overrides.at(bank_id);
+    } catch (const out_of_range&) {
+      wsys_id = bank.chunk_id;
+    }
+    if (!this->sample_banks.count(wsys_id)) {
+      fprintf(stderr, "[SoundEnvironment] bank %" PRIX32 " maps to wsys %" PRIX32 " which is missing\n",
+          bank_id, wsys_id);
+      continue;
+    }
+    const auto& wsys_bank = this->sample_banks.at(wsys_id);
+    fprintf(stderr, "[SoundEnvironment] bank %" PRIX32 " maps to wsys %" PRIX32 " which has %zu items\n",
+        bank_id, wsys_id, wsys_bank.size());
 
     // build an index of sound_id -> index
     unordered_map<int64_t, size_t> sound_id_to_index;
     for (size_t x = 0; x < wsys_bank.size(); x++) {
-      // fprintf(stderr, "[SoundEnvironment] wsys item %" PRIX32 ":%zX maps to sound %" PRIX64 "\n",
-      //     bank.chunk_id, x, wsys_bank[x].sound_id);
-      sound_id_to_index.emplace(wsys_bank[x].sound_id, x);
+      fprintf(stderr, "[SoundEnvironment] wsys item %" PRIX32 ":%zX maps to sound %" PRIX64 "\n",
+          bank.chunk_id, x, wsys_bank[x].sound_id);
 
       // TODO: figure out if this is actually a problem and uncomment the code
       // below if it is
-      /* if (!sound_id_to_index.emplace(wsys_bank[x].sound_id, x).second) {
+      if (!sound_id_to_index.emplace(wsys_bank[x].sound_id, x).second) {
         fprintf(stderr, "duplicate sound id %" PRIX64 " (indexes %zu and %zu)\n",
             wsys_bank[x].sound_id, sound_id_to_index[wsys_bank[x].sound_id], x);
-      } */
+      }
     }
 
     // link all the VelocityRegions to their Sound objects
@@ -369,7 +385,8 @@ void SoundEnvironment::resolve_pointers() {
 
 
 
-SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory) {
+SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory,
+    const std::unordered_map<uint32_t, uint32_t>& wsys_link_overrides) {
   uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
   size_t offset = 0;
 
@@ -407,8 +424,16 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
             ibnk.chunk_id = chunk_id;
             ret.instrument_banks.emplace(ibnk.id, move(ibnk));
           } else {
-            ret.sample_banks.emplace_back(wsys_decode(
-                data + chunk_offset, chunk_size, base_directory));
+            fprintf(stderr, "[SoundEnvironment] decoding wsys at %" PRIX32 ":%" PRIX32 "\n",
+                chunk_offset, chunk_size);
+            auto wsys_pair = wsys_decode(data + chunk_offset, chunk_size, base_directory);
+            uint32_t wsys_id = wsys_pair.first ? wsys_pair.first : ret.sample_banks.size();
+            fprintf(stderr, "[SoundEnvironment] decoding wsys at %" PRIX32 ":%" PRIX32 " == %" PRIX32 "\n",
+                chunk_offset, chunk_size, wsys_id);
+            if (!ret.sample_banks.emplace(wsys_id, move(wsys_pair.second)).second) {
+              fprintf(stderr, "[SoundEnvironment] warning: duplicate wsys id %" PRIX32 "\n",
+                  wsys_id);
+            }
           }
           offset += 0x0C;
         }
@@ -430,7 +455,7 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
     }
   }
 
-  ret.resolve_pointers();
+  ret.resolve_pointers(wsys_link_overrides);
   return ret;
 }
 
@@ -458,7 +483,8 @@ struct bx_table_entry {
   }
 };
 
-SoundEnvironment bx_decode(void* vdata, size_t size, const char* base_directory) {
+SoundEnvironment bx_decode(void* vdata, size_t size, const char* base_directory,
+    const std::unordered_map<uint32_t, uint32_t>& wsys_link_overrides) {
   uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
   bx_header* header = reinterpret_cast<bx_header*>(vdata);
   header->byteswap();
@@ -468,10 +494,14 @@ SoundEnvironment bx_decode(void* vdata, size_t size, const char* base_directory)
   for (size_t x = 0; x < header->wsys_count; x++) {
     entry->byteswap();
     if (entry->size == 0) {
-      ret.sample_banks.emplace_back();
+      ret.sample_banks.emplace(ret.sample_banks.size(), vector<Sound>());
     } else {
-      ret.sample_banks.emplace_back(wsys_decode(data + entry->offset,
-          entry->size, base_directory));
+      auto wsys_pair = wsys_decode(data + entry->offset, entry->size, base_directory);
+      uint32_t wsys_id = wsys_pair.first ? wsys_pair.first : ret.sample_banks.size();
+      if (!ret.sample_banks.emplace(wsys_id, move(wsys_pair.second)).second) {
+        fprintf(stderr, "[SoundEnvironment] warning: duplicate wsys id %" PRIX32 "\n",
+            wsys_id);
+      }
     }
     entry++;
   }
@@ -489,13 +519,14 @@ SoundEnvironment bx_decode(void* vdata, size_t size, const char* base_directory)
     entry++;
   }
 
-  ret.resolve_pointers();
+  ret.resolve_pointers(wsys_link_overrides);
   return ret;
 }
 
 
 
-SoundEnvironment load_sound_environment(const char* base_directory) {
+SoundEnvironment load_sound_environment(const char* base_directory,
+    const unordered_map<uint32_t, uint32_t>& wsys_link_overrides) {
   // Pikmin: pikibank.bx has almost everything; the sequence index is inside
   // default.dol (sigh) so it has to be manually extracted. search for 'BARC' in
   // default.dol in a hex editor and copy the resulting data (through the end of
@@ -503,7 +534,8 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
   string filename = string_printf("%s/Banks/pikibank.bx", base_directory);
   if (isfile(filename)) {
     string data = load_file(filename);
-    auto env = bx_decode(const_cast<char*>(data.data()), data.size(), base_directory);
+    auto env = bx_decode(const_cast<char*>(data.data()), data.size(), base_directory,
+        wsys_link_overrides);
 
     data = load_file(string_printf("%s/Seqs/sequence.barc", base_directory));
     env.sequence_programs = barc_decode(const_cast<char*>(data.data()), data.size(), base_directory);
@@ -524,7 +556,8 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
       continue;
     }
 
-    return aaf_decode(const_cast<char*>(data.data()), data.size(), base_directory);
+    return aaf_decode(const_cast<char*>(data.data()), data.size(), base_directory,
+        wsys_link_overrides);
   }
 
   throw runtime_error("no index file found");
