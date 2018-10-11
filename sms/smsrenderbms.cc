@@ -523,7 +523,7 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
     }
 
     size_t opcode_size = r.where() - opcode_offset;
-    string data = r.pget(opcode_offset, opcode_size);
+    string data = r.pread(opcode_offset, opcode_size);
     string data_str;
     for (char ch : data) {
       data_str += string_printf("%02X ", static_cast<uint8_t>(ch));
@@ -560,6 +560,7 @@ public:
   Voice(size_t sample_rate, int8_t note, int8_t vel) : sample_rate(sample_rate),
       note(note), vel(vel), note_off_decay_total(this->sample_rate / 5),
       note_off_decay_remaining(-1) { }
+  virtual ~Voice() = default;
 
   virtual vector<float> render(size_t count, float volume, float pitch_bend,
       float pitch_bend_semitone_range, float panning) = 0;
@@ -596,6 +597,7 @@ class SineVoice : public Voice {
 public:
   SineVoice(size_t sample_rate, int8_t note, int8_t vel) :
       Voice(sample_rate, note, vel), offset(0) { }
+  virtual ~SineVoice() = default;
 
   virtual vector<float> render(size_t count, float volume, float pitch_bend,
       float pitch_bend_semitone_range, float panning) {
@@ -640,6 +642,8 @@ public:
           this->vel_region->sound->source_offset));
     }
   }
+
+  virtual ~SampleVoice() = default;
 
   const vector<float>& get_samples(float pitch_bend,
       float pitch_bend_semitone_range) {
