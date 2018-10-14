@@ -4,7 +4,7 @@ OBJECTS=aaf.o afc.o instrument.o audio.o wav.o
 CFLAGS=-g -O0 -Wall -Werror
 CXXFLAGS=-std=c++14 -g -O0 -Wall -Werror -I/usr/local/include -I /opt/local/include
 LDFLAGS=-g -lphosg -L/usr/local/lib -L/opt/local/lib
-EXECUTABLES=smsdumpbanks smsrenderbms
+EXECUTABLES=smsdumpbanks smssynth
 LIBS=-lphosg -lsamplerate
 
 UNAME = $(shell uname -s)
@@ -24,8 +24,8 @@ all: $(EXECUTABLES)
 smsdumpbanks: $(OBJECTS) smsdumpbanks.o
 	g++ $(LDFLAGS) -o smsdumpbanks $^ $(LIBS)
 
-smsrenderbms: $(OBJECTS) smsrenderbms.o
-	g++ $(LDFLAGS) -o smsrenderbms $^ $(LIBS)
+smssynth: $(OBJECTS) smssynth.o
+	g++ $(LDFLAGS) -o smssynth $^ $(LIBS)
 
 clean:
 	-rm -rf *.o $(EXECUTABLES) *.dSYM

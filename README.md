@@ -9,7 +9,7 @@ gctools is a set of tools for reading and translating video game files. These to
 - PAE files from Phantasy Star Online Episode III (pae2gvm)
 - PRS files from Phantasy Star Online (prs)
 - Yay0 and Yaz0 files from various Nintendo games (prs)
-- AAF, BX, and AW files from Super Mario Sunshine, Luigi's Mansion, Pikmin, and other games (smsdumpbanks, smsrenderbms)
+- AAF, BX, and AW files from Super Mario Sunshine, Luigi's Mansion, Pikmin, and other games (smsdumpbanks, smssynth)
 
 ## Building
 
@@ -47,15 +47,18 @@ gctools is a set of tools for reading and translating video game files. These to
 **sms/smsdumpbanks** - extracts the contents of instrument and waveform banks in AAF or BX format. Games using this format include Luigi's Mansion, Pikmin, and Super Mario Sunshine. Produces text files describing the instruments, uncompressed .wav files containing the sounds, and .bms files containing the music sequences. Before running this program, do the steps in the "Getting auxiliary files" section below.
 - Example: `mkdir sms_decoded_data && smsdumpbanks sms_extracted_data/AudioRes sms_decoded_data`
 
-**sms/smsrenderbms** - deals with BMS music sequence programs. It can disassemble them, convert them into .wav files, or play them in realtime. It doesn't implement everything that Nintendo's engine implements, so sometimes things don't work and the output sounds a bit different from the actual in-game music.
+**sms/smssynth** - deals with BMS music sequence programs. It can disassemble them, convert them into .wav files, or play them in realtime. It doesn't implement everything that Nintendo's engine implements, so sometimes things don't work and the output sounds a bit different from the actual in-game music.
 - For Super Mario Sunshine, some sequences sound almost perfect; a few are noticeably broken and sound terrible. Note that the game uses track 15 for Yoshi's drums, which you'll have to manually disable if you don't want them.
 - For Pikmin, all sequences sound different from how they sound in-game (and worse) but are easily recognizable.
 - For Luigi's Mansion, most sequences don't play at all.
 
 For sequences that loop, this program will run forever unless you cancel it or give a time limit. Before running this program, do the steps in the "Getting auxiliary files" section below.
-- Example (convert to 4-minute WAV, no Yoshi drums): `smsrenderbms --disable-track=15 --audiores-directory=sms_extracted_data/AudioRes --sample-rate=48000 k_bianco.com --output-filename=k_bianco.com.wav --time-limit=240`
-- Example (play in realtime, with Yoshi drums): `smsrenderbms --audiores-directory=sms_extracted_data/AudioRes --sample-rate=48000 k_bianco.com --linear --play`
-- Example (Pikmin, play in realtime): `smsrenderbms --audiores-directory=pikmin_extracted_data/dataDir/SndData --sample-rate=48000 --linear --play tutorial.jam`
+- Example (convert to 4-minute WAV, no Yoshi drums): `smssynth --disable-track=15 --audiores-directory=sms_extracted_data/AudioRes --sample-rate=48000 k_bianco.com --output-filename=k_bianco.com.wav --time-limit=240`
+- Example (play in realtime, with Yoshi drums): `smssynth --audiores-directory=sms_extracted_data/AudioRes --sample-rate=48000 k_bianco.com --linear --play`
+- Example (Pikmin, play in realtime): `smssynth --audiores-directory=pikmin_extracted_data/dataDir/SndData --sample-rate=48000 --linear --play tutorial.jam`
+
+smssynth also can disassemble and play a subset of MIDI files. This was implemented to synthesize the Classic Mac OS version of SimCity 2000's music using the original instruments, which wouldn't play on any MIDI player I tried. To use this functionality, you have to manually specify the instruments, and optionally their base notes (or unity keys). For example:
+- `smssynth --midi --midi-channel-instrument=7:simcity.out/snd_10008.wav --midi-channel-instrument=10:simcity.out/snd_10011.wav:0x48 --sample-rate=48000 --play-buffers=64 --linear --play simcity.out/MIDI_10014.midi`
 
 ### Getting auxiliary files for Pikmin and Super Mario Sunshine
 
@@ -69,4 +72,4 @@ You'll have to copy msound.aaf into the AudioRes directory manually to use the S
 
 #### Getting sequence.barc from Pikmin
 
-You'll have to manually extract the BARC data from default.dol (it's embedded somewhere in there). Open up default.dol in a hex editor and search for the ASCII string "BARC----". Starting at the location where you found "BARC----", copy at least 0x400 bytes out of default.dol and save it as sequence.barc in the SndData/Seqs/ directory. Now you should be able to run smsdumpbanks and smsrenderbms using the Pikmin sound data. `--audiores-directory` should point to the SndData directory from the Pikmin disc (with sequence.barc manually added).
+You'll have to manually extract the BARC data from default.dol (it's embedded somewhere in there). Open up default.dol in a hex editor and search for the ASCII string "BARC----". Starting at the location where you found "BARC----", copy at least 0x400 bytes out of default.dol and save it as sequence.barc in the SndData/Seqs/ directory. Now you should be able to run smsdumpbanks and smssynth using the Pikmin sound data. `--audiores-directory` should point to the SndData directory from the Pikmin disc (with sequence.barc manually added).
