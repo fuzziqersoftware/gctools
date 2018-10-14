@@ -31,5 +31,12 @@ struct SoundEnvironment {
   void resolve_pointers(const std::unordered_map<uint32_t, uint32_t>& wsys_link_overrides);
 };
 
+struct InstrumentMetadata {
+  string filename;
+  uint8_t base_note;
+};
+
 SoundEnvironment load_sound_environment(const char* aw_directory,
-	const std::unordered_map<uint32_t, uint32_t>& wsys_link_overrides);
+    const std::unordered_map<uint32_t, uint32_t>& wsys_link_overrides);
+SoundEnvironment create_midi_sound_environment(
+    const unordered_map<int16_t, InstrumentMetadata>& instrument_metadata);

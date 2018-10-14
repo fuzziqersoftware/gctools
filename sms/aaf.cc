@@ -11,6 +11,7 @@
 #include <map>
 
 #include "instrument.hh"
+#include "wav.hh"
 
 using namespace std;
 
@@ -145,7 +146,7 @@ pair<uint32_t, vector<Sound>> wsys_decode(void* vdata, size_t size,
   }
   wsys->byteswap();
 
-  fprintf(stderr, "[SoundEnvironment] wsys_id is %" PRIX32 "\n", wsys->wsys_id);
+  // fprintf(stderr, "[SoundEnvironment] wsys_id is %" PRIX32 "\n", wsys->wsys_id);
 
   winf_header* winf = reinterpret_cast<winf_header*>(data + wsys->winf_offset);
   if (winf->magic != 0x464E4957) {
@@ -342,19 +343,19 @@ void SoundEnvironment::resolve_pointers(
       wsys_id = bank.chunk_id;
     }
     if (!this->sample_banks.count(wsys_id)) {
-      fprintf(stderr, "[SoundEnvironment] bank %" PRIX32 " maps to wsys %" PRIX32 " which is missing\n",
-          bank_id, wsys_id);
+      // fprintf(stderr, "[SoundEnvironment] bank %" PRIX32 " maps to wsys %" PRIX32 " which is missing\n",
+      //     bank_id, wsys_id);
       continue;
     }
     const auto& wsys_bank = this->sample_banks.at(wsys_id);
-    fprintf(stderr, "[SoundEnvironment] bank %" PRIX32 " maps to wsys %" PRIX32 " which has %zu items\n",
-        bank_id, wsys_id, wsys_bank.size());
+    // fprintf(stderr, "[SoundEnvironment] bank %" PRIX32 " maps to wsys %" PRIX32 " which has %zu items\n",
+    //     bank_id, wsys_id, wsys_bank.size());
 
     // build an index of sound_id -> index
     unordered_map<int64_t, size_t> sound_id_to_index;
     for (size_t x = 0; x < wsys_bank.size(); x++) {
-      fprintf(stderr, "[SoundEnvironment] wsys item %" PRIX32 ":%zX maps to sound %" PRIX64 "\n",
-          bank.chunk_id, x, wsys_bank[x].sound_id);
+      // fprintf(stderr, "[SoundEnvironment] wsys item %" PRIX32 ":%zX maps to sound %" PRIX64 "\n",
+      //     bank.chunk_id, x, wsys_bank[x].sound_id);
 
       // TODO: figure out if this is actually a problem and uncomment the code
       // below if it is
@@ -424,12 +425,12 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
             ibnk.chunk_id = chunk_id;
             ret.instrument_banks.emplace(ibnk.id, move(ibnk));
           } else {
-            fprintf(stderr, "[SoundEnvironment] decoding wsys at %" PRIX32 ":%" PRIX32 "\n",
-                chunk_offset, chunk_size);
+            // fprintf(stderr, "[SoundEnvironment] decoding wsys at %" PRIX32 ":%" PRIX32 "\n",
+            //     chunk_offset, chunk_size);
             auto wsys_pair = wsys_decode(data + chunk_offset, chunk_size, base_directory);
             uint32_t wsys_id = wsys_pair.first ? wsys_pair.first : ret.sample_banks.size();
-            fprintf(stderr, "[SoundEnvironment] decoding wsys at %" PRIX32 ":%" PRIX32 " == %" PRIX32 "\n",
-                chunk_offset, chunk_size, wsys_id);
+            // fprintf(stderr, "[SoundEnvironment] decoding wsys at %" PRIX32 ":%" PRIX32 " == %" PRIX32 "\n",
+            //     chunk_offset, chunk_size, wsys_id);
             if (!ret.sample_banks.emplace(wsys_id, move(wsys_pair.second)).second) {
               fprintf(stderr, "[SoundEnvironment] warning: duplicate wsys id %" PRIX32 "\n",
                   wsys_id);
@@ -561,4 +562,45 @@ SoundEnvironment load_sound_environment(const char* base_directory,
   }
 
   throw runtime_error("no index file found");
+}
+
+
+
+SoundEnvironment create_midi_sound_environment(
+    const unordered_map<int16_t, InstrumentMetadata>& instrument_metadata) {
+  SoundEnvironment env;
+
+  // create instrument bank 0
+  auto& inst_bank = env.instrument_banks.emplace(0, 0).first->second;
+  for (const auto& it : instrument_metadata) {
+    // TODO: do we need to pass in base_note for the vel region?
+    auto& inst = inst_bank.id_to_instrument.emplace(it.first, it.first).first->second;
+    inst.key_regions.emplace_back(0, 0x7F);
+    auto& key_region = inst.key_regions.back();
+    key_region.vel_regions.emplace_back(0, 0x7F, it.first, 1);
+  }
+
+  // create sample bank 0
+  auto& sample_bank = env.sample_banks.emplace(0, 0).first->second;
+  for (const auto& it : instrument_metadata) {
+    sample_bank.emplace_back();
+    Sound& s = sample_bank.back();
+
+    auto wav = load_wav(it.second.filename.c_str());
+    s.decoded_samples = wav.samples;
+    s.num_channels = wav.num_channels;
+    s.sample_rate = wav.sample_rate;
+    s.base_note = it.second.base_note;
+    s.loop_start = 0;
+    s.loop_end = 0;
+    s.sound_id = it.first;
+    s.source_filename = it.second.filename;
+    s.source_offset = 0;
+    s.source_size = 0;
+    s.aw_file_index = 0;
+    s.wave_table_index = 0;
+  }
+
+  env.resolve_pointers({{0, 0}});
+  return env;
 }

@@ -70,6 +70,19 @@ vector<float> resample(const vector<float>& input_samples, size_t num_channels,
 
 
 
+bool is_binary(const char* s, size_t size) {
+  for (size_t x = 0; x < size; x++) {
+    if ((s[x] < 0x20) || (s[x] > 0x7F)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool is_binary(const string& s) {
+  return is_binary(s.data(), s.size());
+}
+
 string name_for_note(uint8_t note) {
   if (note >= 0x80) {
     return "invalid-note";
@@ -126,6 +139,66 @@ double frequency_for_note(uint8_t note) {
 
 
 
+struct MIDIChunkHeader {
+  uint32_t magic;
+  uint32_t size;
+
+  void byteswap() {
+    this->magic = bswap32(this->magic);
+    this->size = bswap32(this->size);
+  }
+} __attribute__((packed));
+
+struct MIDIHeaderChunk {
+  MIDIChunkHeader header; // magic=MThd, size=6
+  uint16_t format; // 0, 1, or 2. see below
+  uint16_t track_count;
+  uint16_t division; // see below
+
+  // format=0: file contains a single track
+  // format=1: file contains simultaneous tracks (start them all at once)
+  // format=2: file contains independent tracks
+
+  // if the MSB of division is 1, then the remaining 15 bits are the number of
+  // ticks per quarter note. if the MSB is 0, then the next 7 bits are
+  // frames/second (as a negative number), and the last 8 are ticks per frame
+
+  void byteswap() {
+    this->header.byteswap();
+    this->format = bswap16(this->format);
+    this->track_count = bswap16(this->track_count);
+    this->division = bswap16(this->division);
+  }
+} __attribute__((packed));
+
+struct MIDITrackChunk {
+  MIDIChunkHeader header;
+  uint8_t data[0];
+
+  void byteswap() {
+    this->header.byteswap();
+  }
+} __attribute__((packed));
+
+
+
+uint32_t read_variable_int(StringReader& r) {
+  uint8_t b = r.get_u8();
+  if (!(b & 0x80)) {
+    return b;
+  }
+
+  uint32_t v = 0;
+  while (b & 0x80) {
+    v = (v << 7) | (b & 0x7F);
+    b = r.get_u8();
+  }
+  v = (v << 7) | b;
+  return v;
+}
+
+
+
 void disassemble_set_perf(size_t opcode_offset, uint8_t opcode, uint8_t type,
     uint8_t data_type, int16_t value, uint8_t duration_flags,
     uint16_t duration) {
@@ -159,7 +232,7 @@ void disassemble_set_perf(size_t opcode_offset, uint8_t opcode, uint8_t type,
   printf("\n");
 }
 
-void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
+void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
   unordered_map<size_t, string> track_start_labels;
 
   static const unordered_map<uint8_t, const char*> register_opcode_names({
@@ -536,6 +609,219 @@ void disassemble_stream(StringReader& r, int32_t default_bank = -1) {
 
 
 
+void disassemble_midi(StringReader& r) {
+  // read the header, check it, and disassemble it
+  MIDIHeaderChunk header = r.get<MIDIHeaderChunk>();
+  header.byteswap();
+  if (header.header.magic != 0x4D546864) { // 'MThd'
+    throw runtime_error("header identifier is incorrect");
+  }
+  if (header.header.size < 6) {
+    throw runtime_error("header is too small");
+  }
+  if (header.format > 2) {
+    throw runtime_error("MIDI format is unknown");
+  }
+  printf("# MIDI format %hu, %hu tracks, division %04X\n", header.format,
+      header.track_count, header.division);
+
+  // if the header is larger, skip the extra bytes
+  if (header.header.size > 6) {
+    r.go(r.where() + (header.header.size - sizeof(MIDIHeaderChunk)));
+  }
+
+  // disassemble each track
+  for (size_t track_id = 0; track_id < header.track_count; track_id++) {
+    size_t header_offset = r.where();
+    MIDITrackChunk ch = r.get<MIDITrackChunk>();
+    ch.byteswap();
+    if (ch.header.magic != 0x4D54726B) {
+      throw runtime_error("track header not present");
+    }
+
+    printf("Track %zu:  # header_offset=0x%zX\n", track_id, header_offset);
+
+    size_t end_offset = r.where() + ch.header.size;
+    uint8_t status = 0;
+    while (r.where() < end_offset) {
+      size_t event_offset = r.where();
+      uint32_t wait_ticks = read_variable_int(r);
+      if (wait_ticks) {
+        printf("%08zX  +%-7d  ", event_offset, wait_ticks);
+      } else {
+        printf("%08zX            ", event_offset);
+      }
+
+      // if the status byte is omitted, it uses the status from the previous
+      // command
+      uint8_t new_status = r.get_u8();
+      if (new_status & 0x80) {
+        status = new_status;
+      } else {
+        r.go(r.where() - 1);
+      }
+
+      if ((status & 0xF0) == 0x80) { // note off
+        uint8_t channel = status & 0x0F;
+        uint8_t key = r.get_u8();
+        uint8_t vel = r.get_u8();
+        string note = name_for_note(key);
+        printf("note_off     channel%hhu, %s, %hhu\n", channel, note.c_str(),
+            vel);
+
+      } else if ((status & 0xF0) == 0x90) { // note on
+        uint8_t channel = status & 0x0F;
+        uint8_t key = r.get_u8();
+        uint8_t vel = r.get_u8();
+        string note = name_for_note(key);
+        printf("note_on      channel%hhu, %s, %hhu\n", channel, note.c_str(),
+            vel);
+
+      } else if ((status & 0xF0) == 0xA0) { // change key pressure
+        uint8_t channel = status & 0x0F;
+        uint8_t key = r.get_u8();
+        uint8_t vel = r.get_u8();
+        string note = name_for_note(key);
+        printf("change_vel   channel%hhu, %s, %hhu\n", channel, note.c_str(),
+            vel);
+
+      } else if ((status & 0xF0) == 0xB0) { // controller change OR channel mode
+        uint8_t channel = status & 0x0F;
+        uint8_t controller = r.get_u8();
+        uint8_t value = r.get_u8();
+        if (controller == 0x78) {
+          printf("mute_all     channel%hhu\n", channel);
+        } else if (controller == 0x79) {
+          printf("reset_all    channel%hhu\n", channel);
+        } else if (controller == 0x7A) {
+          printf("local_ctrl   channel%hhu, %s\n", channel,
+              value ? "on" : "off");
+        } else if (controller == 0x7B) {
+          printf("note_off_all channel%hhu\n", channel);
+        } else if (controller == 0x7C) {
+          printf("omni_off     channel%hhu\n", channel);
+        } else if (controller == 0x7D) {
+          printf("omni_on      channel%hhu\n", channel);
+        } else if (controller == 0x7D) {
+          printf("mono         channel%hhu, %hhu\n", channel, value);
+        } else if (controller == 0x7D) {
+          printf("poly         channel%hhu\n", channel);
+        } else {
+          printf("controller   channel%hhu, %hhu, %hhu\n", channel, controller,
+              value);
+        }
+
+      } else if ((status & 0xF0) == 0xC0) { // program change
+        uint8_t channel = status & 0x0F;
+        uint8_t program_number = r.get_u8();
+        printf("change_prog  channel%hhu, %hhu\n", channel, program_number);
+
+      } else if ((status & 0xF0) == 0xD0) { // channel key pressure
+        uint8_t channel = status & 0x0F;
+        uint8_t vel = r.get_u8();
+        printf("change_vel   channel%hhu, %hhu\n", channel, vel);
+
+      } else if ((status & 0xF0) == 0xE0) { // pitch bend
+        uint8_t channel = status & 0x0F;
+        uint8_t lsb = r.get_u8();
+        uint8_t msb = r.get_u8();
+        uint16_t value = (msb << 7) | lsb; // yes, each is 7 bits, not 8
+        printf("pitch_bend   channel%hhu, %hu\n", channel, value);
+
+      } else if (status == 0xFF) { // meta event
+        uint8_t type = r.get_u8();
+        uint8_t size = r.get_u8();
+
+        if ((type == 0x00) && (size == 0x02)) {
+          printf("seq_number   %hu\n", r.get_u16r());
+
+        } else if (type == 0x01) {
+          string data = r.read(size);
+          if (is_binary(data)) {
+            string data_str = format_data_string(data);
+            printf("text         0x%s\n", data_str.c_str());
+          } else {
+            printf("text         \"%s\"\n", data.c_str());
+          }
+
+        } else if (type == 0x02) {
+          string data = r.read(size);
+          printf("copyright    \"%s\"\n", data.c_str());
+
+        } else if (type == 0x03) {
+          string data = r.read(size);
+          printf("name         \"%s\"\n", data.c_str());
+
+        } else if (type == 0x04) {
+          string data = r.read(size);
+          printf("ins_name     \"%s\"\n", data.c_str());
+
+        } else if (type == 0x05) {
+          string data = r.read(size);
+          printf("lyric        \"%s\"\n", data.c_str());
+
+        } else if (type == 0x06) {
+          string data = r.read(size);
+          printf("marker       \"%s\"\n", data.c_str());
+
+        } else if (type == 0x07) {
+          string data = r.read(size);
+          printf("cue_point    \"%s\"\n", data.c_str());
+
+        } else if ((type == 0x20) && (size == 1)) {
+          uint8_t channel = r.get_u8();
+          printf("channel_pfx  channel%hhu\n", channel);
+
+        } else if ((type == 0x2F) && (size == 0)) {
+          printf("end_track\n");
+
+        } else if ((type == 0x51) && (size == 3)) {
+          uint32_t usecs_per_qnote = r.get_u24r();
+          printf("set_tempo    %" PRIu32 "\n", usecs_per_qnote);
+
+        } else if ((type == 0x54) && (size == 5)) {
+          uint8_t hours = r.get_u8();
+          uint8_t minutes = r.get_u8();
+          uint8_t seconds = r.get_u8();
+          uint8_t frames = r.get_u8();
+          uint8_t frame_fraction = r.get_u8();
+          printf("set_offset   %02hhu:%02hhu:%02hhu#%02hhu.%02hhu\n", hours,
+              minutes, seconds, frames, frame_fraction);
+
+        } else if ((type == 0x58) && (size == 4)) {
+          uint8_t numer = r.get_u8();
+          uint8_t denom = r.get_u8();
+          uint8_t ticks_per_metronome_tick = r.get_u8();
+          uint8_t b = r.get_u8(); // 1/32 notes per 24 midi ticks
+          printf("time_sig     %02hhu:%02hhu, midi_ticks=%02hhu, ratio=%hhu\n",
+              numer, denom, ticks_per_metronome_tick, b);
+
+        } else if ((type == 0x59) && (size == 2)) {
+          uint8_t sharps = r.get_u8();
+          uint8_t major = r.get_u8();
+          printf("key_sig      sharps=%02hhu, %s\n", sharps,
+              major ? "major" : "minor");
+
+        } else if (size) { // unknown meta with data
+          string data = format_data_string(r.read(size));
+          printf(".meta        0x%hhX, %s\n", type, data.c_str());
+        } else { // unknown meta without data
+          printf(".meta        0x%hhX\n", type);
+        }
+
+      } else {
+        throw runtime_error("invalid status byte");
+      }
+    }
+
+    if (r.where() != end_offset) {
+      throw runtime_error("track end is misaligned");
+    }
+  }
+}
+
+
+
 class SampleCache {
 public:
   SampleCache() = default;
@@ -672,13 +958,17 @@ public:
     try {
       return this->cache->at(this->vel_region->sound, this->src_ratio);
     } catch (const out_of_range&) {
+      auto samples = resample(this->vel_region->sound->samples(),
+          this->vel_region->sound->num_channels, this->src_ratio);
+
       if (debug_flags & DebugFlag::ShowResampleEvents) {
         string key_low_str = name_for_note(this->key_region->key_low);
         string key_high_str = name_for_note(this->key_region->key_high);
-        fprintf(stderr, "[%s:%" PRIX64 "] resampling note %02hhX in range "
+        fprintf(stderr, "[%s:%" PRIX64 "] resampled note %02hhX in range "
             "[%02hhX,%02hhX] [%s,%s] (base %02hhX from %s) (%g), with freq_mult %g, from "
             "%zuHz to %zuHz (%g) with loop at [%zu,%zu]->[%zu,%zu] for an overall "
-            "ratio of %g\n", this->vel_region->sound->source_filename.c_str(),
+            "ratio of %g; %zu samples were converted to %zu samples\n",
+            this->vel_region->sound->source_filename.c_str(),
             this->vel_region->sound->sound_id, this->note,
             this->key_region->key_low, this->key_region->key_high,
             key_low_str.c_str(), key_high_str.c_str(), base_note,
@@ -686,11 +976,9 @@ public:
             this->vel_region->freq_mult, this->vel_region->sound->sample_rate,
             this->sample_rate, sample_rate_factor,
             this->vel_region->sound->loop_start, this->vel_region->sound->loop_end,
-            this->loop_start_offset, this->loop_end_offset, this->src_ratio);
+            this->loop_start_offset, this->loop_end_offset, this->src_ratio,
+            this->vel_region->sound->samples().size(), samples.size());
       }
-
-      auto samples = resample(this->vel_region->sound->samples(),
-          this->vel_region->sound->num_channels, this->src_ratio);
       this->cache->add(this->vel_region->sound, this->src_ratio, move(samples));
       return this->cache->at(this->vel_region->sound, this->src_ratio);
     }
@@ -712,6 +1000,7 @@ public:
         this->offset = this->loop_start_offset;
       }
     }
+
     if (this->offset == samples.size()) {
       this->note_off_decay_remaining = 0;
     }
@@ -732,11 +1021,15 @@ public:
   shared_ptr<SampleCache> cache;
 };
 
+
+
 class Renderer {
-private:
+protected:
   struct Track {
     int16_t id;
     StringReader r;
+    bool reading_wait_opcode; // only used for midi
+    uint8_t midi_status; // only used for midi
 
     float volume;
     float volume_target;
@@ -758,23 +1051,19 @@ private:
     int32_t instrument; // technically uint16, but uninitialized as -1
     float pitch_bend_semitone_range;
 
-    shared_ptr<Voice> voices[8];
+    unordered_map<size_t, shared_ptr<Voice>> voices;
     unordered_set<shared_ptr<Voice>> voices_off;
     vector<uint32_t> call_stack;
 
     unordered_map<uint8_t, int16_t> registers;
 
     Track(int16_t id, shared_ptr<string> data, size_t start_offset, uint32_t bank = -1) :
-        id(id), r(data, start_offset), volume(0), volume_target(0),
-        volume_target_frames(0), pitch_bend(0), pitch_bend_target(0),
-        pitch_bend_target_frames(0), reverb(0), reverb_target(0),
-        reverb_target_frames(0), panning(0.5f), panning_target(0.5f),
-        panning_target_frames(0), bank(bank), instrument(-1),
-        pitch_bend_semitone_range(48.0) {
-      for (size_t x = 0; x < 8; x++) {
-        this->voices[x].reset();
-      }
-    }
+        id(id), r(data, start_offset), reading_wait_opcode(true), volume(1.0),
+        volume_target(0), volume_target_frames(0), pitch_bend(0),
+        pitch_bend_target(0), pitch_bend_target_frames(0), reverb(0),
+        reverb_target(0), reverb_target_frames(0), panning(0.5f),
+        panning_target(0.5f), panning_target_frames(0), bank(bank),
+        instrument(-1), pitch_bend_semitone_range(48.0) { }
 
     void attenuate_perf() {
       if (this->volume_target_frames) {
@@ -794,10 +1083,19 @@ private:
         this->panning_target_frames--;
       }
     }
+
+    void voice_off(size_t voice_id) {
+      // some tracks do voice_off for nonexistent voices because of bad looping;
+      // just do nothing in that case
+      auto v_it = this->voices.find(voice_id);
+      if (v_it != this->voices.end()) {
+        v_it->second->off();
+        this->voices_off.emplace(move(v_it->second));
+        this->voices.erase(v_it);
+      }
+    }
   };
 
-  shared_ptr<SequenceProgram> seq;
-  shared_ptr<string> seq_data;
   string output_data;
   unordered_map<int16_t, shared_ptr<Track>> id_to_track;
   multimap<uint64_t, shared_ptr<Track>> next_event_to_track;
@@ -814,24 +1112,34 @@ private:
 
   shared_ptr<SampleCache> cache;
 
-public:
-  explicit Renderer(shared_ptr<SequenceProgram> seq, size_t sample_rate,
-      shared_ptr<const SoundEnvironment> env,
-      const unordered_set<int16_t>& mute_tracks,
-      const unordered_set<int16_t>& disable_tracks) : seq(seq),
-      seq_data(new string(seq->data)), sample_rate(sample_rate),
-      current_time(0), samples_rendered(0), tempo(0), pulse_rate(0), env(env),
-      mute_tracks(mute_tracks), disable_tracks(disable_tracks),
-      cache(new SampleCache()) {
-    // the default track has a track id of -1; all others are uint8_t
-    if (!this->disable_tracks.count(-1)) {
-      shared_ptr<Track> default_track(new Track(-1, this->seq_data, 0, this->seq->index));
-      id_to_track.emplace(default_track->id, default_track);
-      next_event_to_track.emplace(0, default_track);
+  virtual void execute_opcode(multimap<uint64_t, shared_ptr<Track>>::iterator track_it) = 0;
+
+  void voice_on(shared_ptr<Track> t, size_t voice_id, uint8_t key, uint8_t vel) {
+    if (this->env) {
+      try {
+        SampleVoice* v = new SampleVoice(this->sample_rate, this->env,
+            this->cache, t->bank, t->instrument, key, vel);
+        t->voices[voice_id].reset(v);
+      } catch (const out_of_range& e) {
+        fprintf(stderr, "warning: can\'t find sample (%s): bank=%" PRIX32
+            " instrument=%" PRIX32 " key=%02hhX vel=%02hhX\n", e.what(),
+            t->bank, t->instrument, key, vel);
+        t->voices[voice_id].reset(new SineVoice(this->sample_rate, key, vel));
+      }
+    } else {
+      t->voices[voice_id].reset(new SineVoice(this->sample_rate, key, vel));
     }
   }
 
-  ~Renderer() = default;
+public:
+  explicit Renderer(size_t sample_rate, shared_ptr<const SoundEnvironment> env,
+      const unordered_set<int16_t>& mute_tracks,
+      const unordered_set<int16_t>& disable_tracks) : sample_rate(sample_rate),
+      current_time(0), samples_rendered(0), tempo(0), pulse_rate(0), env(env),
+      mute_tracks(mute_tracks), disable_tracks(disable_tracks),
+      cache(new SampleCache()) { }
+
+  virtual ~Renderer() = default;
 
   vector<float> render_time_step(size_t queued_buffer_count = 0, size_t buffer_count = 0) {
     if (this->next_event_to_track.empty()) {
@@ -868,11 +1176,8 @@ public:
 
       // get all voices, including those that are fading
       unordered_set<shared_ptr<Voice>> all_voices = t->voices_off;
-      for (size_t x = 0; x < 8; x++) {
-        if (!t->voices[x].get()) {
-          continue;
-        }
-        all_voices.insert(t->voices[x]);
+      for (auto& it : t->voices) {
+        all_voices.insert(it.second);
       }
 
       // render all the voices
@@ -934,7 +1239,9 @@ public:
       double when = static_cast<double>(this->samples_rendered) / this->sample_rate;
 
       const string* buffers_color;
-      if (queued_buffer_count > (2 * buffer_count) / 3) {
+      if (buffer_count == 0) {
+        buffers_color = &white;
+      } else if (queued_buffer_count > (2 * buffer_count) / 3) {
         buffers_color = &green;
       } else if (queued_buffer_count > buffer_count / 3) {
         buffers_color = &yellow;
@@ -1016,8 +1323,31 @@ public:
     }
     return samples;
   }
+};
 
-private:
+class BMSRenderer : public Renderer {
+protected:
+  shared_ptr<SequenceProgram> seq;
+  shared_ptr<string> seq_data;
+
+public:
+  explicit BMSRenderer(shared_ptr<SequenceProgram> seq, size_t sample_rate,
+      shared_ptr<const SoundEnvironment> env,
+      const unordered_set<int16_t>& mute_tracks,
+      const unordered_set<int16_t>& disable_tracks) :
+      Renderer(sample_rate, env, mute_tracks, disable_tracks), seq(seq),
+      seq_data(new string(seq->data)) {
+    // the default track has a track id of -1; all others are uint8_t
+    if (!this->disable_tracks.count(-1)) {
+      shared_ptr<Track> default_track(new Track(-1, this->seq_data, 0, this->seq->index));
+      this->id_to_track.emplace(default_track->id, default_track);
+      this->next_event_to_track.emplace(0, default_track);
+    }
+  }
+
+  virtual ~BMSRenderer() = default;
+
+protected:
 
   void execute_set_perf(shared_ptr<Track> t, uint8_t type, float value,
       uint16_t duration) {
@@ -1082,7 +1412,7 @@ private:
     }
   }
 
-  void execute_opcode(multimap<uint64_t, shared_ptr<Track>>::iterator track_it) {
+  virtual void execute_opcode(multimap<uint64_t, shared_ptr<Track>>::iterator track_it) {
     shared_ptr<Track> t = track_it->second;
 
     uint8_t opcode = t->r.get_u8();
@@ -1090,26 +1420,7 @@ private:
       // note: opcode is also the note
       uint8_t voice = t->r.get_u8() - 1; // between 1 and 8 inclusive
       uint8_t vel = t->r.get_u8();
-      if (voice >= 0x08) {
-        return; // throw invalid_argument(string_printf("[%zX] voice out of range: %02hhX", where, voice));
-      }
-
-      // figure out which sample to use
-      if (this->env) {
-        try {
-          SampleVoice* v = new SampleVoice(this->sample_rate, this->env,
-              this->cache, t->bank, t->instrument, opcode, vel);
-          t->voices[voice].reset(v);
-        } catch (const out_of_range& e) {
-          fprintf(stderr, "warning: can\'t find sample (%s): bank=%" PRIX32
-              " instrument=%" PRIX32 " key=%02hhX vel=%02hhX\n", e.what(),
-              t->bank, t->instrument, opcode, vel);
-          t->voices[voice].reset(new SineVoice(this->sample_rate, opcode, vel));
-        }
-      } else {
-        t->voices[voice].reset(new SineVoice(this->sample_rate, opcode, vel));
-      }
-
+      this->voice_on(t, voice, opcode, vel);
       return;
     }
 
@@ -1131,12 +1442,7 @@ private:
       case 0x86:
       case 0x87: {
         uint8_t voice = (opcode & 7) - 1;
-        // some tracks do voice_off for nonexistent voices because of bad
-        // looping; just do nothing
-        if (t->voices[voice].get()) {
-          t->voices[voice]->off();
-          t->voices_off.emplace(move(t->voices[voice]));
-        }
+        t->voice_off(voice);
         break;
       }
 
@@ -1343,6 +1649,183 @@ private:
   }
 };
 
+class MIDIRenderer : public Renderer {
+protected:
+  shared_ptr<string> midi_contents;
+  bool ignore_tempo_events;
+
+public:
+  explicit MIDIRenderer(shared_ptr<string> midi_contents, size_t sample_rate,
+      shared_ptr<const SoundEnvironment> env,
+      const unordered_set<int16_t>& mute_tracks,
+      const unordered_set<int16_t>& disable_tracks, bool ignore_tempo_events) :
+      Renderer(sample_rate, env, mute_tracks, disable_tracks),
+      midi_contents(midi_contents), ignore_tempo_events(ignore_tempo_events) {
+    StringReader r(this->midi_contents);
+
+    // read the header and create all the tracks
+    MIDIHeaderChunk header = r.get<MIDIHeaderChunk>();
+    header.byteswap();
+    if (header.header.magic != 0x4D546864) { // 'MThd'
+      throw runtime_error("header identifier is incorrect");
+    }
+    if (header.header.size < 6) {
+      throw runtime_error("header is too small");
+    }
+    if (header.format > 2) {
+      throw runtime_error("MIDI format is unknown");
+    }
+
+    // if the header is larger, skip the extra bytes
+    if (header.header.size > 6) {
+      r.go(r.where() + (header.header.size - sizeof(MIDIHeaderChunk)));
+    }
+
+    // create all the tracks
+    for (size_t track_id = 0; track_id < header.track_count; track_id++) {
+      MIDITrackChunk ch = r.get<MIDITrackChunk>();
+      ch.byteswap();
+      if (ch.header.magic != 0x4D54726B) {
+        throw runtime_error("track header not present");
+      }
+
+      if (!this->disable_tracks.count(track_id)) {
+        shared_ptr<Track> t(new Track(track_id, this->midi_contents, r.where(), 0));
+        this->id_to_track.emplace(t->id, t);
+        this->next_event_to_track.emplace(0, t);
+      }
+
+      r.go(r.where() + ch.header.size);
+    }
+
+    // set the tempo if it's given in absolute terms
+    if (header.division & 0x8000) {
+      // TODO: figure out if this logic is right
+      uint8_t frames_per_sec = -((header.division >> 8) & 0x7F);
+      uint8_t ticks_per_frame = header.division & 0xFF;
+      int64_t ticks_per_sec = static_cast<int64_t>(ticks_per_frame) *
+          static_cast<int64_t>(frames_per_sec);
+      this->tempo = 120;
+      this->pulse_rate = ticks_per_sec / 2;
+
+    } else {
+      this->tempo = 120;
+      this->pulse_rate = header.division;
+    }
+  }
+
+  virtual ~MIDIRenderer() = default;
+
+protected:
+
+  virtual void execute_opcode(multimap<uint64_t, shared_ptr<Track>>::iterator track_it) {
+    shared_ptr<Track> t = track_it->second;
+
+    t->reading_wait_opcode = !t->reading_wait_opcode;
+    if (!t->reading_wait_opcode) {
+      uint32_t wait_time = read_variable_int(t->r);
+      if (wait_time) {
+        uint64_t reactivation_time = this->current_time + wait_time;
+        this->next_event_to_track.erase(track_it);
+        this->next_event_to_track.emplace(reactivation_time, t);
+      }
+      return;
+    }
+
+    // if the status byte is omitted, use the status from the previous command
+    uint8_t new_status = t->r.get_u8();
+    if (new_status & 0x80) {
+      t->midi_status = new_status;
+    } else {
+      t->r.go(t->r.where() - 1);
+    }
+
+    if ((t->midi_status & 0xF0) == 0x80) { // note off
+      uint8_t channel = t->midi_status & 0x0F;
+      uint8_t key = t->r.get_u8();
+      uint8_t vel = t->r.get_u8();
+
+      uint32_t voice_id = (static_cast<uint32_t>(channel) << 16) |
+          (static_cast<uint32_t>(key) << 8) |
+          (static_cast<uint32_t>(vel));
+      t->voice_off(voice_id);
+
+    } else if ((t->midi_status & 0xF0) == 0x90) { // note on
+      t->instrument = t->midi_status & 0x0F;
+      uint8_t key = t->r.get_u8();
+      uint8_t vel = t->r.get_u8();
+
+      uint32_t voice_id = (static_cast<uint32_t>(t->instrument) << 16) |
+          (static_cast<uint32_t>(key) << 8) |
+          (static_cast<uint32_t>(vel));
+      this->voice_on(t, voice_id, key, vel);
+
+    } else if ((t->midi_status & 0xF0) == 0xA0) { // change key pressure
+      // uint8_t channel = t->midi_status & 0x0F;
+      t->r.get_u8(); // key
+      t->r.get_u8(); // vel
+      // TODO
+
+    } else if ((t->midi_status & 0xF0) == 0xB0) { // controller change OR channel mode
+      // uint8_t channel = t->midi_status & 0x0F;
+      t->r.get_u8(); // controller
+      t->r.get_u8(); // value
+      // TODO
+
+    } else if ((t->midi_status & 0xF0) == 0xC0) { // program change
+      // uint8_t channel = t->midi_status & 0x0F;
+      t->r.get_u8(); // program_number
+      // TODO
+
+    } else if ((t->midi_status & 0xF0) == 0xD0) { // channel key pressure
+      // uint8_t channel = t->midi_status & 0x0F;
+      t->r.get_u8(); // vel
+      // TODO
+
+    } else if ((t->midi_status & 0xF0) == 0xE0) { // pitch bend
+      // uint8_t channel = t->midi_status & 0x0F;
+      t->r.get_u8(); // lsb
+      t->r.get_u8(); // msb
+      // uint16_t value = (msb << 7) | lsb; // yes, each is 7 bits, not 8
+
+    } else if (t->midi_status == 0xFF) { // meta event
+      uint8_t type = t->r.get_u8();
+      uint8_t size = t->r.get_u8();
+
+      if (type == 0x2F) { // end track
+        this->id_to_track.erase(t->id);
+        this->next_event_to_track.erase(track_it);
+
+      } else if (type == 0x51) { // set tempo
+        if (!this->ignore_tempo_events) {
+          this->tempo = 60000000 / t->r.get_u24r();
+        } else {
+          t->r.get_u24();
+        }
+
+      } else { // anything else? just skip it
+        t->r.go(t->r.where() + size);
+      }
+    }
+  }
+};
+
+
+
+static shared_ptr<Renderer> create_renderer(shared_ptr<SequenceProgram> seq,
+    shared_ptr<string> midi_contents, size_t sample_rate,
+    shared_ptr<const SoundEnvironment> env,
+    const unordered_set<int16_t>& mute_tracks,
+    const unordered_set<int16_t>& disable_tracks, bool ignore_tempo_events) {
+  if (seq.get()) {
+    return shared_ptr<Renderer>(new BMSRenderer(seq, sample_rate, env,
+        mute_tracks, disable_tracks));
+  } else {
+    return shared_ptr<Renderer>(new MIDIRenderer(midi_contents, sample_rate,
+        env, mute_tracks, disable_tracks, ignore_tempo_events));
+  }
+}
+
 
 
 void print_usage(const char* argv0) {
@@ -1352,7 +1835,12 @@ usage:\n\
   to render: %s sequence.bms --output-filename=file.wav [options]\n\
   to play: %s sequence.bms --play [options]\n\
 \n\
-options:\n\
+input options:\n\
+  --midi: treat input sequence as midi instead of bms\n\
+  --midi-instrument=N:filename: map midi channel N to instrument\n\
+      if given, --midi is implied\n\
+\n\
+synthesis options:\n\
   --disable-track=N: disable track N completely.\n\
   --mute-track=N: execute track N, but don't render any of its sound.\n\
   --time-limit=N: stop playing or rendering after this many seconds.\n\
@@ -1362,16 +1850,20 @@ options:\n\
       defined in the aaf file (the program will check for this first).\n\
       if not given, all instruments will be sine waves, which sounds funny but\n\
       probably isn\'t what you want.\n\
+\n\
+logging options:\n\
   --verbose: print debugging events and the like.\n\
   --linear: use linear interpolation. realtime play will likely lag unless this\n\
       option is used, especially if the sequence uses pitch bending.\n\
+  --no-color: don\'t use terminal escape codes for color in the output.\n\
+  --short-status: only show one line of status information.\n\
+\n\
+debugging options:\n\
   --play-buffers=N: generate up to N steps ahead of playback at once\n\
   --default-bank=N: override automatic instrument bank detection and use bank\n\
       N instead.\n\
   --wsys-link=A:B: override automatic sample bank detection and use samples\n\
       from bank B for instrument bank A instead.\n\
-  --no-color: don\'t use terminal escape codes for color in the output.\n\
-  --short-status: only show one line of status information.\n\
 ", argv0, argv0, argv0);
 }
 
@@ -1385,6 +1877,8 @@ int main(int argc, char** argv) {
   const char* filename = NULL;
   const char* output_filename = NULL;
   const char* aaf_directory = NULL;
+  bool midi = false;
+  unordered_map<int16_t, InstrumentMetadata> midi_instrument_metadata;
   unordered_set<int16_t> disable_tracks;
   unordered_set<int16_t> mute_tracks;
   float time_limit = 60.0f;
@@ -1394,6 +1888,7 @@ int main(int argc, char** argv) {
   int32_t default_bank = -1;
   unordered_map<uint32_t, uint32_t> wsys_link_overrides;
   size_t num_buffers = 32;
+  bool ignore_tempo_events = false;
   for (int x = 1; x < argc; x++) {
     if (!strncmp(argv[x], "--disable-track=", 16)) {
       disable_tracks.emplace(atoi(&argv[x][16]));
@@ -1409,6 +1904,22 @@ int main(int argc, char** argv) {
       aaf_directory = &argv[x][21];
     } else if (!strncmp(argv[x], "--output-filename=", 18)) {
       output_filename = &argv[x][18];
+    } else if (!strcmp(argv[x], "--midi")) {
+      midi = true;
+    } else if (!strcmp(argv[x], "--midi-ignore-tempo-events")) {
+      ignore_tempo_events = true;
+    } else if (!strncmp(argv[x], "--midi-channel-instrument=", 26)) {
+      auto tokens = split(&argv[x][26], ':');
+      if (tokens.size() < 2 || tokens.size() > 3) {
+        fprintf(stderr, "invalid argument format: %s\n", argv[x]);
+        return 1;
+      }
+      InstrumentMetadata im;
+      int16_t channel_id = stoull(tokens[0], NULL, 0);
+      im.filename = tokens[1];
+      im.base_note = (tokens.size() > 2) ? stoul(tokens[2], NULL, 0) : 0x3C;
+      fprintf(stderr, "[midi-instrument] %hd -> %s with base 0x%hhX\n", channel_id, im.filename.c_str(), im.base_note);
+      midi_instrument_metadata.emplace(channel_id, move(im));
 
     } else if (!strcmp(argv[x], "--verbose")) {
       debug_flags = 0xFFFFFFFFFFFFFFFF;
@@ -1442,35 +1953,47 @@ int main(int argc, char** argv) {
     throw invalid_argument("no filename given");
   }
 
-  shared_ptr<const SoundEnvironment> env(aaf_directory ?
-      new SoundEnvironment(load_sound_environment(aaf_directory, wsys_link_overrides)) : NULL);
-
-  // try to get the sequence from the env if it's there
-  shared_ptr<SequenceProgram> seq;
-  if (env.get()) {
-    try {
-      seq.reset(new SequenceProgram(env->sequence_programs.at(filename)));
-    } catch (const out_of_range&) { }
+  shared_ptr<const SoundEnvironment> env;
+  if (aaf_directory) {
+    env.reset(new SoundEnvironment(load_sound_environment(aaf_directory, wsys_link_overrides)));
+  } else if (midi) {
+    env.reset(new SoundEnvironment(create_midi_sound_environment(
+        midi_instrument_metadata)));
   }
-  if (!seq.get()) {
-    try {
-      seq.reset(new SequenceProgram(default_bank, load_file(filename)));
-    } catch (const cannot_open_file&) {
-      fprintf(stderr, "sequence does not exist in environment, nor on disk: %s\n",
-          filename);
-      fprintf(stderr, "there are %zu sequences in the environment:\n",
-          env->sequence_programs.size());
 
-      vector<string> sequence_names;
-      for (const auto& it : env->sequence_programs) {
-        sequence_names.emplace_back(it.first);
-      }
-      sort(sequence_names.begin(), sequence_names.end());
+  // for bms, try to get the sequence from the env if it's there
+  // for midi, load the contents of the midi file
+  shared_ptr<SequenceProgram> seq;
+  shared_ptr<string> midi_contents;
+  if (midi) {
+    midi_contents.reset(new string(load_file(filename)));
 
-      for (const auto& it : sequence_names) {
-        fprintf(stderr, "  %s\n", it.c_str());
+  } else {
+    if (env.get()) {
+      try {
+        seq.reset(new SequenceProgram(env->sequence_programs.at(filename)));
+      } catch (const out_of_range&) { }
+    }
+    if (!seq.get()) {
+      try {
+        seq.reset(new SequenceProgram(default_bank, load_file(filename)));
+      } catch (const cannot_open_file&) {
+        fprintf(stderr, "sequence does not exist in environment, nor on disk: %s\n",
+            filename);
+        fprintf(stderr, "there are %zu sequences in the environment:\n",
+            env->sequence_programs.size());
+
+        vector<string> sequence_names;
+        for (const auto& it : env->sequence_programs) {
+          sequence_names.emplace_back(it.first);
+        }
+        sort(sequence_names.begin(), sequence_names.end());
+
+        for (const auto& it : sequence_names) {
+          fprintf(stderr, "  %s\n", it.c_str());
+        }
+        return 2;
       }
-      return 2;
     }
   }
 
@@ -1479,27 +2002,30 @@ int main(int argc, char** argv) {
   }
 
   if (output_filename) {
-    Renderer r(seq, sample_rate, env, mute_tracks, disable_tracks);
+    shared_ptr<Renderer> r = create_renderer(seq, midi_contents, sample_rate,
+        env, mute_tracks, disable_tracks, ignore_tempo_events);
 
     if (start_time) {
-      r.render_until_seconds(start_time);
+      r->render_until_seconds(start_time);
     }
 
-    auto samples = r.render_until_seconds(time_limit);
+    auto samples = r->render_until_seconds(time_limit);
     save_wav(output_filename, samples, sample_rate, 2);
 
   } else if (play) {
-    Renderer r(seq, sample_rate, env, mute_tracks, disable_tracks);
+    shared_ptr<Renderer> r = create_renderer(seq, midi_contents, sample_rate,
+        env, mute_tracks, disable_tracks, ignore_tempo_events);
 
     if (start_time) {
-      r.render_until_seconds(start_time);
+      r->render_until_seconds(start_time);
     }
 
     init_al();
     al_stream stream(sample_rate, AL_FORMAT_STEREO16, num_buffers);
     for (;;) {
       stream.check_buffers();
-      auto step_samples = r.render_time_step(stream.queued_buffer_count(), stream.buffer_count());
+      auto step_samples = r->render_time_step(stream.queued_buffer_count(),
+          stream.buffer_count());
       if (step_samples.empty()) {
         break;
       }
@@ -1513,9 +2039,14 @@ int main(int argc, char** argv) {
     exit_al();
 
   } else {
-    shared_ptr<string> seq_data(new string(seq->data));
-    StringReader r(seq_data);
-    disassemble_stream(r, seq->index);
+    if (midi) {
+      StringReader r(midi_contents);
+      disassemble_midi(r);
+    } else {
+      shared_ptr<string> seq_data(new string(seq->data));
+      StringReader r(seq_data);
+      disassemble_bms(r, seq->index);
+    }
   }
 
   return 0;
