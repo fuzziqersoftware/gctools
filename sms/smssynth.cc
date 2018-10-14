@@ -1200,25 +1200,27 @@ public:
       }
 
       bool short_status = debug_flags & DebugFlag::ShowShortStatus;
+      char when_str[8];
+      snprintf(when_str, 8, "%-7g", when);
 
       if ((debug_flags & DebugFlag::ColorField) || (short_status && (debug_flags & DebugFlag::ColorStatus))) {
-        fprintf(stderr, "\r%08" PRIX64 ": %s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.8s%s @ %-7g + %s%zu/%zu%s%c",
+        fprintf(stderr, "\r%08" PRIX64 ": %s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.8s%s @ %-7s + %s%zu/%zu%s%c",
             current_time,
             field_magenta.c_str(), &notes_table[0], field_red.c_str(), &notes_table[12],
             field_yellow.c_str(), &notes_table[24], field_green.c_str(), &notes_table[36],
             field_cyan.c_str(), &notes_table[48], field_blue.c_str(), &notes_table[60],
             field_magenta.c_str(), &notes_table[72], field_red.c_str(), &notes_table[84],
             field_yellow.c_str(), &notes_table[96], field_green.c_str(), &notes_table[108],
-            field_cyan.c_str(), &notes_table[120], white.c_str(), when,
+            field_cyan.c_str(), &notes_table[120], white.c_str(), when_str,
             buffers_color->c_str(), queued_buffer_count, buffer_count, white.c_str(),
             short_status ? ' ' : '\n');
       } else if (debug_flags & DebugFlag::ColorStatus) {
-        fprintf(stderr, "\r%08" PRIX64 ": %s @ %-7g + %s%zu/%zu%s%c", current_time,
-            notes_table, when, buffers_color->c_str(), queued_buffer_count,
+        fprintf(stderr, "\r%08" PRIX64 ": %s @ %-7s + %s%zu/%zu%s%c", current_time,
+            notes_table, when_str, buffers_color->c_str(), queued_buffer_count,
             buffer_count, white.c_str(), short_status ? ' ' : '\n');
       } else {
-        fprintf(stderr, "\r%08" PRIX64 ": %s @ %-7g + %zu/%zu%c", current_time,
-            notes_table, when, queued_buffer_count, buffer_count, short_status ? ' ' : '\n');
+        fprintf(stderr, "\r%08" PRIX64 ": %s @ %-7s + %zu/%zu%c", current_time,
+            notes_table, when_str, queued_buffer_count, buffer_count, short_status ? ' ' : '\n');
       }
 
       if (!short_status) {
