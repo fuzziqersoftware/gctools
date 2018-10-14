@@ -1,11 +1,11 @@
 CC=gcc
 CXX=g++
-OBJECTS=aaf.o afc.o instrument.o audio.o wav.o
+OBJECTS=aaf.o afc.o instrument.o
 CFLAGS=-g -O0 -Wall -Werror
 CXXFLAGS=-std=c++14 -g -O0 -Wall -Werror -I/usr/local/include -I /opt/local/include
-LDFLAGS=-g -lphosg -L/usr/local/lib -L/opt/local/lib
+LDFLAGS=-g -lphosg -lphosg-audio -L/usr/local/lib -L/opt/local/lib
 EXECUTABLES=smsdumpbanks smssynth
-LIBS=-lphosg -lsamplerate
+LIBS=-lphosg -lphosg-audio -lsamplerate
 
 UNAME = $(shell uname -s)
 ifeq ($(UNAME),Darwin)

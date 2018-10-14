@@ -5,9 +5,9 @@
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
 #include <phosg/Strings.hh>
+#include <phosg-audio/File.hh>
 #include <vector>
 
-#include "wav.hh"
 #include "aaf.hh"
 
 using namespace std;
