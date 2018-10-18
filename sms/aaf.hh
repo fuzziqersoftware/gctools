@@ -33,7 +33,7 @@ struct SoundEnvironment {
 
 struct InstrumentMetadata {
   string filename;
-  uint8_t base_note;
+  int16_t base_note;
 };
 
 SoundEnvironment load_sound_environment(const char* aw_directory,

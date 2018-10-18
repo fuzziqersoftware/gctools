@@ -590,9 +590,20 @@ SoundEnvironment create_midi_sound_environment(
     s.decoded_samples = wav.samples;
     s.num_channels = wav.num_channels;
     s.sample_rate = wav.sample_rate;
-    s.base_note = it.second.base_note;
-    s.loop_start = 0;
-    s.loop_end = 0;
+    if (it.second.base_note >= 0) {
+      s.base_note = it.second.base_note;
+    } else if (wav.base_note >= 0) {
+      s.base_note = wav.base_note;
+    } else {
+      s.base_note = 0x3C;
+    }
+    if (wav.loops.size() == 1) {
+      s.loop_start = wav.loops[0].start;
+      s.loop_end = wav.loops[0].end;
+    } else {
+      s.loop_start = 0;
+      s.loop_end = 0;
+    }
     s.sound_id = it.first;
     s.source_filename = it.second.filename;
     s.source_offset = 0;

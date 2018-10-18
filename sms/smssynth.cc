@@ -1869,8 +1869,8 @@ int main(int argc, char** argv) {
       InstrumentMetadata im;
       int16_t channel_id = stoull(tokens[0], NULL, 0);
       im.filename = tokens[1];
-      im.base_note = (tokens.size() > 2) ? stoul(tokens[2], NULL, 0) : 0x3C;
-      fprintf(stderr, "[midi-instrument] %hd -> %s with base 0x%hhX\n", channel_id, im.filename.c_str(), im.base_note);
+      im.base_note = (tokens.size() > 2) ? stoul(tokens[2], NULL, 0) : -1;
+      fprintf(stderr, "[midi-instrument] %hd -> %s with base 0x%hX\n", channel_id, im.filename.c_str(), im.base_note);
       midi_instrument_metadata.emplace(channel_id, move(im));
 
     } else if (!strcmp(argv[x], "--verbose")) {
