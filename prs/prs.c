@@ -172,6 +172,16 @@ int64_t prs_compress_stream(FILE* src, FILE* dst, int64_t size) {
 }
 
 
+
+int64_t handle_decompress_error(FILE* in, int64_t out_size) {
+  if (feof(in)) {
+    fprintf(stderr, "prs_decompress: unexpected end of stream; result may be incomplete\n");
+  } else {
+    fprintf(stderr, "prs_decompress: read error in stream; result may be incomplete\n");
+  }
+  return out_size;
+}
+
 int64_t prs_decompress_stream(FILE* in, FILE* out, int64_t stop_after_size) {
 
   struct data_log log;
@@ -179,23 +189,33 @@ int64_t prs_decompress_stream(FILE* in, FILE* out, int64_t stop_after_size) {
 
   int32_t r3, r5;
   int bitpos = 9;
-  unsigned char currentbyte;
+  int16_t currentbyte; // int16_t because it can be -1 when EOF occurs
   int flag;
   int offset;
   unsigned long x, t;
   unsigned long out_size = 0;
-  
+
   currentbyte = fgetc(in);
+  if (currentbyte == EOF) {
+    return handle_decompress_error(in, out_size);
+  }
+
   for (;;) {
     bitpos--;
     if (bitpos == 0) {
       currentbyte = fgetc(in);
+      if (currentbyte == EOF) {
+        return handle_decompress_error(in, out_size);
+      }
       bitpos = 8;
     }
     flag = currentbyte & 1;
     currentbyte = currentbyte >> 1;
     if (flag) {
       int ch = fgetc(in);
+      if (ch == EOF) {
+        return handle_decompress_error(in, out_size);
+      }
       fputc(ch, out);
       out_size++;
       if (stop_after_size && (out_size >= stop_after_size)) {
@@ -207,13 +227,23 @@ int64_t prs_decompress_stream(FILE* in, FILE* out, int64_t stop_after_size) {
     bitpos--;
     if (bitpos == 0) {
       currentbyte = fgetc(in);
+      if (currentbyte == EOF) {
+        return handle_decompress_error(in, out_size);
+      }
       bitpos = 8;
     }
     flag = currentbyte & 1;
     currentbyte = currentbyte >> 1;
     if (flag) {
-      r3 = fgetc(in) & 0xFF;
-      offset = ((fgetc(in) & 0xFF) << 8) | r3;
+      r3 = fgetc(in);
+      if (r3 == EOF) {
+        return handle_decompress_error(in, out_size);
+      }
+      int high_byte = fgetc(in);
+      if (high_byte == EOF) {
+        return handle_decompress_error(in, out_size);
+      }
+      offset = ((high_byte & 0xFF) << 8) | (r3 & 0xFF);
       if (offset == 0) {
         delete_log(&log);
         return out_size;
@@ -222,8 +252,11 @@ int64_t prs_decompress_stream(FILE* in, FILE* out, int64_t stop_after_size) {
       r5 = (offset >> 3) | 0xFFFFE000;
       if (r3 == 0) {
         flag = 0;
-        r3 = fgetc(in) & 0xFF;
-        r3++;
+        r3 = fgetc(in);
+        if (r3 == EOF) {
+          return handle_decompress_error(in, out_size);
+        }
+        r3 = (r3 & 0xFF) + 1;
       } else {
         r3 += 2;
       }
@@ -233,6 +266,9 @@ int64_t prs_decompress_stream(FILE* in, FILE* out, int64_t stop_after_size) {
         bitpos--;
         if (bitpos == 0) {
           currentbyte = fgetc(in);
+          if (currentbyte == EOF) {
+            return handle_decompress_error(in, out_size);
+          }
           bitpos = 8;
         }
         flag = currentbyte & 1;
@@ -240,9 +276,12 @@ int64_t prs_decompress_stream(FILE* in, FILE* out, int64_t stop_after_size) {
         offset = r3 << 1;
         r3 = offset | flag;
       }
-      offset = fgetc(in) | 0xFFFFFF00;
+      offset = fgetc(in);
+      if (offset == EOF) {
+        return handle_decompress_error(in, out_size);
+      }
       r3 += 2;
-      r5 = offset;
+      r5 = offset | 0xFFFFFF00;
     }
     if (r3 == 0) {
       continue;
