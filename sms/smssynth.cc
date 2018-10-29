@@ -793,8 +793,10 @@ private:
 
 class Voice {
 public:
-  Voice(size_t sample_rate, int8_t note, int8_t vel) : sample_rate(sample_rate),
-      note(note), vel(vel), note_off_decay_total(this->sample_rate / 5),
+  Voice(size_t sample_rate, int8_t note, int8_t vel, bool decay_when_off) :
+      sample_rate(sample_rate), note(note), vel(vel),
+      decay_when_off(decay_when_off),
+      note_off_decay_total(this->sample_rate / 5),
       note_off_decay_remaining(-1) { }
   virtual ~Voice() = default;
 
@@ -812,6 +814,9 @@ public:
   }
 
   float advance_note_off_factor() {
+    if (!this->decay_when_off) {
+      return 1.0f;
+    }
     if (this->note_off_decay_remaining == 0) {
       return 0.0f;
     }
@@ -825,6 +830,7 @@ public:
   size_t sample_rate;
   int8_t note;
   int8_t vel;
+  bool decay_when_off;
   ssize_t note_off_decay_total;
   ssize_t note_off_decay_remaining;
 };
@@ -832,7 +838,7 @@ public:
 class SineVoice : public Voice {
 public:
   SineVoice(size_t sample_rate, int8_t note, int8_t vel) :
-      Voice(sample_rate, note, vel), offset(0) { }
+      Voice(sample_rate, note, vel, true), offset(0) { }
   virtual ~SineVoice() = default;
 
   virtual vector<float> render(size_t count, float volume, float pitch_bend,
@@ -860,7 +866,8 @@ class SampleVoice : public Voice {
 public:
   SampleVoice(size_t sample_rate, shared_ptr<const SoundEnvironment> env,
       shared_ptr<SampleCache> cache, uint16_t bank_id, uint16_t instrument_id,
-      int8_t note, int8_t vel) : Voice(sample_rate, note, vel),
+      int8_t note, int8_t vel, bool decay_when_off) :
+      Voice(sample_rate, note, vel, decay_when_off),
       instrument_bank(&env->instrument_banks.at(bank_id)),
       instrument(&this->instrument_bank->id_to_instrument.at(instrument_id)),
       key_region(&this->instrument->region_for_key(note)),
@@ -946,7 +953,7 @@ public:
       data[2 * x + 1] = vel_factor * off_factor * panning * volume * samples[this->offset];
 
       this->offset++;
-      if ((this->loop_end_offset > 0) && (this->offset > this->loop_end_offset)) {
+      if ((this->note_off_decay_remaining < 0) && (this->loop_end_offset > 0) && (this->offset > this->loop_end_offset)) {
         this->offset = this->loop_start_offset;
       }
     }
@@ -1059,6 +1066,7 @@ protected:
   shared_ptr<const SoundEnvironment> env;
   unordered_set<int16_t> mute_tracks;
   unordered_set<int16_t> disable_tracks;
+  bool decay_when_off;
 
   shared_ptr<SampleCache> cache;
 
@@ -1068,7 +1076,7 @@ protected:
     if (this->env) {
       try {
         SampleVoice* v = new SampleVoice(this->sample_rate, this->env,
-            this->cache, t->bank, t->instrument, key, vel);
+            this->cache, t->bank, t->instrument, key, vel, this->decay_when_off);
         t->voices[voice_id].reset(v);
       } catch (const out_of_range& e) {
         fprintf(stderr, "warning: can\'t find sample (%s): bank=%" PRIX32
@@ -1084,9 +1092,10 @@ protected:
 public:
   explicit Renderer(size_t sample_rate, shared_ptr<const SoundEnvironment> env,
       const unordered_set<int16_t>& mute_tracks,
-      const unordered_set<int16_t>& disable_tracks) : sample_rate(sample_rate),
-      current_time(0), samples_rendered(0), tempo(0), pulse_rate(0), env(env),
-      mute_tracks(mute_tracks), disable_tracks(disable_tracks),
+      const unordered_set<int16_t>& disable_tracks, bool decay_when_off) :
+      sample_rate(sample_rate), current_time(0), samples_rendered(0), tempo(0),
+      pulse_rate(0), env(env), mute_tracks(mute_tracks),
+      disable_tracks(disable_tracks), decay_when_off(decay_when_off),
       cache(new SampleCache()) { }
 
   virtual ~Renderer() = default;
@@ -1286,9 +1295,9 @@ public:
   explicit BMSRenderer(shared_ptr<SequenceProgram> seq, size_t sample_rate,
       shared_ptr<const SoundEnvironment> env,
       const unordered_set<int16_t>& mute_tracks,
-      const unordered_set<int16_t>& disable_tracks) :
-      Renderer(sample_rate, env, mute_tracks, disable_tracks), seq(seq),
-      seq_data(new string(seq->data)) {
+      const unordered_set<int16_t>& disable_tracks, bool decay_when_off) :
+      Renderer(sample_rate, env, mute_tracks, disable_tracks, decay_when_off),
+      seq(seq), seq_data(new string(seq->data)) {
     // the default track has a track id of -1; all others are uint8_t
     if (!this->disable_tracks.count(-1)) {
       shared_ptr<Track> default_track(new Track(-1, this->seq_data, 0, this->seq->index));
@@ -1610,8 +1619,9 @@ public:
   explicit MIDIRenderer(shared_ptr<string> midi_contents, size_t sample_rate,
       shared_ptr<const SoundEnvironment> env,
       const unordered_set<int16_t>& mute_tracks,
-      const unordered_set<int16_t>& disable_tracks, bool ignore_tempo_events) :
-      Renderer(sample_rate, env, mute_tracks, disable_tracks),
+      const unordered_set<int16_t>& disable_tracks, bool ignore_tempo_events,
+      bool decay_when_off) :
+      Renderer(sample_rate, env, mute_tracks, disable_tracks, decay_when_off),
       midi_contents(midi_contents), ignore_tempo_events(ignore_tempo_events) {
     StringReader r(this->midi_contents);
 
@@ -1695,11 +1705,12 @@ protected:
     if ((t->midi_status & 0xF0) == 0x80) { // note off
       uint8_t channel = t->midi_status & 0x0F;
       uint8_t key = t->r.get_u8();
-      uint8_t vel = t->r.get_u8();
+      t->r.get_u8(); // vel (ignored; see note below)
 
-      uint32_t voice_id = (static_cast<uint32_t>(channel) << 16) |
-          (static_cast<uint32_t>(key) << 8) |
-          (static_cast<uint32_t>(vel));
+      // note: simcity midis sometimes have incorrect velocities in note-off
+      // commands, so we don't include it in the voice id
+      uint32_t voice_id = (static_cast<uint32_t>(channel) << 8) |
+          static_cast<uint32_t>(key);
       t->voice_off(voice_id);
 
     } else if ((t->midi_status & 0xF0) == 0x90) { // note on
@@ -1707,9 +1718,8 @@ protected:
       uint8_t key = t->r.get_u8();
       uint8_t vel = t->r.get_u8();
 
-      uint32_t voice_id = (static_cast<uint32_t>(t->instrument) << 16) |
-          (static_cast<uint32_t>(key) << 8) |
-          (static_cast<uint32_t>(vel));
+      uint32_t voice_id = (static_cast<uint32_t>(t->instrument) << 8) |
+          static_cast<uint32_t>(key);
       this->voice_on(t, voice_id, key, vel);
 
     } else if ((t->midi_status & 0xF0) == 0xA0) { // change key pressure
@@ -1768,13 +1778,14 @@ static shared_ptr<Renderer> create_renderer(shared_ptr<SequenceProgram> seq,
     shared_ptr<string> midi_contents, size_t sample_rate,
     shared_ptr<const SoundEnvironment> env,
     const unordered_set<int16_t>& mute_tracks,
-    const unordered_set<int16_t>& disable_tracks, bool ignore_tempo_events) {
+    const unordered_set<int16_t>& disable_tracks, bool ignore_tempo_events,
+    bool decay_when_off) {
   if (seq.get()) {
     return shared_ptr<Renderer>(new BMSRenderer(seq, sample_rate, env,
-        mute_tracks, disable_tracks));
+        mute_tracks, disable_tracks, decay_when_off));
   } else {
     return shared_ptr<Renderer>(new MIDIRenderer(midi_contents, sample_rate,
-        env, mute_tracks, disable_tracks, ignore_tempo_events));
+        env, mute_tracks, disable_tracks, ignore_tempo_events, decay_when_off));
   }
 }
 
@@ -1841,6 +1852,7 @@ int main(int argc, char** argv) {
   unordered_map<uint32_t, uint32_t> wsys_link_overrides;
   size_t num_buffers = 32;
   bool ignore_tempo_events = false;
+  bool decay_when_off = true;
   for (int x = 1; x < argc; x++) {
     if (!strncmp(argv[x], "--disable-track=", 16)) {
       disable_tracks.emplace(atoi(&argv[x][16]));
@@ -1856,6 +1868,8 @@ int main(int argc, char** argv) {
       aaf_directory = &argv[x][21];
     } else if (!strncmp(argv[x], "--output-filename=", 18)) {
       output_filename = &argv[x][18];
+    } else if (!strcmp(argv[x], "--no-decay-when-off")) {
+      decay_when_off = false;
     } else if (!strcmp(argv[x], "--midi")) {
       midi = true;
     } else if (!strcmp(argv[x], "--midi-ignore-tempo-events")) {
@@ -1955,7 +1969,7 @@ int main(int argc, char** argv) {
 
   if (output_filename) {
     shared_ptr<Renderer> r = create_renderer(seq, midi_contents, sample_rate,
-        env, mute_tracks, disable_tracks, ignore_tempo_events);
+        env, mute_tracks, disable_tracks, ignore_tempo_events, decay_when_off);
 
     if (start_time) {
       r->render_until_seconds(start_time);
@@ -1966,7 +1980,7 @@ int main(int argc, char** argv) {
 
   } else if (play) {
     shared_ptr<Renderer> r = create_renderer(seq, midi_contents, sample_rate,
-        env, mute_tracks, disable_tracks, ignore_tempo_events);
+        env, mute_tracks, disable_tracks, ignore_tempo_events, decay_when_off);
 
     if (start_time) {
       r->render_until_seconds(start_time);
