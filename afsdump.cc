@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) {
     string output_filename;
     if (filename_offset) {
       const char* internal_filename = data.data() + (filename_offset + 0x30 * x);
-      output_filename = string_printf("%s-%-32s", argv[1], internal_filename);
+      output_filename = string_printf("%s-%-.32s", argv[1], internal_filename);
     } else {
       output_filename = string_printf("%s-%zu", argv[1], x);
     }
