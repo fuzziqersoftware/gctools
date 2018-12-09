@@ -4,8 +4,8 @@ EXECUTABLES=afsdump gcmdump gsldump gvmdump rcfdump pae2gvm
 
 all: $(EXECUTABLES) prs sms
 
-afsdump: afsdump.c
-	gcc $(CFLAGS) -o afsdump afsdump.c
+afsdump: afsdump.cc
+	g++ $(CXXFLAGS) -o afsdump afsdump.cc -lphosg
 
 gcmdump: gcmdump.cc
 	g++ $(CXXFLAGS) -o gcmdump gcmdump.cc -lphosg
