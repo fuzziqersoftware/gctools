@@ -657,7 +657,7 @@ void disassemble_midi(StringReader& r) {
         } else if (controller == 0x7D) {
           printf("poly         channel%hhu\n", channel);
         } else {
-          printf("controller   channel%hhu, %hhu, %hhu\n", channel, controller,
+          printf("controller   channel%hhu, 0x%02hhX, 0x%02hhX\n", channel, controller,
               value);
         }
 
@@ -1614,6 +1614,7 @@ class MIDIRenderer : public Renderer {
 protected:
   shared_ptr<string> midi_contents;
   bool ignore_tempo_events;
+  uint8_t channel_instrument[0x10];
 
 public:
   explicit MIDIRenderer(shared_ptr<string> midi_contents, size_t sample_rate,
@@ -1623,6 +1624,10 @@ public:
       bool decay_when_off) :
       Renderer(sample_rate, env, mute_tracks, disable_tracks, decay_when_off),
       midi_contents(midi_contents), ignore_tempo_events(ignore_tempo_events) {
+    for (uint8_t x = 0; x < 0x10; x++) {
+      channel_instrument[x] = x;
+    }
+
     StringReader r(this->midi_contents);
 
     // read the header and create all the tracks
@@ -1714,11 +1719,12 @@ protected:
       t->voice_off(voice_id);
 
     } else if ((t->midi_status & 0xF0) == 0x90) { // note on
-      t->instrument = t->midi_status & 0x0F;
+      uint8_t channel = t->midi_status & 0x0F;
+      t->instrument = this->channel_instrument[channel];
       uint8_t key = t->r.get_u8();
       uint8_t vel = t->r.get_u8();
 
-      uint32_t voice_id = (static_cast<uint32_t>(t->instrument) << 8) |
+      uint32_t voice_id = (static_cast<uint32_t>(channel) << 8) |
           static_cast<uint32_t>(key);
       this->voice_on(t, voice_id, key, vel);
 
@@ -1735,9 +1741,10 @@ protected:
       // TODO
 
     } else if ((t->midi_status & 0xF0) == 0xC0) { // program change
-      // uint8_t channel = t->midi_status & 0x0F;
-      t->r.get_u8(); // program_number
-      // TODO
+      uint8_t channel = t->midi_status & 0x0F;
+      this->channel_instrument[channel] = t->r.get_u8();
+      fprintf(stderr, "note: track %hd changing channel %hhu to instrument %hhu\n",
+          t->id, channel, this->channel_instrument[channel]);
 
     } else if ((t->midi_status & 0xF0) == 0xD0) { // channel key pressure
       // uint8_t channel = t->midi_status & 0x0F;
@@ -1802,6 +1809,8 @@ input options:\n\
   --midi: treat input sequence as midi instead of bms\n\
   --midi-instrument=N:filename: map midi channel N to instrument\n\
       if given, --midi is implied\n\
+  --json-environment=filename: load midi environment from json file\n\
+      if given, --midi is implied\n\
 \n\
 synthesis options:\n\
   --disable-track=N: disable track N completely.\n\
@@ -1837,7 +1846,7 @@ int main(int argc, char** argv) {
     debug_flags &= ~DebugFlag::AllColorOptions;
   }
 
-  const char* filename = NULL;
+  string filename;
   const char* output_filename = NULL;
   const char* aaf_directory = NULL;
   bool midi = false;
@@ -1853,6 +1862,7 @@ int main(int argc, char** argv) {
   size_t num_buffers = 32;
   bool ignore_tempo_events = false;
   bool decay_when_off = true;
+  string env_json_filename;
   for (int x = 1; x < argc; x++) {
     if (!strncmp(argv[x], "--disable-track=", 16)) {
       disable_tracks.emplace(atoi(&argv[x][16]));
@@ -1866,6 +1876,8 @@ int main(int argc, char** argv) {
       sample_rate = atoi(&argv[x][14]);
     } else if (!strncmp(argv[x], "--audiores-directory=", 21)) {
       aaf_directory = &argv[x][21];
+    } else if (!strncmp(argv[x], "--json-environment=", 19)) {
+      env_json_filename = &argv[x][19];
     } else if (!strncmp(argv[x], "--output-filename=", 18)) {
       output_filename = &argv[x][18];
     } else if (!strcmp(argv[x], "--no-decay-when-off")) {
@@ -1908,19 +1920,37 @@ int main(int argc, char** argv) {
       play = true;
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
       num_buffers = atoi(&argv[x][15]);
-    } else if (!filename) {
+    } else if (filename.empty()) {
       filename = argv[x];
     } else {
       throw invalid_argument("too many positional command-line args");
     }
   }
-  if (!filename) {
+
+  shared_ptr<JSONObject> env_json;
+  if (!env_json_filename.empty()) {
+    env_json = JSONObject::load(env_json_filename);
+    if (filename.empty()) {
+      filename = env_json->as_dict().at("sequence_filename")->as_string();
+    }
+    if (env_json->as_dict().at("sequence_type")->as_string() != "MIDI") {
+      fprintf(stderr, "JSON environments may only contain MIDI sequences\n");
+      return 1;
+    }
+    midi = true;
+  }
+
+  if (filename.empty()) {
     print_usage(argv[0]);
     throw invalid_argument("no filename given");
   }
 
+  // load the sound environment from the AAF, the CLI, or the JSON
   shared_ptr<const SoundEnvironment> env;
-  if (aaf_directory) {
+  if (env_json.get()) {
+    env.reset(new SoundEnvironment(create_json_sound_environment(
+        env_json->as_dict().at("instruments"))));
+  } else if (aaf_directory) {
     env.reset(new SoundEnvironment(load_sound_environment(aaf_directory, wsys_link_overrides)));
   } else if (midi) {
     env.reset(new SoundEnvironment(create_midi_sound_environment(
@@ -1945,18 +1975,20 @@ int main(int argc, char** argv) {
         seq.reset(new SequenceProgram(default_bank, load_file(filename)));
       } catch (const cannot_open_file&) {
         fprintf(stderr, "sequence does not exist in environment, nor on disk: %s\n",
-            filename);
-        fprintf(stderr, "there are %zu sequences in the environment:\n",
-            env->sequence_programs.size());
+            filename.c_str());
+        if (env.get()) {
+          fprintf(stderr, "there are %zu sequences in the environment:\n",
+              env->sequence_programs.size());
 
-        vector<string> sequence_names;
-        for (const auto& it : env->sequence_programs) {
-          sequence_names.emplace_back(it.first);
-        }
-        sort(sequence_names.begin(), sequence_names.end());
+          vector<string> sequence_names;
+          for (const auto& it : env->sequence_programs) {
+            sequence_names.emplace_back(it.first);
+          }
+          sort(sequence_names.begin(), sequence_names.end());
 
-        for (const auto& it : sequence_names) {
-          fprintf(stderr, "  %s\n", it.c_str());
+          for (const auto& it : sequence_names) {
+            fprintf(stderr, "  %s\n", it.c_str());
+          }
         }
         return 2;
       }

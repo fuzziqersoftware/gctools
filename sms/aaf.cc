@@ -615,3 +615,81 @@ SoundEnvironment create_midi_sound_environment(
   env.resolve_pointers({{0, 0}});
   return env;
 }
+
+
+
+SoundEnvironment create_json_sound_environment(shared_ptr<const JSONObject> instruments_json) {
+  SoundEnvironment env;
+
+  // create instrument bank 0 and sample bank 0
+  auto& inst_bank = env.instrument_banks.emplace(0, 0).first->second;
+  auto& sample_bank = env.sample_banks.emplace(0, 0).first->second;
+
+  // create instruments
+  size_t sound_id = 1;
+  for (const auto& inst_json : instruments_json->as_list()) {
+    int64_t id = inst_json->as_dict().at("id")->as_int();
+    auto& inst = inst_bank.id_to_instrument.emplace(id, id).first->second;
+
+    fprintf(stderr, "[create_json_sound_environment] creating instrument %" PRId64 "\n", id);
+
+    for (const auto& rgn_json : inst_json->as_dict().at("regions")->as_list()) {
+      auto& rgn_list = rgn_json->as_list();
+      int64_t key_low = rgn_list.at(0)->as_int();
+      int64_t key_high = rgn_list.at(1)->as_int();
+      int64_t base_note = rgn_list.at(2)->as_int();
+      string filename = rgn_list.at(3)->as_string();
+
+      WAVContents wav;
+      try {
+        wav = load_wav(filename.c_str());
+      } catch (const exception& e) {
+        fprintf(stderr, "[create_json_sound_environment] creating region %02" PRIX64 ":%02" PRIX64 "@%02" PRIX64 " -> %s (%zu) for instrument %" PRId64 " failed: %s\n",
+            key_low, key_high, base_note, filename.c_str(), sound_id, id, e.what());
+        continue;
+      }
+
+      // create the sound object
+      sample_bank.emplace_back();
+      Sound& s = sample_bank.back();
+
+      s.decoded_samples = wav.samples;
+      s.num_channels = wav.num_channels;
+      s.sample_rate = wav.sample_rate;
+      if (wav.base_note >= 0) {
+        s.base_note = wav.base_note;
+      } else if (base_note > 0) {
+        s.base_note = base_note;
+      } else {
+        s.base_note = 0x3C;
+      }
+      if (wav.loops.size() == 1) {
+        s.loop_start = wav.loops[0].start;
+        s.loop_end = wav.loops[0].end;
+      } else {
+        s.loop_start = 0;
+        s.loop_end = 0;
+      }
+      s.sound_id = sound_id;
+      s.source_filename = filename;
+      s.source_offset = 0;
+      s.source_size = 0;
+      s.aw_file_index = 0;
+      s.wave_table_index = 0;
+
+      // create the key region and vel region objects
+      inst.key_regions.emplace_back(key_low, key_high);
+      auto& key_rgn = inst.key_regions.back();
+      key_rgn.vel_regions.emplace_back(0, 0x7F, sound_id, 1, s.base_note);
+
+      fprintf(stderr, "[create_json_sound_environment:%" PRId64 "] creating region %02" PRIX64 ":%02" PRIX64 "@%02hhX -> %s (%zu)\n",
+          id, key_low, key_high, s.base_note, filename.c_str(), sound_id);
+
+      // use up the sound id
+      sound_id++;
+    }
+  }
+
+  env.resolve_pointers({{0, 0}});
+  return env;
+}
