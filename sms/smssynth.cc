@@ -1834,7 +1834,9 @@ Output options (only one of these may be given):\n\
 Synthesis options:\n\
   --disable-track=N: disable track N completely.\n\
   --mute-track=N: execute instructions for track N, but mute its sound.\n\
-  --time-limit=N: stop playing or rendering after this many seconds.\n\
+  --time-limit=N: stop playing or rendering after this many seconds. Default\n\
+      is 300 seconds (5 minutes). When --play is used, there is no time limit\n\
+      and this option is ignored.\n\
   --start-time=N: discard this many seconds of audio at the beginning.\n\
   --sample-rate=N: render or play at this sample rate (default 48000).\n\
   --linear: use linear interpolation. Realtime play will likely lag unless this\n\
@@ -1874,7 +1876,7 @@ int main(int argc, char** argv) {
   unordered_map<int16_t, InstrumentMetadata> midi_instrument_metadata;
   unordered_set<int16_t> disable_tracks;
   unordered_set<int16_t> mute_tracks;
-  float time_limit = 60.0f;
+  float time_limit = 300.0f;
   float start_time = 0.0f;
   size_t sample_rate = 48000;
   bool play = false;
