@@ -27,13 +27,13 @@ enum DebugFlag {
   ShowUnknownPerfOptions      = 0x0000000000000008,
   ShowUnknownParamOptions     = 0x0000000000000010,
   ShowUnimplementedConditions = 0x0000000000000020,
-  ShowShortStatus             = 0x0000000000000040,
+  ShowLongStatus              = 0x0000000000000040,
 
   ColorField                  = 0x0000000000000080,
   ColorStatus                 = 0x0000000000000100,
   AllColorOptions             = 0x0000000000000180,
 
-  Default                     = 0x0000000000000182,
+  Default                     = 0x00000000000001C2,
 };
 
 uint64_t debug_flags = DebugFlag::Default;
@@ -639,7 +639,11 @@ void disassemble_midi(StringReader& r) {
         uint8_t channel = status & 0x0F;
         uint8_t controller = r.get_u8();
         uint8_t value = r.get_u8();
-        if (controller == 0x78) {
+        if (controller == 0x07) {
+          printf("volume       channel%hhu, 0x02%hhX\n", channel, value);
+        } else if (controller == 0x0A) {
+          printf("panning      channel%hhu, 0x02%hhX\n", channel, value);
+        } else if (controller == 0x78) {
           printf("mute_all     channel%hhu\n", channel);
         } else if (controller == 0x79) {
           printf("reset_all    channel%hhu\n", channel);
@@ -760,7 +764,7 @@ void disassemble_midi(StringReader& r) {
         }
 
       } else {
-        throw runtime_error("invalid status byte");
+        throw runtime_error(string_printf("invalid status byte: %02hhX", status));
       }
     }
 
@@ -1079,9 +1083,10 @@ protected:
             this->cache, t->bank, t->instrument, key, vel, this->decay_when_off);
         t->voices[voice_id].reset(v);
       } catch (const out_of_range& e) {
+        string key_str = name_for_note(key);
         fprintf(stderr, "warning: can\'t find sample (%s): bank=%" PRIX32
-            " instrument=%" PRIX32 " key=%02hhX vel=%02hhX\n", e.what(),
-            t->bank, t->instrument, key, vel);
+            " instrument=%" PRIX32 " key=%02hhX=%s vel=%02hhX\n", e.what(),
+            t->bank, t->instrument, key, key_str.c_str(), vel);
         t->voices[voice_id].reset(new SineVoice(this->sample_rate, key, vel));
       }
     } else {
@@ -1208,7 +1213,7 @@ public:
         buffers_color = &red;
       }
 
-      bool short_status = debug_flags & DebugFlag::ShowShortStatus;
+      bool short_status = !(debug_flags & DebugFlag::ShowLongStatus);
       char when_str[8];
       snprintf(when_str, 8, "%-7g", when);
 
@@ -1736,15 +1741,20 @@ protected:
 
     } else if ((t->midi_status & 0xF0) == 0xB0) { // controller change OR channel mode
       // uint8_t channel = t->midi_status & 0x0F;
-      t->r.get_u8(); // controller
-      t->r.get_u8(); // value
-      // TODO
+      uint8_t controller = t->r.get_u8();
+      uint8_t value = t->r.get_u8();
+      if (controller == 0x07) {
+        t->volume_target = static_cast<float>(value) / 0x7F;
+        t->volume = t->volume_target;
+      } else if (controller == 0x0A) {
+        t->panning_target = static_cast<float>(value) / 0x7F;
+        t->panning = static_cast<float>(value) / 0x7F;
+      }
+      // TODO: implement more controller messages
 
     } else if ((t->midi_status & 0xF0) == 0xC0) { // program change
       uint8_t channel = t->midi_status & 0x0F;
       this->channel_instrument[channel] = t->r.get_u8();
-      fprintf(stderr, "note: track %hd changing channel %hhu to instrument %hhu\n",
-          t->id, channel, this->channel_instrument[channel]);
 
     } else if ((t->midi_status & 0xF0) == 0xD0) { // channel key pressure
       // uint8_t channel = t->midi_status & 0x0F;
@@ -1800,43 +1810,54 @@ static shared_ptr<Renderer> create_renderer(shared_ptr<SequenceProgram> seq,
 
 void print_usage(const char* argv0) {
   fprintf(stderr, "\
-usage:\n\
-  to disassemble: %s sequence.bms [options]\n\
-  to render: %s sequence.bms --output-filename=file.wav [options]\n\
-  to play: %s sequence.bms --play [options]\n\
+Usage:\n\
+  %s sequence_name [options]\n\
 \n\
-input options:\n\
-  --midi: treat input sequence as midi instead of bms\n\
-  --midi-instrument=N:filename: map midi channel N to instrument\n\
-      if given, --midi is implied\n\
-  --json-environment=filename: load midi environment from json file\n\
-      if given, --midi is implied\n\
+Input options:\n\
+  --audiores-directory=dir_name: load environment from this directory. The\n\
+      directory should include a file named pikibank.bx, JaiInit.aaf, or\n\
+      msound.aaf. When using this option, sequence_name may be the name of a\n\
+      file on disk or the name of a sequence in the environment.\n\
+  --json-environment=filename.json: load MIDI environment from this JSON file.\n\
+      If given, --midi is implied.\n\
+  --midi: treat input sequence as MIDI instead of BMS. When using this option,\n\
+      neither of the above options may be used.\n\
+  --midi-instrument=N:filename.wav[:base_note]: map midi channel N to an\n\
+      instrument composed of the given sound, with an optional base note\n\
+      (default 0x3C).\n\
 \n\
-synthesis options:\n\
+Output options (only one of these may be given):\n\
+  --disassemble: disassemble the sequence instead of playing it (default).\n\
+  --play: play the sequence to the default audio device using OpenAL streaming.\n\
+  --output-filename=file.wav: write the synthesized audio to this file.\n\
+\n\
+Synthesis options:\n\
   --disable-track=N: disable track N completely.\n\
-  --mute-track=N: execute track N, but don't render any of its sound.\n\
+  --mute-track=N: execute instructions for track N, but mute its sound.\n\
   --time-limit=N: stop playing or rendering after this many seconds.\n\
-  --sample-rate=N: render or play at this sample rate.\n\
-  --audiores-directory=DIR: AudioRes directory extracted from Sunshine disc.\n\
-      if given, the bms filename argument may also be the name of a sequence\n\
-      defined in the aaf file (the program will check for this first).\n\
-      if not given, all instruments will be sine waves, which sounds funny but\n\
-      probably isn\'t what you want.\n\
-\n\
-logging options:\n\
-  --verbose: print debugging events and the like.\n\
-  --linear: use linear interpolation. realtime play will likely lag unless this\n\
+  --start-time=N: discard this many seconds of audio at the beginning.\n\
+  --sample-rate=N: render or play at this sample rate (default 48000).\n\
+  --linear: use linear interpolation. Realtime play will likely lag unless this\n\
       option is used, especially if the sequence uses pitch bending.\n\
+  --play-buffers=N: generate this many steps of audio in advance of the play\n\
+      position (default 32). If play lags, try increasing this value.\n\
+\n\
+Logging options:\n\
+  --silent: don't print any status information.\n\
+  --verbose: print extra debugging events.\n\
   --no-color: don\'t use terminal escape codes for color in the output.\n\
   --short-status: only show one line of status information.\n\
 \n\
-debugging options:\n\
-  --play-buffers=N: generate up to N steps ahead of playback at once\n\
+Debugging options:\n\
   --default-bank=N: override automatic instrument bank detection and use bank\n\
       N instead.\n\
   --wsys-link=A:B: override automatic sample bank detection and use samples\n\
       from bank B for instrument bank A instead.\n\
-", argv0, argv0, argv0);
+  --midi-ignore-tempo-events: don\'t execute MIDI events that change the speed\n\
+      of the sequence.\n\
+  --no-decay-when-off: make note off events only terminate audio loops instead\n\
+      of also tapering off the volume of the note.\n\
+", argv0);
 }
 
 int main(int argc, char** argv) {
@@ -1855,7 +1876,7 @@ int main(int argc, char** argv) {
   unordered_set<int16_t> mute_tracks;
   float time_limit = 60.0f;
   float start_time = 0.0f;
-  size_t sample_rate = 192000;
+  size_t sample_rate = 48000;
   bool play = false;
   int32_t default_bank = -1;
   unordered_map<uint32_t, uint32_t> wsys_link_overrides;
@@ -1896,7 +1917,6 @@ int main(int argc, char** argv) {
       int16_t channel_id = stoull(tokens[0], NULL, 0);
       im.filename = tokens[1];
       im.base_note = (tokens.size() > 2) ? stoul(tokens[2], NULL, 0) : -1;
-      fprintf(stderr, "[midi-instrument] %hd -> %s with base 0x%hX\n", channel_id, im.filename.c_str(), im.base_note);
       midi_instrument_metadata.emplace(channel_id, move(im));
 
     } else if (!strcmp(argv[x], "--verbose")) {
@@ -1906,7 +1926,7 @@ int main(int argc, char** argv) {
     } else if (!strcmp(argv[x], "--no-color")) {
       debug_flags &= ~DebugFlag::AllColorOptions;
     } else if (!strcmp(argv[x], "--short-status")) {
-      debug_flags |= DebugFlag::ShowShortStatus;
+      debug_flags &= ~DebugFlag::ShowLongStatus;
 
     } else if (!strncmp(argv[x], "--linear", 8)) {
       resample_method = SRC_LINEAR;
