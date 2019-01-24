@@ -40,4 +40,5 @@ SoundEnvironment load_sound_environment(const char* aw_directory,
 SoundEnvironment create_midi_sound_environment(
     const std::unordered_map<int16_t, InstrumentMetadata>& instrument_metadata);
 SoundEnvironment create_json_sound_environment(
-    std::shared_ptr<const JSONObject> instruments_json);
+    std::shared_ptr<const JSONObject> instruments_json,
+    const std::string& directory);

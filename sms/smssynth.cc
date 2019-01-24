@@ -1948,10 +1948,19 @@ int main(int argc, char** argv) {
   }
 
   shared_ptr<JSONObject> env_json;
+  string env_json_dir;
   if (!env_json_filename.empty()) {
     env_json = JSONObject::load(env_json_filename);
+
+    size_t slash_pos = env_json_filename.rfind('/');
+    if (slash_pos == string::npos) {
+      env_json_dir = ".";
+    } else {
+      env_json_dir = env_json_filename.substr(0, slash_pos);
+    }
+
     if (filename.empty()) {
-      filename = env_json->as_dict().at("sequence_filename")->as_string();
+      filename = env_json_dir + "/" + env_json->as_dict().at("sequence_filename")->as_string();
     }
     if (env_json->as_dict().at("sequence_type")->as_string() != "MIDI") {
       fprintf(stderr, "JSON environments may only contain MIDI sequences\n");
@@ -1969,7 +1978,7 @@ int main(int argc, char** argv) {
   shared_ptr<const SoundEnvironment> env;
   if (env_json.get()) {
     env.reset(new SoundEnvironment(create_json_sound_environment(
-        env_json->as_dict().at("instruments"))));
+        env_json->as_dict().at("instruments"), env_json_dir)));
   } else if (aaf_directory) {
     env.reset(new SoundEnvironment(load_sound_environment(aaf_directory, wsys_link_overrides)));
   } else if (midi) {

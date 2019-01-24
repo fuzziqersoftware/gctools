@@ -618,7 +618,8 @@ SoundEnvironment create_midi_sound_environment(
 
 
 
-SoundEnvironment create_json_sound_environment(shared_ptr<const JSONObject> instruments_json) {
+SoundEnvironment create_json_sound_environment(
+    shared_ptr<const JSONObject> instruments_json, const string& directory) {
   SoundEnvironment env;
 
   // create instrument bank 0 and sample bank 0
@@ -638,7 +639,7 @@ SoundEnvironment create_json_sound_environment(shared_ptr<const JSONObject> inst
       int64_t key_low = rgn_list.at(0)->as_int();
       int64_t key_high = rgn_list.at(1)->as_int();
       int64_t base_note = rgn_list.at(2)->as_int();
-      string filename = rgn_list.at(3)->as_string();
+      string filename = directory + "/" + rgn_list.at(3)->as_string();
 
       WAVContents wav;
       try {
