@@ -104,8 +104,8 @@ struct inst_header {
   uint32_t key_region_offsets[0];
 
   void byteswap() {
-    this->freq_mult = bswap32(this->freq_mult);
-    this->volume_mult = bswap32(this->volume_mult);
+    this->freq_mult = bswap32f(*reinterpret_cast<uint32_t*>(&this->freq_mult));
+    this->volume_mult = bswap32f(*reinterpret_cast<uint32_t*>(&this->volume_mult));
     this->osc_offsets[0] = bswap32(this->osc_offsets[0]);
     this->osc_offsets[1] = bswap32(this->osc_offsets[1]);
     this->eff_offsets[0] = bswap32(this->eff_offsets[0]);
@@ -212,6 +212,13 @@ InstrumentBank ibnk_decode(void* vdata, size_t size) {
       inst_header* inst = reinterpret_cast<inst_header*>(inst_data);
       inst->byteswap();
 
+      if (inst->freq_mult == 0) {
+        inst->freq_mult = 1;
+      }
+      if (inst->volume_mult == 0) {
+        inst->volume_mult = 1;
+      }
+
       uint8_t key_low = 0;
       for (uint32_t x = 0; x < inst->key_region_count; x++) {
         inst_key_region* key_region = reinterpret_cast<inst_key_region*>(
@@ -227,10 +234,13 @@ InstrumentBank ibnk_decode(void* vdata, size_t size) {
               data + key_region->vel_region_offsets[y]);
           vel_region->byteswap();
 
+          // TODO: we should also multiply by inst->freq_mult here, but it makes
+          // Sunshine sequences sound wrong (especially k_dolpic). figure out
+          // why and fix it
           result_key_region.vel_regions.emplace_back(vel_low,
               vel_region->vel_high, vel_region->sample_bank_id,
               vel_region->sample_num, vel_region->freq_mult,
-              vel_region->volume_mult);
+              vel_region->volume_mult * inst->volume_mult);
 
           vel_low = vel_region->vel_high + 1;
         }

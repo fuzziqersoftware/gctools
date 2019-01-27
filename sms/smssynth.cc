@@ -968,6 +968,13 @@ public:
       this->note_off_decay_remaining = 0;
     }
 
+    // apply instrument volume factor
+    if (this->vel_region->volume_mult != 1) {
+      for (float& s : data) {
+        s *= this->vel_region->volume_mult;
+      }
+    }
+
     return data;
   }
 

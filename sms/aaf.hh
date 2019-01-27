@@ -36,6 +36,7 @@ struct InstrumentMetadata {
 };
 
 SoundEnvironment load_sound_environment(const char* aw_directory);
+SoundEnvironment search_and_load_sound_environment(const char* filename);
 SoundEnvironment create_midi_sound_environment(
     const std::unordered_map<int16_t, InstrumentMetadata>& instrument_metadata);
 SoundEnvironment create_json_sound_environment(
