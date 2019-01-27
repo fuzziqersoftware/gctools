@@ -880,6 +880,8 @@ public:
       vel_region(&this->key_region->region_for_velocity(vel)), src_ratio(1.0f),
       offset(0), cache(cache) {
 
+    //fprintf(stderr, "[SampleVoice] play %s:%" PRIX32 "\n", this->vel_region->sound->source_filename.c_str(), this->vel_region->sound->source_offset);
+
     if (!this->vel_region->sound) {
       throw out_of_range("instrument sound is missing");
     }
@@ -1535,12 +1537,7 @@ protected:
       }
 
       case 0xE7: { // sync_gpu; note: arookas writes this as "track init"
-        uint16_t arg = t->r.get_u16r();
-        // TODO: this is a hack for Luigi's Mansion; it appears that tracks with
-        // 0x007F here are higher-pitched
-        if (arg == 0x007F) {
-          t->freq_mult = 8;
-        }
+        t->r.get_u16r();
         // TODO: should we do more stuff here?
         break;
       }
@@ -1846,6 +1843,7 @@ Input options:\n\
       (default 0x3C).\n\
 \n\
 Output options (only one of these may be given):\n\
+  --list: list the names of sequences in the loaded environment.\n\
   --disassemble: disassemble the sequence instead of playing it (default).\n\
   --play: play the sequence to the default audio device using OpenAL streaming.\n\
   --output-filename=file.wav: write the synthesized audio to this file.\n\
@@ -1897,6 +1895,7 @@ int main(int argc, char** argv) {
   float start_time = 0.0f;
   size_t sample_rate = 48000;
   bool play = false;
+  bool list_sequences = false;
   int32_t default_bank = -1;
   size_t num_buffers = 32;
   bool ignore_tempo_events = false;
@@ -1952,6 +1951,8 @@ int main(int argc, char** argv) {
       default_bank = atoi(&argv[x][15]);
     } else if (!strcmp(argv[x], "--play")) {
       play = true;
+    } else if (!strcmp(argv[x], "--list")) {
+      list_sequences = true;
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
       num_buffers = atoi(&argv[x][15]);
     } else if (filename.empty()) {
@@ -1983,7 +1984,7 @@ int main(int argc, char** argv) {
     midi = true;
   }
 
-  if (filename.empty()) {
+  if (filename.empty() && !list_sequences) {
     print_usage(argv[0]);
     throw invalid_argument("no filename given");
   }
@@ -1998,6 +1999,26 @@ int main(int argc, char** argv) {
   } else if (midi) {
     env.reset(new SoundEnvironment(create_midi_sound_environment(
         midi_instrument_metadata)));
+  }
+
+  if (list_sequences) {
+    if (env->sequence_programs.empty()) {
+      fprintf(stdout, "there are no sequences in the environment\n");
+      return 0;
+    }
+    fprintf(stderr, "there are %zu sequences in the environment:\n",
+        env->sequence_programs.size());
+
+    vector<string> sequence_names;
+    for (const auto& it : env->sequence_programs) {
+      sequence_names.emplace_back(it.first);
+    }
+    sort(sequence_names.begin(), sequence_names.end());
+
+    for (const auto& it : sequence_names) {
+      fprintf(stderr, "  %s\n", it.c_str());
+    }
+    return 0;
   }
 
   // for bms, try to get the sequence from the env if it's there
@@ -2019,20 +2040,6 @@ int main(int argc, char** argv) {
       } catch (const cannot_open_file&) {
         fprintf(stderr, "sequence does not exist in environment, nor on disk: %s\n",
             filename.c_str());
-        if (env.get()) {
-          fprintf(stderr, "there are %zu sequences in the environment:\n",
-              env->sequence_programs.size());
-
-          vector<string> sequence_names;
-          for (const auto& it : env->sequence_programs) {
-            sequence_names.emplace_back(it.first);
-          }
-          sort(sequence_names.begin(), sequence_names.end());
-
-          for (const auto& it : sequence_names) {
-            fprintf(stderr, "  %s\n", it.c_str());
-          }
-        }
         return 2;
       }
     }

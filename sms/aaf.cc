@@ -32,7 +32,7 @@ struct wave_table_entry {
   uint32_t unknown3[4];
 
   uint32_t sample_rate() {
-    return (this->flags2 >> 9) & 0x00007FFF;
+    return (this->flags2 >> 9) & 0x0000FFFF;
   }
 
   void byteswap() {
@@ -204,6 +204,12 @@ pair<uint32_t, vector<Sound>> wsys_decode(void* vdata, size_t size,
     for (size_t y = 0; y < entry->wav_count; y++) {
       wave_table_entry* wav_entry = reinterpret_cast<wave_table_entry*>(
           data + entry->wav_entry_offsets[y]);
+
+      // TODO: remove debugging code here
+      // string data = format_data_string(string(reinterpret_cast<char*>(wav_entry), sizeof(*wav_entry)));
+      // fprintf(stderr, "WAVE %04zX -> %s -> %s:%" PRIX32 " @ %" PRIu32 " or %" PRIu32 "\n", y, data.c_str(), entry->filename, bswap32(wav_entry->offset),
+      //     (bswap32(wav_entry->flags2) >> 9) & 0x00007FFF, (bswap32(wav_entry->flags2) >> 9) & 0x0000FFFF);
+
       wav_entry->byteswap();
 
       uint16_t sound_id = sound_ids.at(make_pair(x, y));

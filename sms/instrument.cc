@@ -210,6 +210,11 @@ InstrumentBank ibnk_decode(void* vdata, size_t size) {
 
     if (!memcmp(inst_data, "INST", 4)) {
       inst_header* inst = reinterpret_cast<inst_header*>(inst_data);
+
+      // TODO: remove debugging code here
+      // string s_data = format_data_string(string(reinterpret_cast<char*>(inst), sizeof(*inst)));
+      // fprintf(stderr, "INST %04zX -> %s\n", z, s_data.c_str());
+
       inst->byteswap();
 
       if (inst->freq_mult == 0) {
@@ -253,14 +258,26 @@ InstrumentBank ibnk_decode(void* vdata, size_t size) {
     uint32_t count = 0;
     if (!memcmp(inst_data, "PERC", 4)) {
       perc_header* perc = reinterpret_cast<perc_header*>(inst_data);
+
+      // TODO: remove debugging code here
+      // string data = format_data_string(string(reinterpret_cast<char*>(perc), sizeof(*perc)));
+      // fprintf(stderr, "PERC %04zX -> %s\n", z, data.c_str());
+
       perc->byteswap();
       offset_table = perc->key_region_offsets;
       count = 0x7F;
+
     } else if (!memcmp(inst_data, "PER2", 4)) {
       per2_header* per2 = reinterpret_cast<per2_header*>(inst_data);
+
+      // TODO: remove debugging code here
+      // string data = format_data_string(string(reinterpret_cast<char*>(per2), sizeof(*per2)));
+      // fprintf(stderr, "PER2 %04zX -> %s\n", z, data.c_str());
+
       per2->byteswap();
       offset_table = per2->key_region_offsets;
       count = 0x64;
+
     } else {
       throw invalid_argument(string_printf("unknown instrument format: %4s", inst_data));
     }

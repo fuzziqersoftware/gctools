@@ -54,7 +54,7 @@ gctools is a set of tools for reading and translating video game files. These to
 **smssynth** deals with BMS and MIDI music sequence programs. It can disassemble them, convert them into .wav files, or play them in realtime. The implementation is based on reverse-engineering multiple games and not on any official source code, so sometimes things don't work and the output sounds a bit different from the actual in-game music. In my testing:
 - For Super Mario Sunshine, almost all sequences sound perfect (exactly as they sound in-game). Note that the game uses track 15 for Yoshi's drums, which you'll have to manually disable if you don't want them.
 - For Pikmin, most sequences sound a little different from how they sound in-game but are easily recognizable.
-- For Luigi's Mansion, most sequences play, but some percussion instruments' pitches are incorrectly shifted up or down.
+- For Luigi's Mansion, most sequences play and sound close to in-game audio.
 - For MIDI-based games (various Classic Mac OS games), most sequences sound correct, but pitch and tempo are wrong for a small number of sequences.
 
 Before running smssynth, you may need to do the steps in the "Getting auxiliary files" section below. Also, for sequences that loop, smssynth will run forever unless you cancel it or give a time limit.
