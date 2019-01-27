@@ -40,18 +40,19 @@ struct Sound {
 struct VelocityRegion {
   uint8_t vel_low;
   uint8_t vel_high;
+  uint16_t sample_bank_id;
   uint16_t sound_id;
   float freq_mult;
+  float volume_mult;
 
   int8_t base_note;
   const Sound* sound;
 
-  VelocityRegion(uint8_t vel_low, uint8_t vel_high, uint16_t sound_id,
-      float freq_mult, int8_t base_note = -1);
+  VelocityRegion(uint8_t vel_low, uint8_t vel_high, uint16_t sample_bank_id,
+      uint16_t sound_id, float freq_mult, float volume_mult, int8_t base_note = -1);
 };
 
 struct KeyRegion {
-
   uint8_t key_low;
   uint8_t key_high;
   std::vector<VelocityRegion> vel_regions;

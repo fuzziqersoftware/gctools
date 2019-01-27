@@ -407,8 +407,9 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
         });
         uint8_t port = r.get_u8();
         uint8_t reg = r.get_u8();
-        disassembly = string_printf("%s   r%hhu, %hhu", opcode_names.at(opcode),
-            reg, port);
+        uint8_t value = r.get_u8();
+        disassembly = string_printf("%s   r%hhu, %hhu, %hhu", opcode_names.at(opcode),
+            reg, port, value);
         break;
       }
 
@@ -500,6 +501,7 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
 
       case 0xA9:
       case 0xAA:
+      case 0xB4:
       case 0xDF: {
         uint32_t param = r.get_u32r();
         disassembly = string_printf(".unknown        0x%02hhX, 0x%08" PRIX32,
@@ -805,7 +807,7 @@ public:
   virtual ~Voice() = default;
 
   virtual vector<float> render(size_t count, float volume, float pitch_bend,
-      float pitch_bend_semitone_range, float panning) = 0;
+      float pitch_bend_semitone_range, float panning, float freq_mult) = 0;
 
   void off() {
     // TODO: for now we use a constant release time of 1/5 second; we probably
@@ -846,8 +848,8 @@ public:
   virtual ~SineVoice() = default;
 
   virtual vector<float> render(size_t count, float volume, float pitch_bend,
-      float pitch_bend_semitone_range, float panning) {
-    // TODO: implement pitch bend somehow
+      float pitch_bend_semitone_range, float panning, float freq_mult) {
+    // TODO: implement pitch bend and freq_mult somehow
     vector<float> data(count * 2, 0.0f);
 
     double frequency = frequency_for_note(this->note);
@@ -893,7 +895,7 @@ public:
   virtual ~SampleVoice() = default;
 
   const vector<float>& get_samples(float pitch_bend,
-      float pitch_bend_semitone_range) {
+      float pitch_bend_semitone_range, float freq_mult) {
     // stretch it out by the sample rate difference
     float sample_rate_factor = static_cast<float>(sample_rate) /
         static_cast<float>(this->vel_region->sound->sample_rate);
@@ -907,7 +909,7 @@ public:
         frequency_for_note(this->note);
 
     {
-      float pitch_bend_factor = pow(2, (pitch_bend * pitch_bend_semitone_range) / 12.0);
+      float pitch_bend_factor = pow(2, (pitch_bend * pitch_bend_semitone_range) / 12.0) * freq_mult;
       float new_src_ratio = note_factor * sample_rate_factor /
           (this->vel_region->freq_mult * pitch_bend_factor);
       this->loop_start_offset = this->vel_region->sound->loop_start * new_src_ratio;
@@ -946,10 +948,10 @@ public:
   }
 
   virtual vector<float> render(size_t count, float volume, float pitch_bend,
-      float pitch_bend_semitone_range, float panning) {
+      float pitch_bend_semitone_range, float panning, float freq_mult) {
     vector<float> data(count * 2, 0.0f);
 
-    const auto& samples = this->get_samples(pitch_bend, pitch_bend_semitone_range);
+    const auto& samples = this->get_samples(pitch_bend, pitch_bend_semitone_range, freq_mult);
     float vel_factor = static_cast<float>(this->vel) / 0x7F;
     for (size_t x = 0; (x < count) && (this->offset < samples.size()); x++) {
       float off_factor = this->advance_note_off_factor();
@@ -1008,6 +1010,8 @@ protected:
     float panning_target;
     uint16_t panning_target_frames;
 
+    float freq_mult;
+
     int32_t bank; // technically uint16, but uninitialized as -1
     int32_t instrument; // technically uint16, but uninitialized as -1
     float pitch_bend_semitone_range;
@@ -1023,8 +1027,8 @@ protected:
         volume_target(0), volume_target_frames(0), pitch_bend(0),
         pitch_bend_target(0), pitch_bend_target_frames(0), reverb(0),
         reverb_target(0), reverb_target_frames(0), panning(0.5f),
-        panning_target(0.5f), panning_target_frames(0), bank(bank),
-        instrument(-1), pitch_bend_semitone_range(48.0) { }
+        panning_target(0.5f), panning_target_frames(0), freq_mult(1),
+        bank(bank), instrument(-1), pitch_bend_semitone_range(48.0) { }
 
     void attenuate_perf() {
       if (this->volume_target_frames) {
@@ -1147,7 +1151,8 @@ public:
       // render all the voices
       for (auto v : all_voices) {
         vector<float> voice_samples = v->render(samples_per_pulse,
-            t->volume, t->pitch_bend, t->pitch_bend_semitone_range, t->panning);
+            t->volume, t->pitch_bend, t->pitch_bend_semitone_range, t->panning,
+            t->freq_mult);
         if (voice_samples.size() != step_samples.size()) {
           throw logic_error(string_printf(
               "voice produced incorrect sample count (returned %zu samples, expected %zu samples)",
@@ -1523,8 +1528,13 @@ protected:
       }
 
       case 0xE7: { // sync_gpu; note: arookas writes this as "track init"
-        t->r.get_u16r();
-        // TODO: what should we do here? anything?
+        uint16_t arg = t->r.get_u16r();
+        // TODO: this is a hack for Luigi's Mansion; it appears that tracks with
+        // 0x007F here are higher-pitched
+        if (arg == 0x007F) {
+          t->freq_mult = 8;
+        }
+        // TODO: should we do more stuff here?
         break;
       }
 
@@ -1546,6 +1556,8 @@ protected:
 
       // everything below here are unknown opcodes
 
+      case 0x8C:
+      case 0xAE:
       case 0xE1:
       case 0xFA:
       case 0xBF:
@@ -1573,7 +1585,6 @@ protected:
       case 0xB8:
       case 0xCB:
       case 0xCC:
-      case 0xD6:
       case 0xE0:
       case 0xE6:
       case 0xF9:
@@ -1582,7 +1593,8 @@ protected:
 
       case 0xAD:
       case 0xAF:
-      case 0xD8:
+      case 0xD6:
+      case 0xD8: // TODO: does this have a 2-byte or 3-byte argument?
       case 0xDD:
       case 0xEF:
         t->r.get_u24r();
@@ -1853,8 +1865,6 @@ Logging options:\n\
 Debugging options:\n\
   --default-bank=N: override automatic instrument bank detection and use bank\n\
       N instead.\n\
-  --wsys-link=A:B: override automatic sample bank detection and use samples\n\
-      from bank B for instrument bank A instead.\n\
   --midi-ignore-tempo-events: don\'t execute MIDI events that change the speed\n\
       of the sequence.\n\
   --no-decay-when-off: make note off events only terminate audio loops instead\n\
@@ -1881,7 +1891,6 @@ int main(int argc, char** argv) {
   size_t sample_rate = 48000;
   bool play = false;
   int32_t default_bank = -1;
-  unordered_map<uint32_t, uint32_t> wsys_link_overrides;
   size_t num_buffers = 32;
   bool ignore_tempo_events = false;
   bool decay_when_off = true;
@@ -1934,10 +1943,6 @@ int main(int argc, char** argv) {
       resample_method = SRC_LINEAR;
     } else if (!strncmp(argv[x], "--default-bank=", 15)) {
       default_bank = atoi(&argv[x][15]);
-    } else if (!strncmp(argv[x], "--wsys-link=", 12)) {
-      uint32_t ibnk_id, wsys_id;
-      sscanf(&argv[x][12], "%" PRIX32 ":%" PRIX32, &ibnk_id, &wsys_id);
-      wsys_link_overrides.emplace(ibnk_id, wsys_id);
     } else if (!strcmp(argv[x], "--play")) {
       play = true;
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
@@ -1982,7 +1987,7 @@ int main(int argc, char** argv) {
     env.reset(new SoundEnvironment(create_json_sound_environment(
         env_json->as_dict().at("instruments"), env_json_dir)));
   } else if (aaf_directory) {
-    env.reset(new SoundEnvironment(load_sound_environment(aaf_directory, wsys_link_overrides)));
+    env.reset(new SoundEnvironment(load_sound_environment(aaf_directory)));
   } else if (midi) {
     env.reset(new SoundEnvironment(create_midi_sound_environment(
         midi_instrument_metadata)));

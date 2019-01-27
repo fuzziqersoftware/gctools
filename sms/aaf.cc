@@ -9,6 +9,7 @@
 #include <phosg/Strings.hh>
 #include <phosg-audio/File.hh>
 #include <vector>
+#include <unordered_map>
 #include <map>
 
 #include "instrument.hh"
@@ -145,8 +146,6 @@ pair<uint32_t, vector<Sound>> wsys_decode(void* vdata, size_t size,
     throw invalid_argument("WSYS file not at expected offset");
   }
   wsys->byteswap();
-
-  // fprintf(stderr, "[SoundEnvironment] wsys_id is %" PRIX32 "\n", wsys->wsys_id);
 
   winf_header* winf = reinterpret_cast<winf_header*>(data + wsys->winf_offset);
   if (winf->magic != 0x464E4957) {
@@ -329,54 +328,79 @@ unordered_map<string, SequenceProgram> barc_decode(void* vdata, size_t size,
 SequenceProgram::SequenceProgram(uint32_t index, std::string&& data) :
     index(index), data(move(data)) { }
 
-void SoundEnvironment::resolve_pointers(
-    const std::unordered_map<uint32_t, uint32_t>& wsys_link_overrides) {
+void SoundEnvironment::resolve_pointers() {
   // postprocessing: resolve all sample bank pointers
-  for (auto& bank_it : this->instrument_banks) {
-    uint32_t bank_id = bank_it.first;
-    auto& bank = bank_it.second;
 
-    uint32_t wsys_id;
-    try {
-      wsys_id = wsys_link_overrides.at(bank_id);
-    } catch (const out_of_range&) {
-      wsys_id = bank.chunk_id;
+  // build an index of {wsys_id: {sound_id: index within wsys}}
+  unordered_map<uint32_t, unordered_map<int64_t, size_t>> sound_id_to_index;
+  for (const auto& wsys_it : this->sample_banks) {
+    for (size_t x = 0; x < wsys_it.second.size(); x++) {
+      sound_id_to_index[wsys_it.first].emplace(wsys_it.second[x].sound_id, x);
     }
-    if (!this->sample_banks.count(wsys_id)) {
-      // fprintf(stderr, "[SoundEnvironment] bank %" PRIX32 " maps to wsys %" PRIX32 " which is missing\n",
-      //     bank_id, wsys_id);
-      continue;
-    }
-    const auto& wsys_bank = this->sample_banks.at(wsys_id);
-    // fprintf(stderr, "[SoundEnvironment] bank %" PRIX32 " maps to wsys %" PRIX32 " which has %zu items\n",
-    //     bank_id, wsys_id, wsys_bank.size());
+  }
 
-    // build an index of sound_id -> index
-    unordered_map<int64_t, size_t> sound_id_to_index;
-    for (size_t x = 0; x < wsys_bank.size(); x++) {
-      // fprintf(stderr, "[SoundEnvironment] wsys item %" PRIX32 ":%zX maps to sound %" PRIX64 "\n",
-      //     bank.chunk_id, x, wsys_bank[x].sound_id);
-
-      // TODO: figure out if this is actually a problem and uncomment the code
-      // below if it is
-      if (!sound_id_to_index.emplace(wsys_bank[x].sound_id, x).second) {
-        fprintf(stderr, "duplicate sound id %" PRIX64 " (indexes %zu and %zu)\n",
-            wsys_bank[x].sound_id, sound_id_to_index[wsys_bank[x].sound_id], x);
+  // hack: if all vel regions have sample_bank_id = 0, set their sample bank ids
+  // to the instrument bank's chunk id (this is needed for Sunshine apparently)
+  // TODO: find a way to short-circuit these loops that doesn't look stupid
+  bool override_wsys_id = true;
+  for (const auto& bank_it : this->instrument_banks) {
+    for (const auto& instrument_it : bank_it.second.id_to_instrument) {
+      for (const auto& key_region : instrument_it.second.key_regions) {
+        for (const auto& vel_region : key_region.vel_regions) {
+          if (vel_region.sample_bank_id != 0) {
+            override_wsys_id = false;
+            break;
+          }
+        }
+        if (!override_wsys_id) {
+          break;
+        }
+      }
+      if (!override_wsys_id) {
+        break;
       }
     }
+    if (!override_wsys_id) {
+      break;
+    }
+  }
 
-    // link all the VelocityRegions to their Sound objects
+  if (override_wsys_id) {
+    fprintf(stderr, "[SoundEnvironment] note: ignoring instrument sample bank ids\n");
+    for (auto& bank_it : this->instrument_banks) {
+      for (auto& instrument_it : bank_it.second.id_to_instrument) {
+        for (auto& key_region : instrument_it.second.key_regions) {
+          for (auto& vel_region : key_region.vel_regions) {
+            vel_region.sample_bank_id = bank_it.second.chunk_id;
+          }
+        }
+      }
+    }
+  }
+
+  // map all velocity region pointers to the correct Sound objects
+  for (auto& bank_it : this->instrument_banks) {
+    auto& bank = bank_it.second;
     for (auto& instrument_it : bank.id_to_instrument) {
       for (auto& key_region : instrument_it.second.key_regions) {
         for (auto& vel_region : key_region.vel_regions) {
           try {
-            vel_region.sound = &wsys_bank[sound_id_to_index.at(vel_region.sound_id)];
+            // if the vel region doesn't specify a sample bank, use the
+            // instrument bank's chunk id instead
+            // TODO: is this right? probably not, lolz
+            uint32_t wsys_id = vel_region.sample_bank_id;
+            const auto& wsys_bank = this->sample_banks.at(wsys_id);
+            const auto& wsys_indexes = sound_id_to_index.at(wsys_id);
+            vel_region.sound = &wsys_bank[wsys_indexes.at(vel_region.sound_id)];
+
           } catch (const out_of_range&) {
             fprintf(stderr, "[SoundEnvironment] error: can\'t resolve sound: bank=%" PRIX32
-                " inst=%" PRIX32 " key_rgn=[%hhX,%hhX] vel_rgn=[%hhX, %hhX, base=%hhX, sound_id=%hX]\n",
-                bank_id, instrument_it.first, key_region.key_low, key_region.key_high,
+                " (chunk=%" PRIX32 ") inst=%" PRIX32 " key_rgn=[%hhX,%hhX] "
+                "vel_rgn=[%hhX, %hhX, base=%hhX, sample_bank_id=%" PRIX32
+                ", sound_id=%hX]\n", bank_it.first, bank.chunk_id,
+                instrument_it.first, key_region.key_low, key_region.key_high,
                 vel_region.vel_low, vel_region.vel_high, vel_region.base_note,
-                vel_region.sound_id);
+                vel_region.sample_bank_id, vel_region.sound_id);
           }
         }
       }
@@ -386,8 +410,7 @@ void SoundEnvironment::resolve_pointers(
 
 
 
-SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory,
-    const std::unordered_map<uint32_t, uint32_t>& wsys_link_overrides) {
+SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory) {
   uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
   size_t offset = 0;
 
@@ -425,12 +448,8 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
             ibnk.chunk_id = chunk_id;
             ret.instrument_banks.emplace(ibnk.id, move(ibnk));
           } else {
-            // fprintf(stderr, "[SoundEnvironment] decoding wsys at %" PRIX32 ":%" PRIX32 "\n",
-            //     chunk_offset, chunk_size);
             auto wsys_pair = wsys_decode(data + chunk_offset, chunk_size, base_directory);
             uint32_t wsys_id = wsys_pair.first ? wsys_pair.first : ret.sample_banks.size();
-            // fprintf(stderr, "[SoundEnvironment] decoding wsys at %" PRIX32 ":%" PRIX32 " == %" PRIX32 "\n",
-            //     chunk_offset, chunk_size, wsys_id);
             if (!ret.sample_banks.emplace(wsys_id, move(wsys_pair.second)).second) {
               fprintf(stderr, "[SoundEnvironment] warning: duplicate wsys id %" PRIX32 "\n",
                   wsys_id);
@@ -456,7 +475,7 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
     }
   }
 
-  ret.resolve_pointers(wsys_link_overrides);
+  ret.resolve_pointers();
   return ret;
 }
 
@@ -484,8 +503,7 @@ struct bx_table_entry {
   }
 };
 
-SoundEnvironment bx_decode(void* vdata, size_t size, const char* base_directory,
-    const std::unordered_map<uint32_t, uint32_t>& wsys_link_overrides) {
+SoundEnvironment bx_decode(void* vdata, size_t size, const char* base_directory) {
   uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
   bx_header* header = reinterpret_cast<bx_header*>(vdata);
   header->byteswap();
@@ -520,14 +538,13 @@ SoundEnvironment bx_decode(void* vdata, size_t size, const char* base_directory,
     entry++;
   }
 
-  ret.resolve_pointers(wsys_link_overrides);
+  ret.resolve_pointers();
   return ret;
 }
 
 
 
-SoundEnvironment load_sound_environment(const char* base_directory,
-    const unordered_map<uint32_t, uint32_t>& wsys_link_overrides) {
+SoundEnvironment load_sound_environment(const char* base_directory) {
   // Pikmin: pikibank.bx has almost everything; the sequence index is inside
   // default.dol (sigh) so it has to be manually extracted. search for 'BARC' in
   // default.dol in a hex editor and copy the resulting data (through the end of
@@ -535,8 +552,7 @@ SoundEnvironment load_sound_environment(const char* base_directory,
   string filename = string_printf("%s/Banks/pikibank.bx", base_directory);
   if (isfile(filename)) {
     string data = load_file(filename);
-    auto env = bx_decode(const_cast<char*>(data.data()), data.size(), base_directory,
-        wsys_link_overrides);
+    auto env = bx_decode(const_cast<char*>(data.data()), data.size(), base_directory);
 
     data = load_file(string_printf("%s/Seqs/sequence.barc", base_directory));
     env.sequence_programs = barc_decode(const_cast<char*>(data.data()), data.size(), base_directory);
@@ -557,8 +573,8 @@ SoundEnvironment load_sound_environment(const char* base_directory,
       continue;
     }
 
-    return aaf_decode(const_cast<char*>(data.data()), data.size(), base_directory,
-        wsys_link_overrides);
+    return aaf_decode(const_cast<char*>(data.data()), data.size(),
+        base_directory);
   }
 
   throw runtime_error("no index file found");
@@ -577,7 +593,7 @@ SoundEnvironment create_midi_sound_environment(
     auto& inst = inst_bank.id_to_instrument.emplace(it.first, it.first).first->second;
     inst.key_regions.emplace_back(0, 0x7F);
     auto& key_region = inst.key_regions.back();
-    key_region.vel_regions.emplace_back(0, 0x7F, it.first, 1);
+    key_region.vel_regions.emplace_back(0, 0x7F, 0, it.first, 1.0, 1.0);
   }
 
   // create sample bank 0
@@ -612,7 +628,7 @@ SoundEnvironment create_midi_sound_environment(
     s.wave_table_index = 0;
   }
 
-  env.resolve_pointers({{0, 0}});
+  env.resolve_pointers();
   return env;
 }
 
@@ -681,7 +697,7 @@ SoundEnvironment create_json_sound_environment(
       // create the key region and vel region objects
       inst.key_regions.emplace_back(key_low, key_high);
       auto& key_rgn = inst.key_regions.back();
-      key_rgn.vel_regions.emplace_back(0, 0x7F, sound_id, 1, s.base_note);
+      key_rgn.vel_regions.emplace_back(0, 0x7F, 0, sound_id, 1, s.base_note, 1.0);
 
       //fprintf(stderr, "[create_json_sound_environment:%" PRId64 "] creating region %02" PRIX64 ":%02" PRIX64 "@%02hhX -> %s (%zu)\n",
       //    id, key_low, key_high, s.base_note, filename.c_str(), sound_id);
@@ -691,6 +707,6 @@ SoundEnvironment create_json_sound_environment(
     }
   }
 
-  env.resolve_pointers({{0, 0}});
+  env.resolve_pointers();
   return env;
 }

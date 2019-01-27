@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <phosg-audio/File.hh>
+#include <phosg-audio/Stream.hh>
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
 #include <phosg/Strings.hh>
@@ -28,9 +30,10 @@ const vector<float>& Sound::samples() const {
 
 
 VelocityRegion::VelocityRegion(uint8_t vel_low, uint8_t vel_high,
-    uint16_t sound_id, float freq_mult, int8_t base_note) : vel_low(vel_low),
-    vel_high(vel_high), sound_id(sound_id), freq_mult(freq_mult),
-    base_note(base_note), sound(NULL) { }
+    uint16_t sample_bank_id, uint16_t sound_id, float freq_mult,
+    float volume_mult, int8_t base_note) : vel_low(vel_low), vel_high(vel_high),
+    sample_bank_id(sample_bank_id), sound_id(sound_id), freq_mult(freq_mult),
+    volume_mult(volume_mult), base_note(base_note), sound(NULL) { }
 
 KeyRegion::KeyRegion(uint8_t key_low, uint8_t key_high) : key_low(key_low),
     key_high(key_high) { }
@@ -61,14 +64,16 @@ InstrumentBank::InstrumentBank(uint32_t id) : id(id) { }
 
 struct inst_vel_region {
   uint8_t vel_high;
-  uint8_t unknown1[5];
+  uint8_t unknown1[3];
+  uint16_t sample_bank_id;
   uint16_t sample_num;
-  float unknown2;
+  float volume_mult;
   float freq_mult;
 
   void byteswap() {
+    this->sample_bank_id = bswap16(this->sample_bank_id);
     this->sample_num = bswap16(this->sample_num);
-    this->unknown2 = bswap32f(*reinterpret_cast<uint32_t*>(&this->unknown2));
+    this->volume_mult = bswap32f(*reinterpret_cast<uint32_t*>(&this->volume_mult));
     this->freq_mult = bswap32f(*reinterpret_cast<uint32_t*>(&this->freq_mult));
   }
 };
@@ -89,11 +94,24 @@ struct inst_key_region {
 
 struct inst_header {
   uint32_t magic;
-  uint32_t unknown1[9];
+  uint32_t unknown;
+  float freq_mult;
+  float volume_mult;
+  uint32_t osc_offsets[2];
+  uint32_t eff_offsets[2];
+  uint32_t sen_offsets[2];
   uint32_t key_region_count;
   uint32_t key_region_offsets[0];
 
   void byteswap() {
+    this->freq_mult = bswap32(this->freq_mult);
+    this->volume_mult = bswap32(this->volume_mult);
+    this->osc_offsets[0] = bswap32(this->osc_offsets[0]);
+    this->osc_offsets[1] = bswap32(this->osc_offsets[1]);
+    this->eff_offsets[0] = bswap32(this->eff_offsets[0]);
+    this->eff_offsets[1] = bswap32(this->eff_offsets[1]);
+    this->sen_offsets[0] = bswap32(this->sen_offsets[0]);
+    this->sen_offsets[1] = bswap32(this->sen_offsets[1]);
     this->key_region_count = bswap32(this->key_region_count);
     for (size_t x = 0; x < this->key_region_count; x++) {
       this->key_region_offsets[x] = bswap32(this->key_region_offsets[x]);
@@ -102,14 +120,15 @@ struct inst_header {
 };
 
 struct per2_key_region {
-  uint32_t unknown1;
   float freq_mult;
+  float volume_mult;
   uint32_t unknown2[2];
   uint32_t vel_region_count;
   uint32_t vel_region_offsets[0];
 
   void byteswap() {
     this->freq_mult = bswap32f(*reinterpret_cast<uint32_t*>(&this->freq_mult));
+    this->volume_mult = bswap32f(*reinterpret_cast<uint32_t*>(&this->volume_mult));
     this->vel_region_count = bswap32(this->vel_region_count);
     for (size_t x = 0; x < this->vel_region_count; x++) {
       this->vel_region_offsets[x] = bswap32(this->vel_region_offsets[x]);
@@ -209,8 +228,9 @@ InstrumentBank ibnk_decode(void* vdata, size_t size) {
           vel_region->byteswap();
 
           result_key_region.vel_regions.emplace_back(vel_low,
-              vel_region->vel_high, vel_region->sample_num,
-              vel_region->freq_mult);
+              vel_region->vel_high, vel_region->sample_bank_id,
+              vel_region->sample_num, vel_region->freq_mult,
+              vel_region->volume_mult);
 
           vel_low = vel_region->vel_high + 1;
         }
@@ -253,9 +273,14 @@ InstrumentBank ibnk_decode(void* vdata, size_t size) {
             data + key_region->vel_region_offsets[y]);
         vel_region->byteswap();
 
+        // TODO: Luigi's Mansion appears to multiply these by 8. figure out
+        // where this comes from and implement it properly (right now we don't
+        // implement it, because Pikmin doesn't do this and it sounds terrible
+        // if we do)
         float freq_mult = vel_region->freq_mult * key_region->freq_mult;
         result_key_region.vel_regions.emplace_back(vel_low,
-            vel_region->vel_high, vel_region->sample_num, freq_mult, x);
+            vel_region->vel_high, vel_region->sample_bank_id,
+            vel_region->sample_num, freq_mult, 1.0, x);
 
         vel_low = vel_region->vel_high + 1;
       }

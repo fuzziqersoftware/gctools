@@ -31,8 +31,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  unordered_map<uint32_t, uint32_t> wsys_link_overrides;
-  auto env = load_sound_environment(argv[1], wsys_link_overrides);
+  auto env = load_sound_environment(argv[1]);
 
   for (const auto& ibank_it : env.instrument_banks) {
     const auto& ibank = ibank_it.second;

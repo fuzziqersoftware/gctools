@@ -27,7 +27,7 @@ struct SoundEnvironment {
   std::unordered_map<uint32_t, std::vector<Sound>> sample_banks;
   std::unordered_map<std::string, SequenceProgram> sequence_programs;
 
-  void resolve_pointers(const std::unordered_map<uint32_t, uint32_t>& wsys_link_overrides);
+  void resolve_pointers();
 };
 
 struct InstrumentMetadata {
@@ -35,8 +35,7 @@ struct InstrumentMetadata {
   int16_t base_note;
 };
 
-SoundEnvironment load_sound_environment(const char* aw_directory,
-    const std::unordered_map<uint32_t, uint32_t>& wsys_link_overrides);
+SoundEnvironment load_sound_environment(const char* aw_directory);
 SoundEnvironment create_midi_sound_environment(
     const std::unordered_map<int16_t, InstrumentMetadata>& instrument_metadata);
 SoundEnvironment create_json_sound_environment(
