@@ -593,7 +593,7 @@ SoundEnvironment create_midi_sound_environment(
     auto& inst = inst_bank.id_to_instrument.emplace(it.first, it.first).first->second;
     inst.key_regions.emplace_back(0, 0x7F);
     auto& key_region = inst.key_regions.back();
-    key_region.vel_regions.emplace_back(0, 0x7F, 0, it.first, 1.0, 1.0);
+    key_region.vel_regions.emplace_back(0, 0x7F, 0, it.first, 1, 1);
   }
 
   // create sample bank 0
@@ -697,7 +697,7 @@ SoundEnvironment create_json_sound_environment(
       // create the key region and vel region objects
       inst.key_regions.emplace_back(key_low, key_high);
       auto& key_rgn = inst.key_regions.back();
-      key_rgn.vel_regions.emplace_back(0, 0x7F, 0, sound_id, 1, s.base_note, 1.0);
+      key_rgn.vel_regions.emplace_back(0, 0x7F, 0, sound_id, 1, 1, s.base_note);
 
       //fprintf(stderr, "[create_json_sound_environment:%" PRId64 "] creating region %02" PRIX64 ":%02" PRIX64 "@%02hhX -> %s (%zu)\n",
       //    id, key_low, key_high, s.base_note, filename.c_str(), sound_id);
