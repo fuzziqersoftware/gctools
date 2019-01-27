@@ -58,7 +58,7 @@ const KeyRegion& Instrument::region_for_key(uint8_t key) const {
   throw out_of_range("no such key");
 }
 
-InstrumentBank::InstrumentBank(uint32_t id) : id(id) { }
+InstrumentBank::InstrumentBank(uint32_t id) : id(id), chunk_id(0) { }
 
 
 
