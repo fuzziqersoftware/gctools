@@ -9,7 +9,7 @@ gctools is a set of tools for reading and translating video game files. These to
 - PAE files from Phantasy Star Online Episode III (pae2gvm)
 - PRS files from Phantasy Star Online (prs)
 - Yay0 and Yaz0 files from various Nintendo games (prs)
-- AAF, BX, and AW files from Super Mario Sunshine, Luigi's Mansion, Pikmin, and other games (smsdumpbanks, smssynth)
+- AAF, BX, AW, and MIDI files from Super Mario Sunshine, Luigi's Mansion, Pikmin, and other games (smsdumpbanks, smssynth)
 
 ## Building
 
@@ -47,18 +47,25 @@ gctools is a set of tools for reading and translating video game files. These to
 **sms/smsdumpbanks** - extracts the contents of instrument and waveform banks in AAF or BX format. Games using this format include Luigi's Mansion, Pikmin, and Super Mario Sunshine. Produces text files describing the instruments, uncompressed .wav files containing the sounds, and .bms files containing the music sequences. Before running this program, do the steps in the "Getting auxiliary files" section below.
 - Example: `mkdir sms_decoded_data && smsdumpbanks sms_extracted_data/AudioRes sms_decoded_data`
 
-**sms/smssynth** - deals with BMS music sequence programs. It can disassemble them, convert them into .wav files, or play them in realtime. It doesn't implement everything that Nintendo's engine implements, so sometimes things don't work and the output sounds a bit different from the actual in-game music.
-- For Super Mario Sunshine, some sequences sound almost perfect; a few are noticeably broken and sound terrible. Note that the game uses track 15 for Yoshi's drums, which you'll have to manually disable if you don't want them.
-- For Pikmin, all sequences sound different from how they sound in-game (and worse) but are easily recognizable.
-- For Luigi's Mansion, most sequences don't play at all.
+**sms/smssynth** - synthesizes music sequences. There are many ways to use smssynth; see the next section.
 
-For sequences that loop, this program will run forever unless you cancel it or give a time limit. Before running this program, do the steps in the "Getting auxiliary files" section below.
-- Example (convert to 4-minute WAV, no Yoshi drums): `smssynth --disable-track=15 --audiores-directory=sms_extracted_data/AudioRes --sample-rate=48000 k_bianco.com --output-filename=k_bianco.com.wav --time-limit=240`
-- Example (play in realtime, with Yoshi drums): `smssynth --audiores-directory=sms_extracted_data/AudioRes --sample-rate=48000 k_bianco.com --linear --play`
-- Example (Pikmin, play in realtime): `smssynth --audiores-directory=pikmin_extracted_data/dataDir/SndData --sample-rate=48000 --linear --play tutorial.jam`
+### Using smssynth
 
-smssynth also can disassemble and play a subset of MIDI files. This was implemented to synthesize the Classic Mac OS version of SimCity 2000's music using the original instruments, which wouldn't play on any MIDI player I tried. To use this functionality, you have to manually specify the instruments, and optionally their base notes (or unity keys). For example:
-- `smssynth --midi --midi-channel-instrument=7:simcity.out/snd_10008.wav --midi-channel-instrument=10:simcity.out/snd_10011.wav:0x48 --sample-rate=48000 --play-buffers=64 --linear --play simcity.out/MIDI_10014.midi`
+**smssynth** deals with BMS and MIDI music sequence programs. It can disassemble them, convert them into .wav files, or play them in realtime. The implementation is based on reverse-engineering multiple games and not on any official source code, so sometimes things don't work and the output sounds a bit different from the actual in-game music. In my testing:
+- For Super Mario Sunshine, almost all sequences sound perfect (exactly as they sound in-game). Note that the game uses track 15 for Yoshi's drums, which you'll have to manually disable if you don't want them.
+- For Pikmin, most sequences sound a little different from how they sound in-game but are easily recognizable.
+- For Luigi's Mansion, most sequences play, but some percussion instruments' pitches are incorrectly shifted up or down.
+- For MIDI-based games (various Classic Mac OS games), most sequences sound correct, but pitch and tempo are wrong for a small number of sequences.
+
+Before running smssynth, you may need to do the steps in the "Getting auxiliary files" section below. Also, for sequences that loop, smssynth will run forever unless you cancel it or give a time limit.
+
+Here are some usage examples for GameCube games:
+- Example (convert Super Mario Sunshine sequence to 4-minute WAV, no Yoshi drums): `smssynth --disable-track=15 --audiores-directory=sms_extracted_data/AudioRes --sample-rate=48000 k_bianco.com --output-filename=k_bianco.com.wav --time-limit=240`
+- Example (play Super Mario Sunshine sequence in realtime, with Yoshi drums): `smssynth --audiores-directory=sms_extracted_data/AudioRes --sample-rate=48000 k_bianco.com --linear --play`
+- Example (play Pikmin sequence in realtime): `smssynth --audiores-directory=pikmin_extracted_data/dataDir/SndData --sample-rate=48000 --linear --play tutorial.jam`
+
+smssynth also can disassemble and play MIDI files. This was implemented to synthesize the Classic Mac OS version of SimCity 2000's music using the original instruments, which wouldn't play on any MIDI player I tried. Some other Classic Mac OS games appear to use the same library, and most of them work with smssynth as well. To play these sequences, provide a JSON environment file produced by [resource_dasm](http://www.github.com/realmz_dasm). Be careful not to move or rename any of the other files in the same directory as the JSON file, or it may not play properly.
+- Example (extract and play Creep Night Demo title theme): `resource_dasm "Creep Night Demo Music" ./creep_night.out && smssynth --json-environment="./creep_night.out/Creep Night Demo Music_SONG_1000_smssynth_env.json" --linear --play`
 
 ### Getting auxiliary files for Pikmin and Super Mario Sunshine
 
