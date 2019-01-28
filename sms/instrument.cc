@@ -180,7 +180,7 @@ struct ins_bank {
   }
 };
 
-InstrumentBank ibnk_decode(void* vdata, size_t size) {
+InstrumentBank ibnk_decode(void* vdata) {
   uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
   if (memcmp(vdata, "IBNK", 4)) {
     throw invalid_argument("IBNK file not at expected offset");

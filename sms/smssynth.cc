@@ -132,19 +132,18 @@ struct MIDITrackChunk {
 
 
 
-uint32_t read_variable_int(StringReader& r) {
+uint64_t read_variable_int(StringReader& r) {
   uint8_t b = r.get_u8();
   if (!(b & 0x80)) {
     return b;
   }
 
-  uint32_t v = 0;
+  uint64_t v = 0;
   while (b & 0x80) {
     v = (v << 7) | (b & 0x7F);
     b = r.get_u8();
   }
-  v = (v << 7) | b;
-  return v;
+  return (v << 7) | b;
 }
 
 
@@ -186,17 +185,17 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
   unordered_map<size_t, string> track_start_labels;
 
   static const unordered_map<uint8_t, const char*> register_opcode_names({
-    {0x00, "mov     "},
-    {0x01, "add     "},
-    {0x02, "sub     "},
-    {0x03, "cmp     "},
-    {0x04, "mul     "},
-    {0x05, "and     "},
-    {0x06, "or      "},
-    {0x07, "xor     "},
-    {0x08, "rnd     "},
-    {0x09, "shl     "},
-    {0x0A, "shr     "},
+    {0x00, "mov      "},
+    {0x01, "add      "},
+    {0x02, "sub      "},
+    {0x03, "cmp      "},
+    {0x04, "mul      "},
+    {0x05, "and      "},
+    {0x06, "or       "},
+    {0x07, "xor      "},
+    {0x08, "rnd      "},
+    {0x09, "shl      "},
+    {0x0A, "shr      "},
   });
 
   if (default_bank >= 0) {
@@ -376,6 +375,7 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
         break;
       }
 
+      case 0xE0:
       case 0xFE: {
         uint16_t tempo = r.get_u16r();
         uint64_t usec_pqn = 60000000 / tempo;
@@ -414,17 +414,21 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       }
 
       case 0xD2:
-        disassembly = string_printf(".check_port_in 0x%hX", r.get_u16r());
+        disassembly = string_printf(".check_port_in  0x%hX", r.get_u16r());
         break;
 
       case 0xD3:
-        disassembly = string_printf(".check_port_ex 0x%hX", r.get_u16r());
+        disassembly = string_printf(".check_port_ex  0x%hX", r.get_u16r());
         break;
 
       case 0xD8: {
         uint8_t reg = r.get_u8();
         int16_t val = r.get_s16r();
-        disassembly = string_printf("mov            r%hhu, 0x%hX", reg, val);
+        if (reg == 0x62) {
+          disassembly = string_printf("mov             r98, %hd /* set_pulse_rate */", val);
+        } else {
+          disassembly = string_printf("mov             r%hhu, 0x%hX", reg, val);
+        }
         break;
       }
 
@@ -438,7 +442,7 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
           opcode_name = register_opcode_names.at(op);
         } catch (const out_of_range&) { }
 
-        disassembly = string_printf("%s            r%hhu, r%hhu", opcode_name,
+        disassembly = string_printf("%s             r%hhu, r%hhu", opcode_name,
             dst_reg, src_reg);
         break;
       }
@@ -458,13 +462,18 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
         break;
       }
 
+      case 0xE2:
+        disassembly = string_printf("set_bank        0x%hX", r.get_u8());
+        break;
+      case 0xE3:
+        disassembly = string_printf("set_instrument  0x%hX", r.get_u8());
+        break;
+
       // everything below here are unknown opcodes
 
       case 0xC2:
       case 0xCF:
       case 0xDB:
-      case 0xE2:
-      case 0xE3:
       case 0xF1:
       case 0xF4: {
         uint8_t param = r.get_u8();
@@ -480,7 +489,6 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       case 0xB8:
       case 0xCB:
       case 0xCC:
-      case 0xE0:
       case 0xE6:
       case 0xF9: {
         uint16_t param = r.get_u16r();
@@ -491,6 +499,7 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
 
       case 0xAD:
       case 0xAF:
+      case 0xB9:
       case 0xDD:
       case 0xEF: {
         uint32_t param = r.get_u24r();
@@ -527,15 +536,7 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       }
 
       case 0xF0: {
-        uint64_t result = 0;
-        uint8_t b = r.get_u8();
-        while (b & 0x80) {
-          result = (result << 7) | (b & 0x7F);
-          b = r.get_u8();
-        }
-        result |= b;
-
-        disassembly = string_printf("wait            %" PRIu64, result);
+        disassembly = string_printf("wait            %" PRIu64, read_variable_int(r));
         break;
       }
 
@@ -1406,8 +1407,14 @@ protected:
 
     switch (opcode) {
       case 0x80:
-      case 0x88: {
-        uint16_t wait_time = (opcode & 0x08) ? t->r.get_u16r() : t->r.get_u8();
+      case 0x88:
+      case 0xF0: {
+        uint64_t wait_time;
+        if (opcode == 0xF0) {
+          wait_time = read_variable_int(t->r);
+        } else {
+          wait_time = (opcode & 0x08) ? t->r.get_u16r() : t->r.get_u8();
+        }
         uint64_t reactivation_time = this->current_time + wait_time;
         this->next_event_to_track.erase(track_it);
         this->next_event_to_track.emplace(reactivation_time, t);
@@ -1464,6 +1471,13 @@ protected:
         this->execute_set_param(t, param, value);
         break;
       }
+
+      case 0xE2:
+        t->bank = t->r.get_u8();
+        break;
+      case 0xE3:
+        t->instrument = t->r.get_u8();
+        break;
 
       case 0xC1: {
         uint8_t track_id = t->r.get_u8();
@@ -1547,6 +1561,7 @@ protected:
         break;
       }
 
+      case 0xE0:
       case 0xFE: {
         this->tempo = t->r.get_u16r();
         break;
@@ -1571,8 +1586,6 @@ protected:
       case 0xCF:
       case 0xDA:
       case 0xDB:
-      case 0xE2:
-      case 0xE3:
       case 0xF1:
       case 0xF4:
         t->r.get_u8();
@@ -1589,7 +1602,6 @@ protected:
       case 0xB8:
       case 0xCB:
       case 0xCC:
-      case 0xE0:
       case 0xE6:
       case 0xF9:
         t->r.get_u16r();
@@ -1597,8 +1609,8 @@ protected:
 
       case 0xAD:
       case 0xAF:
+      case 0xB9:
       case 0xD6:
-      case 0xD8: // TODO: does this have a 2-byte or 3-byte argument?
       case 0xDD:
       case 0xEF:
         t->r.get_u24r();
@@ -1610,6 +1622,15 @@ protected:
         t->r.get_u32r();
         break;
 
+      case 0xD8: {
+        uint8_t reg = t->r.get_u8();
+        int16_t value = t->r.get_s16r();
+        if (reg == 0x62) {
+          this->pulse_rate = value;
+        }
+        break;
+      }
+
       case 0xB1: {
         uint8_t param1 = t->r.get_u8();
         if (param1 == 0x40) {
@@ -1619,10 +1640,6 @@ protected:
         }
         break;
       }
-
-      case 0xF0:
-        while (t->r.get_u8() & 0x80);
-        break;
 
       default:
         throw invalid_argument(string_printf("unknown opcode at offset 0x%zX: 0x%hhX",

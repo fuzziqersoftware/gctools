@@ -137,7 +137,7 @@ struct wsys_header {
 
 
 
-pair<uint32_t, vector<Sound>> wsys_decode(void* vdata, size_t size,
+pair<uint32_t, vector<Sound>> wsys_decode(void* vdata,
     const char* base_directory) {
   uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
 
@@ -390,16 +390,19 @@ void SoundEnvironment::resolve_pointers() {
     for (auto& instrument_it : bank.id_to_instrument) {
       for (auto& key_region : instrument_it.second.key_regions) {
         for (auto& vel_region : key_region.vel_regions) {
-          try {
-            // if the vel region doesn't specify a sample bank, use the
-            // instrument bank's chunk id instead
-            // TODO: is this right? probably not, lolz
-            uint32_t wsys_id = vel_region.sample_bank_id;
-            const auto& wsys_bank = this->sample_banks.at(wsys_id);
-            const auto& wsys_indexes = sound_id_to_index.at(wsys_id);
-            vel_region.sound = &wsys_bank[wsys_indexes.at(vel_region.sound_id)];
+          // try to resolve first using the sample bank id, then using the
+          // instrument bank id
+          vector<uint32_t> wsys_ids({vel_region.sample_bank_id, bank.chunk_id});
+          for (uint32_t wsys_id : wsys_ids) {
+            try {
+              const auto& wsys_bank = this->sample_banks.at(wsys_id);
+              const auto& wsys_indexes = sound_id_to_index.at(wsys_id);
+              vel_region.sound = &wsys_bank[wsys_indexes.at(vel_region.sound_id)];
+              break;
+            } catch (const out_of_range&) { }
+          }
 
-          } catch (const out_of_range&) {
+          if (!vel_region.sound) {
             fprintf(stderr, "[SoundEnvironment] error: can\'t resolve sound: bank=%" PRIX32
                 " (chunk=%" PRIX32 ") inst=%" PRIX32 " key_rgn=[%hhX,%hhX] "
                 "vel_rgn=[%hhX, %hhX, base=%hhX, sample_bank_id=%" PRIX32
@@ -411,6 +414,18 @@ void SoundEnvironment::resolve_pointers() {
         }
       }
     }
+  }
+}
+
+void SoundEnvironment::merge_from(SoundEnvironment&& other) {
+  for (auto& it : other.instrument_banks) {
+    this->instrument_banks.emplace(move(it.first), move(it.second));
+  }
+  for (auto& it : other.sample_banks) {
+    this->sample_banks.emplace(move(it.first), move(it.second));
+  }
+  for (auto& it : other.sequence_programs) {
+    this->sequence_programs.emplace(move(it.first), move(it.second));
   }
 }
 
@@ -449,12 +464,12 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
           chunk_size = bswap32(*reinterpret_cast<const uint32_t*>(data + offset + 4));
           chunk_id = bswap32(*reinterpret_cast<const uint32_t*>(data + offset + 8));
           if (chunk_type == 2) {
-            auto ibnk = ibnk_decode(data + chunk_offset, chunk_size);
+            auto ibnk = ibnk_decode(data + chunk_offset);
             // this is the index of the related wsys block
             ibnk.chunk_id = chunk_id;
             ret.instrument_banks.emplace(ibnk.id, move(ibnk));
           } else {
-            auto wsys_pair = wsys_decode(data + chunk_offset, chunk_size, base_directory);
+            auto wsys_pair = wsys_decode(data + chunk_offset, base_directory);
             uint32_t wsys_id = wsys_pair.first ? wsys_pair.first : ret.sample_banks.size();
             if (!ret.sample_banks.emplace(wsys_id, move(wsys_pair.second)).second) {
               fprintf(stderr, "[SoundEnvironment] warning: duplicate wsys id %" PRIX32 "\n",
@@ -474,6 +489,94 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
 
       case 0:
         offset = size;
+        break;
+
+      default:
+        throw invalid_argument("unknown chunk type");
+    }
+  }
+
+  ret.resolve_pointers();
+  return ret;
+}
+
+SoundEnvironment baa_decode(void* vdata, size_t size, const char* base_directory) {
+  uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
+  uint32_t* data_fields = reinterpret_cast<uint32_t*>(vdata);
+  size_t field_offset = 1;
+
+  if (size < 8) {
+    throw runtime_error("baa file is too small for header");
+  }
+  if (data_fields[0] != 0x3C5F4141) { // 'AA_<'
+    throw runtime_error("baa file does not appear to be an audio archive");
+  }
+
+  SoundEnvironment ret;
+  bool complete = false;
+  while (!complete && (field_offset < size)) {
+    switch (bswap32(data_fields[field_offset++])) {
+
+      case 0x62736674: // 'bsft'
+        field_offset++; // offset
+        break;
+
+      case 0x62737420: // 'bst '
+      case 0x6273746E: // 'bstn'
+      case 0x62736320: // 'bsc '
+        field_offset += 2; // offset and end_offset
+        break;
+
+      case 0x77732020: { // 'ws  '
+        uint32_t wsys_id = bswap32(data_fields[field_offset++]);
+        uint32_t offset = bswap32(data_fields[field_offset++]);
+        field_offset++; // unclear what this field is
+
+        // TODO: should we trust wsys_id here or use the same logic as for aaf?
+        auto wsys_pair = wsys_decode(data + offset, base_directory);
+        wsys_id = wsys_pair.first ? wsys_pair.first : wsys_id;
+        if (!ret.sample_banks.emplace(wsys_id, move(wsys_pair.second)).second) {
+          fprintf(stderr, "[SoundEnvironment] warning: duplicate wsys id %" PRIX32 "\n",
+              wsys_id);
+        }
+        break;
+      }
+
+      case 0x626E6B20: { // 'bnk '
+        uint32_t chunk_id = bswap32(data_fields[field_offset++]);
+        uint32_t offset = bswap32(data_fields[field_offset++]);
+        // unlike 'ws  ' above, there isn't an extra unused field here
+
+        auto ibnk = ibnk_decode(data + offset);
+        ibnk.chunk_id = chunk_id;
+        ret.instrument_banks.emplace(ibnk.id, move(ibnk));
+        break;
+      }
+
+      case 0x626D7320: { // 'bms '
+        // TODO: figure out if this mask is correct
+        uint32_t id = bswap32(data_fields[field_offset++]) & 0x0000FFFF;
+        uint32_t offset = bswap32(data_fields[field_offset++]);
+        uint32_t end_offset = bswap32(data_fields[field_offset++]);
+        ret.sequence_programs.emplace(piecewise_construct,
+            forward_as_tuple(string_printf("seq%" PRIu32, id)),
+            forward_as_tuple(id, string(reinterpret_cast<char*>(data + offset), end_offset - offset)));
+        break;
+      }
+
+      case 0x62616163: { // 'baac'
+        uint32_t offset = bswap32(data_fields[field_offset++]);
+        uint32_t end_offset = bswap32(data_fields[field_offset++]);
+        if (end_offset - offset < 0x18) {
+          throw invalid_argument("embedded baa is too small for header");
+        }
+        // there are 4 4-byte fields before the baa apparently
+        ret.merge_from(baa_decode(data + offset + 0x10, end_offset - offset - 0x10, base_directory));
+        break;
+      }
+
+      case 0x3E5F4141: // '>_AA'
+        complete = true;
         break;
 
       default:
@@ -521,7 +624,7 @@ SoundEnvironment bx_decode(void* vdata, size_t size, const char* base_directory)
     if (entry->size == 0) {
       ret.sample_banks.emplace(ret.sample_banks.size(), vector<Sound>());
     } else {
-      auto wsys_pair = wsys_decode(data + entry->offset, entry->size, base_directory);
+      auto wsys_pair = wsys_decode(data + entry->offset, base_directory);
       uint32_t wsys_id = wsys_pair.first ? wsys_pair.first : ret.sample_banks.size();
       if (!ret.sample_banks.emplace(wsys_id, move(wsys_pair.second)).second) {
         fprintf(stderr, "[SoundEnvironment] warning: duplicate wsys id %" PRIX32 "\n",
@@ -535,7 +638,7 @@ SoundEnvironment bx_decode(void* vdata, size_t size, const char* base_directory)
   for (size_t x = 0; x < header->ibnk_count; x++) {
     entry->byteswap();
     if (entry->size != 0) {
-      auto ibnk = ibnk_decode(data + entry->offset, entry->size);
+      auto ibnk = ibnk_decode(data + entry->offset);
       ibnk.chunk_id = x;
       ret.instrument_banks.emplace(x, move(ibnk));
     } else {
@@ -555,22 +658,23 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
   // default.dol (sigh) so it has to be manually extracted. search for 'BARC' in
   // default.dol in a hex editor and copy the resulting data (through the end of
   // the sequence names) to sequence.barc in the Seqs directory
-  string filename = string_printf("%s/Banks/pikibank.bx", base_directory);
-  if (isfile(filename)) {
-    string data = load_file(filename);
-    auto env = bx_decode(const_cast<char*>(data.data()), data.size(), base_directory);
+  {
+    string filename = string_printf("%s/Banks/pikibank.bx", base_directory);
+    if (isfile(filename)) {
+      string data = load_file(filename);
+      auto env = bx_decode(const_cast<char*>(data.data()), data.size(), base_directory);
 
-    data = load_file(string_printf("%s/Seqs/sequence.barc", base_directory));
-    env.sequence_programs = barc_decode(const_cast<char*>(data.data()), data.size(), base_directory);
+      data = load_file(string_printf("%s/Seqs/sequence.barc", base_directory));
+      env.sequence_programs = barc_decode(const_cast<char*>(data.data()), data.size(), base_directory);
 
-    return env;
+      return env;
+    }
   }
 
   static const vector<string> filenames = {
     "/JaiInit.aaf",
     "/msound.aaf", // Super Mario Sunshine
   };
-
   for (const auto& filename : filenames) {
     string data;
     try {
@@ -581,6 +685,20 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
 
     return aaf_decode(const_cast<char*>(data.data()), data.size(),
         base_directory);
+  }
+
+  // Mario Kart: Double Dash!!
+  {
+    string data;
+    try {
+      string filename = string_printf("%s/GCKart.baa", base_directory);
+      data = load_file(filename);
+    } catch (const cannot_open_file&) { }
+
+    if (!data.empty()) {
+      return baa_decode(const_cast<char*>(data.data()), data.size(),
+          base_directory);
+    }
   }
 
   throw runtime_error("no index file found");
