@@ -1897,10 +1897,13 @@ Usage:\n\
   %s sequence_name [options]\n\
 \n\
 Input options:\n\
+  sequence_name: the name of the sequence to be disassembled, played, or\n\
+      rendered. This can be a filename, or if --audiores-directory is used,\n\
+      it can also be the name of a sequence defined in the environment. If\n\
+      --list is used, no sequence name should be given.\n\
   --audiores-directory=dir_name: load environment from this directory. The\n\
-      directory should include a file named pikibank.bx, JaiInit.aaf, or\n\
-      msound.aaf. When using this option, sequence_name may be the name of a\n\
-      file on disk or the name of a sequence in the environment.\n\
+      directory should include a file named pikibank.bx, JaiInit.aaf,\n\
+      GCKart.baa, or msound.aaf.\n\
   --json-environment=filename.json: load MIDI environment from this JSON file.\n\
       If given, --midi is implied.\n\
   --midi: treat input sequence as MIDI instead of BMS. When using this option,\n\
@@ -1925,10 +1928,12 @@ Synthesis options:\n\
       and this option is ignored.\n\
   --start-time=N: discard this many seconds of audio at the beginning.\n\
   --sample-rate=N: render or play at this sample rate (default 48000).\n\
-  --linear: use linear interpolation. Realtime play will likely lag unless this\n\
-      option is used, especially if the sequence uses pitch bending.\n\
+  --resample-method=METHOD: use this method for resampling waveforms. Values\n\
+      are sinc-best (default when generating an output file), sinc-medium,\n\
+      sinc-fast, hold, and linear (default when playing).\n\
   --play-buffers=N: generate this many steps of audio in advance of the play\n\
-      position (default 32). If play lags, try increasing this value.\n\
+      position (default 32). If play lags, especially during pitch bends, try\n\
+      increasing this value.\n\
 \n\
 Logging options:\n\
   --silent: don't print any status information.\n\
@@ -1970,6 +1975,7 @@ int main(int argc, char** argv) {
   size_t num_buffers = 32;
   bool ignore_tempo_events = false;
   bool decay_when_off = true;
+  bool resample_method_set = false;
   string env_json_filename;
   for (int x = 1; x < argc; x++) {
     if (!strncmp(argv[x], "--disable-track=", 16)) {
@@ -2017,12 +2023,32 @@ int main(int argc, char** argv) {
     } else if (!strcmp(argv[x], "--short-status")) {
       debug_flags &= ~DebugFlag::ShowLongStatus;
 
-    } else if (!strncmp(argv[x], "--linear", 8)) {
+    } else if (!strcmp(argv[x], "--resample-method=sinc-best")) {
+      resample_method = SRC_SINC_BEST_QUALITY;
+      resample_method_set = true;
+    } else if (!strcmp(argv[x], "--resample-method=sinc-medium")) {
+      resample_method = SRC_SINC_MEDIUM_QUALITY;
+      resample_method_set = true;
+    } else if (!strcmp(argv[x], "--resample-method=sinc-fast")) {
+      resample_method = SRC_SINC_FASTEST;
+      resample_method_set = true;
+    } else if (!strcmp(argv[x], "--resample-method=hold")) {
+      resample_method = SRC_ZERO_ORDER_HOLD;
+      resample_method_set = true;
+    } else if (!strcmp(argv[x], "--resample-method=linear")) {
       resample_method = SRC_LINEAR;
+      resample_method_set = true;
+
     } else if (!strncmp(argv[x], "--default-bank=", 15)) {
       default_bank = atoi(&argv[x][15]);
     } else if (!strcmp(argv[x], "--play")) {
       play = true;
+      if (!resample_method_set) {
+        resample_method = SRC_LINEAR;
+      }
+    } else if (!strcmp(argv[x], "--disassemble")) {
+      play = false;
+      list_sequences = false;
     } else if (!strcmp(argv[x], "--list")) {
       list_sequences = true;
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
