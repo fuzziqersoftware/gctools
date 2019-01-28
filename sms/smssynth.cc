@@ -469,9 +469,20 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
         disassembly = string_printf("set_instrument  0x%hX", r.get_u8());
         break;
 
+      case 0xFB: {
+        string s;
+        char b;
+        while ((b = r.get_u8())) {
+          s.push_back(b);
+        }
+        disassembly = string_printf("debug_str       \"%s\"", s.c_str());
+        break;
+      }
+
       // everything below here are unknown opcodes
 
       case 0xC2:
+      case 0xCD:
       case 0xCF:
       case 0xDB:
       case 0xF1:
@@ -1558,6 +1569,11 @@ protected:
         break;
       }
 
+      case 0xFB: { // debug string
+        while (t->r.get_u8());
+        break;
+      }
+
       case 0xFD: {
         this->pulse_rate = t->r.get_u16r();
         break;
@@ -1585,6 +1601,7 @@ protected:
         break;
 
       case 0xC2:
+      case 0xCD:
       case 0xCF:
       case 0xDA:
       case 0xDB:
