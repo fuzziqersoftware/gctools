@@ -1131,15 +1131,41 @@ public:
 
   virtual ~Renderer() = default;
 
-  vector<float> render_time_step(size_t queued_buffer_count = 0, size_t buffer_count = 0) {
-    if (this->next_event_to_track.empty()) {
-      return vector<float>();
+  bool can_render() const {
+    // if there are pending opcodes, we can continue rendering
+    if (!this->next_event_to_track.empty()) {
+      return true;
     }
 
+    // if there are voices waiting to produce sound, we can continue rendering
+    for (const auto& it : this->id_to_track) {
+      if (!it.second->voices.empty() || !it.second->voices_off.empty()) {
+        return true;
+      }
+    }
+
+    // if neither of the above, we're done
+    return false;
+  }
+
+  vector<float> render_time_step(size_t queued_buffer_count = 0, size_t buffer_count = 0) {
     // run all opcodes that should execute on the current time step
     while (!this->next_event_to_track.empty() &&
            (current_time == this->next_event_to_track.begin()->first)) {
       this->execute_opcode(this->next_event_to_track.begin());
+    }
+
+    // if all tracks have terminated, turn all of their voices off
+    if (this->next_event_to_track.empty()) {
+      for (auto& it : this->id_to_track) {
+        unordered_set<uint8_t> voices_on;
+        for (const auto& it : it.second->voices) {
+          voices_on.emplace(it.first);
+        }
+        for (uint8_t voice_id : voices_on) {
+          it.second->voice_off(voice_id);
+        }
+      }
     }
 
     // figure out how many samples to produce
@@ -1241,12 +1267,13 @@ public:
       }
 
       bool short_status = !(debug_flags & DebugFlag::ShowLongStatus);
+      bool all_tracks_finished = this->next_event_to_track.empty();
       char when_str[8];
       snprintf(when_str, 8, "%-7g", when);
 
       if ((debug_flags & DebugFlag::ColorField) || (short_status && (debug_flags & DebugFlag::ColorStatus))) {
-        fprintf(stderr, "\r%08" PRIX64 ": %s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.8s%s @ %-7s + %s%zu/%zu%s%c",
-            current_time,
+        fprintf(stderr, "\r%08" PRIX64 "%c %s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.8s%s @ %-7s + %s%zu/%zu%s%c",
+            current_time, all_tracks_finished ? '-' : ':',
             field_magenta.c_str(), &notes_table[0], field_red.c_str(), &notes_table[12],
             field_yellow.c_str(), &notes_table[24], field_green.c_str(), &notes_table[36],
             field_cyan.c_str(), &notes_table[48], field_blue.c_str(), &notes_table[60],
@@ -1256,12 +1283,14 @@ public:
             buffers_color->c_str(), queued_buffer_count, buffer_count, white.c_str(),
             short_status ? ' ' : '\n');
       } else if (debug_flags & DebugFlag::ColorStatus) {
-        fprintf(stderr, "\r%08" PRIX64 ": %s @ %-7s + %s%zu/%zu%s%c", current_time,
-            notes_table, when_str, buffers_color->c_str(), queued_buffer_count,
-            buffer_count, white.c_str(), short_status ? ' ' : '\n');
+        fprintf(stderr, "\r%08" PRIX64 "%c %s @ %-7s + %s%zu/%zu%s%c", current_time,
+            all_tracks_finished ? '-' : ':', notes_table, when_str,
+            buffers_color->c_str(), queued_buffer_count, buffer_count,
+            white.c_str(), short_status ? ' ' : '\n');
       } else {
-        fprintf(stderr, "\r%08" PRIX64 ": %s @ %-7s + %zu/%zu%c", current_time,
-            notes_table, when_str, queued_buffer_count, buffer_count, short_status ? ' ' : '\n');
+        fprintf(stderr, "\r%08" PRIX64 "%c %s @ %-7s + %zu/%zu%c", current_time,
+            all_tracks_finished ? '-' : ':', notes_table, when_str,
+            queued_buffer_count, buffer_count, short_status ? ' ' : '\n');
       }
 
       if (!short_status) {
@@ -1291,7 +1320,7 @@ public:
 
   vector<float> render_until(uint64_t time) {
     vector<float> samples;
-    while (!this->next_event_to_track.empty() && (this->current_time < time)) {
+    while (this->can_render() && (this->current_time < time)) {
       auto step_samples = this->render_time_step();
       samples.insert(samples.end(), step_samples.begin(), step_samples.end());
     }
@@ -1301,7 +1330,7 @@ public:
   vector<float> render_until_seconds(float seconds) {
     vector<float> samples;
     size_t target_size = seconds * this->sample_rate;
-    while (!this->next_event_to_track.empty() && (this->samples_rendered < target_size)) {
+    while (this->can_render() && (this->samples_rendered < target_size)) {
       auto step_samples = this->render_time_step();
       samples.insert(samples.end(), step_samples.begin(), step_samples.end());
     }
@@ -1310,7 +1339,7 @@ public:
 
   vector<float> render_all() {
     vector<float> samples;
-    while (!this->next_event_to_track.empty()) {
+    while (this->can_render()) {
       auto step_samples = this->render_time_step();
       samples.insert(samples.end(), step_samples.begin(), step_samples.end());
     }
@@ -1586,7 +1615,8 @@ protected:
       }
 
       case 0xFF: {
-        this->id_to_track.erase(t->id);
+        // note: we don't delete from id_to_track here because the track can
+        // contain voices that are producing sound (Luigi's Mansion does this)
         this->next_event_to_track.erase(track_it);
         break;
       }
@@ -2114,11 +2144,11 @@ int main(int argc, char** argv) {
     AudioStream stream(sample_rate, AL_FORMAT_STEREO16, num_buffers);
     for (;;) {
       stream.check_buffers();
-      auto step_samples = r->render_time_step(stream.queued_buffer_count(),
-          stream.buffer_count());
-      if (step_samples.empty()) {
+      if (!r->can_render()) {
         break;
       }
+      auto step_samples = r->render_time_step(stream.queued_buffer_count(),
+          stream.buffer_count());
       vector<int16_t> al_samples = convert_samples_to_int(step_samples);
       stream.add_samples(al_samples.data(), al_samples.size() / 2);
     }
