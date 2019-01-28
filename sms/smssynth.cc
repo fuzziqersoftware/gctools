@@ -1083,6 +1083,7 @@ protected:
 
   shared_ptr<const SoundEnvironment> env;
   unordered_set<int16_t> mute_tracks;
+  unordered_set<int16_t> solo_tracks;
   unordered_set<int16_t> disable_tracks;
   bool decay_when_off;
 
@@ -1110,10 +1111,10 @@ protected:
 
 public:
   explicit Renderer(size_t sample_rate, shared_ptr<const SoundEnvironment> env,
-      const unordered_set<int16_t>& mute_tracks,
+      const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
       const unordered_set<int16_t>& disable_tracks, bool decay_when_off) :
       sample_rate(sample_rate), current_time(0), samples_rendered(0), tempo(0),
-      pulse_rate(0), env(env), mute_tracks(mute_tracks),
+      pulse_rate(0), env(env), mute_tracks(mute_tracks), solo_tracks(solo_tracks),
       disable_tracks(disable_tracks), decay_when_off(decay_when_off),
       cache(new SampleCache()) { }
 
@@ -1314,16 +1315,13 @@ protected:
 public:
   explicit BMSRenderer(shared_ptr<SequenceProgram> seq, size_t sample_rate,
       shared_ptr<const SoundEnvironment> env,
-      const unordered_set<int16_t>& mute_tracks,
+      const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
       const unordered_set<int16_t>& disable_tracks, bool decay_when_off) :
-      Renderer(sample_rate, env, mute_tracks, disable_tracks, decay_when_off),
+      Renderer(sample_rate, env, mute_tracks, solo_tracks, disable_tracks, decay_when_off),
       seq(seq), seq_data(new string(seq->data)) {
-    // the default track has a track id of -1; all others are uint8_t
-    if (!this->disable_tracks.count(-1)) {
-      shared_ptr<Track> default_track(new Track(-1, this->seq_data, 0, this->seq->index));
-      this->id_to_track.emplace(default_track->id, default_track);
-      this->next_event_to_track.emplace(0, default_track);
-    }
+    shared_ptr<Track> default_track(new Track(-1, this->seq_data, 0, this->seq->index));
+    this->id_to_track.emplace(default_track->id, default_track);
+    this->next_event_to_track.emplace(0, default_track);
   }
 
   virtual ~BMSRenderer() = default;
@@ -1487,7 +1485,11 @@ protected:
               "cannot start track at pc=0x%" PRIX32 " (from pc=0x%zX)",
               offset, t->r.where() - 5));
         }
-        if (!this->disable_tracks.count(track_id)) {
+
+        // only start the track if it's not in disable_tracks, and solo_tracks
+        // is either not given or contains the track
+        if ((this->solo_tracks.empty() || this->solo_tracks.count(track_id)) &&
+            !this->disable_tracks.count(track_id)) {
           shared_ptr<Track> new_track(new Track(track_id, this->seq_data, offset, this->seq->index));
           auto emplace_ret = this->id_to_track.emplace(track_id, new_track);
           if (!emplace_ret.second) {
@@ -1657,10 +1659,10 @@ protected:
 public:
   explicit MIDIRenderer(shared_ptr<string> midi_contents, size_t sample_rate,
       shared_ptr<const SoundEnvironment> env,
-      const unordered_set<int16_t>& mute_tracks,
+      const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
       const unordered_set<int16_t>& disable_tracks, bool ignore_tempo_events,
       bool decay_when_off) :
-      Renderer(sample_rate, env, mute_tracks, disable_tracks, decay_when_off),
+      Renderer(sample_rate, env, mute_tracks, solo_tracks, disable_tracks, decay_when_off),
       midi_contents(midi_contents), ignore_tempo_events(ignore_tempo_events) {
     for (uint8_t x = 0; x < 0x10; x++) {
       channel_instrument[x] = x;
@@ -1694,7 +1696,8 @@ public:
         throw runtime_error("track header not present");
       }
 
-      if (!this->disable_tracks.count(track_id)) {
+      if ((this->solo_tracks.empty() || this->solo_tracks.count(track_id)) &&
+          !this->disable_tracks.count(track_id)) {
         shared_ptr<Track> t(new Track(track_id, this->midi_contents, r.where(), 0));
         this->id_to_track.emplace(t->id, t);
         this->next_event_to_track.emplace(0, t);
@@ -1827,15 +1830,15 @@ protected:
 static shared_ptr<Renderer> create_renderer(shared_ptr<SequenceProgram> seq,
     shared_ptr<string> midi_contents, size_t sample_rate,
     shared_ptr<const SoundEnvironment> env,
-    const unordered_set<int16_t>& mute_tracks,
+    const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
     const unordered_set<int16_t>& disable_tracks, bool ignore_tempo_events,
     bool decay_when_off) {
   if (seq.get()) {
     return shared_ptr<Renderer>(new BMSRenderer(seq, sample_rate, env,
-        mute_tracks, disable_tracks, decay_when_off));
+        mute_tracks, solo_tracks, disable_tracks, decay_when_off));
   } else {
     return shared_ptr<Renderer>(new MIDIRenderer(midi_contents, sample_rate,
-        env, mute_tracks, disable_tracks, ignore_tempo_events, decay_when_off));
+        env, mute_tracks, solo_tracks, disable_tracks, ignore_tempo_events, decay_when_off));
   }
 }
 
@@ -1866,7 +1869,9 @@ Output options (only one of these may be given):\n\
   --output-filename=file.wav: write the synthesized audio to this file.\n\
 \n\
 Synthesis options:\n\
-  --disable-track=N: disable track N completely.\n\
+  --disable-track=N: disable track N entirely (can be given multiple times).\n\
+  --solo-track=N: disable all tracks except N (can be given multiple times).\n\
+      For BMS, the default track (-1) is not disabled by this option.\n\
   --mute-track=N: execute instructions for track N, but mute its sound.\n\
   --time-limit=N: stop playing or rendering after this many seconds. Default\n\
       is 300 seconds (5 minutes). When --play is used, there is no time limit\n\
@@ -1908,6 +1913,7 @@ int main(int argc, char** argv) {
   unordered_map<int16_t, InstrumentMetadata> midi_instrument_metadata;
   unordered_set<int16_t> disable_tracks;
   unordered_set<int16_t> mute_tracks;
+  unordered_set<int16_t> solo_tracks;
   float time_limit = 300.0f;
   float start_time = 0.0f;
   size_t sample_rate = 48000;
@@ -1923,6 +1929,8 @@ int main(int argc, char** argv) {
       disable_tracks.emplace(atoi(&argv[x][16]));
     } else if (!strncmp(argv[x], "--mute-track=", 13)) {
       mute_tracks.emplace(atoi(&argv[x][13]));
+    } else if (!strncmp(argv[x], "--solo-track=", 13)) {
+      solo_tracks.emplace(atoi(&argv[x][13]));
     } else if (!strncmp(argv[x], "--time-limit=", 13)) {
       time_limit = atof(&argv[x][13]);
     } else if (!strncmp(argv[x], "--start-time=", 13)) {
@@ -2068,7 +2076,7 @@ int main(int argc, char** argv) {
 
   if (output_filename) {
     shared_ptr<Renderer> r = create_renderer(seq, midi_contents, sample_rate,
-        env, mute_tracks, disable_tracks, ignore_tempo_events, decay_when_off);
+        env, mute_tracks, solo_tracks, disable_tracks, ignore_tempo_events, decay_when_off);
 
     if (start_time) {
       r->render_until_seconds(start_time);
@@ -2079,7 +2087,7 @@ int main(int argc, char** argv) {
 
   } else if (play) {
     shared_ptr<Renderer> r = create_renderer(seq, midi_contents, sample_rate,
-        env, mute_tracks, disable_tracks, ignore_tempo_events, decay_when_off);
+        env, mute_tracks, solo_tracks, disable_tracks, ignore_tempo_events, decay_when_off);
 
     if (start_time) {
       r->render_until_seconds(start_time);
