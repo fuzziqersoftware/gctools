@@ -775,11 +775,16 @@ SoundEnvironment create_json_sound_environment(
     //fprintf(stderr, "[create_json_sound_environment] creating instrument %" PRId64 "\n", id);
 
     for (const auto& rgn_json : inst_json->as_dict().at("regions")->as_list()) {
-      auto& rgn_list = rgn_json->as_list();
-      int64_t key_low = rgn_list.at(0)->as_int();
-      int64_t key_high = rgn_list.at(1)->as_int();
-      int64_t base_note = rgn_list.at(2)->as_int();
-      string filename = directory + "/" + rgn_list.at(3)->as_string();
+      auto& rgn_dict = rgn_json->as_dict();
+      int64_t key_low = rgn_dict.at("key_low")->as_int();
+      int64_t key_high = rgn_dict.at("key_high")->as_int();
+      int64_t base_note = rgn_dict.at("base_note")->as_int();
+      string filename = directory + "/" + rgn_dict.at("filename")->as_string();
+
+      double freq_mult = 1;
+      try {
+        freq_mult = rgn_dict.at("freq_mult")->as_float();
+      } catch (const out_of_range&) { }
 
       WAVContents wav;
       try {
@@ -821,7 +826,7 @@ SoundEnvironment create_json_sound_environment(
       // create the key region and vel region objects
       inst.key_regions.emplace_back(key_low, key_high);
       auto& key_rgn = inst.key_regions.back();
-      key_rgn.vel_regions.emplace_back(0, 0x7F, 0, sound_id, 1, 1, s.base_note);
+      key_rgn.vel_regions.emplace_back(0, 0x7F, 0, sound_id, freq_mult, 1, s.base_note);
 
       //fprintf(stderr, "[create_json_sound_environment:%" PRId64 "] creating region %02" PRIX64 ":%02" PRIX64 "@%02hhX -> %s (%zu)\n",
       //    id, key_low, key_high, s.base_note, filename.c_str(), sound_id);
