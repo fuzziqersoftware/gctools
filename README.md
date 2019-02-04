@@ -47,22 +47,31 @@ gctools is a set of tools for reading and translating video game files. These to
 **sms/smsdumpbanks** - extracts the contents of instrument and waveform banks in AAF, BX, or BAA format. Games using this format include Luigi's Mansion, Pikmin, and Super Mario Sunshine. Produces text files describing the instruments, uncompressed .wav files containing the sounds, and .bms files containing the music sequences. Before running this program, do the steps in the "Getting auxiliary files" section below.
 - Example: `mkdir sms_decoded_data && smsdumpbanks sms_extracted_data/AudioRes sms_decoded_data`
 
-**sms/smssynth** - synthesizes music sequences. There are many ways to use smssynth; see the next section.
+**sms/smssynth** - synthesizes and debugs music sequences in BMS or MIDI format. There are many ways to use smssynth; see the next section.
 
 ### Using smssynth
 
 **smssynth** deals with BMS and MIDI music sequence programs. It can disassemble them, convert them into .wav files, or play them in realtime. The implementation is based on reverse-engineering multiple games and not on any official source code, so sometimes things don't work and the output sounds a bit different from the actual in-game music.
 
+#### Usage for GameCube games
+
 Before running smssynth, you may need to do the steps in the "Getting auxiliary files" section below. Also, for sequences that loop, smssynth will run forever unless you hit Ctrl+C or give a time limit.
 
-Here are some usage examples for GameCube games:
-- Example (list all the sequences in Luigi's Mansion): `smssynth --audiores-directory=luigis_mansion_extracted_data/AudioRes --list`
-- Example (convert Super Mario Sunshine sequence to 4-minute WAV, no Yoshi drums): `smssynth --audiores-directory=sms_extracted_data/AudioRes k_bianco.com --disable-track=15 --output-filename=k_bianco.com.wav --time-limit=240`
-- Example (play Super Mario Sunshine sequence in realtime, with Yoshi drums): `smssynth --audiores-directory=sms_extracted_data/AudioRes k_bianco.com --play`
-- Example (play Pikmin sequence in realtime): `smssynth --audiores-directory=pikmin_extracted_data/dataDir/SndData --play cave.jam`
+Once you have the necessary files, you can find out what the available sequences are with the `--list` option, play sequences with the `--play` option, or produce WAV files from the sequences with the `--output-filename` option.
 
-smssynth can also disassemble and play MIDI files. This was implemented to synthesize the Classic Mac OS version of SimCity 2000's music using the original instruments, which wouldn't play on any MIDI player I tried. Some other Classic Mac OS games use the same library (SoundMusicSys), and most of these games' music now works with smssynth as well. To play these sequences, provide a JSON environment file produced by resource_dasm, which is part of [realmz_dasm](http://www.github.com/fuzziqersoftware/realmz_dasm). Make sure not to move or rename any of the other files in the same directory as the JSON file, or it may not play properly.
-- Example (extract and play Creep Night Demo title theme): `resource_dasm "Creep Night Demo Music" ./creep_night.out && smssynth --json-environment="./creep_night.out/Creep Night Demo Music_SONG_1000_smssynth_env.json" --play`
+Here are some usage examples for GameCube games:
+- List all the sequences in Luigi's Mansion: `smssynth --audiores-directory=luigis_mansion_extracted_data/AudioRes --list`
+- Convert Bianco Hills (from Super Mario Sunshine) to 4-minute WAV, no Yoshi drums: `smssynth --audiores-directory=sms_extracted_data/AudioRes k_bianco.com --disable-track=15 --output-filename=k_bianco.com.wav --time-limit=240`
+- Play Bianco Hills (from Super Mario Sunshine) in realtime, with Yoshi drums: `smssynth --audiores-directory=sms_extracted_data/AudioRes k_bianco.com --play`
+- Play The Forest Navel (from Pikmin) in realtime: `smssynth --audiores-directory=pikmin_extracted_data/dataDir/SndData --play cave.jam`
+
+#### Usage for Classic Mac OS games
+
+smssynth can also disassemble and play MIDI files. This was implemented to synthesize the Classic Mac OS version of SimCity 2000's music using the original instruments, which wouldn't play on any MIDI player I tried. Some other Classic Mac OS games use the same library (SoundMusicSys), and most of these games' music resources now work with smssynth as well. To play these sequences, provide a JSON environment file produced by resource_dasm, which is part of [realmz_dasm](http://www.github.com/fuzziqersoftware/realmz_dasm). Make sure not to move or rename any of the other files in the same directory as the JSON file, or it may not play properly.
+
+SoundMusicSys environments have a lot of options, which resource_dasm packages up into a JSON file. You can produce an appropriate JSON file by running resource_dasm like `resource_dasm "Creep Night Demo Music" ./creep_night.out`. This will produce a JSON file for each SONG resource contained in the input file.
+
+After doing this, you can play the songs with (for example) `smssynth --json-environment="./creep_night.out/Creep Night Demo Music_SONG_1000_smssynth_env.json" --play`. The `--disassemble` and `--output-filename` options also work when using JSON files (like for JAudio/BMS), but `--list` does not.
 
 #### Compatibility
 
