@@ -51,12 +51,7 @@ gctools is a set of tools for reading and translating video game files. These to
 
 ### Using smssynth
 
-**smssynth** deals with BMS and MIDI music sequence programs. It can disassemble them, convert them into .wav files, or play them in realtime. The implementation is based on reverse-engineering multiple games and not on any official source code, so sometimes things don't work and the output sounds a bit different from the actual in-game music. Specifically:
-- Almost all Super Mario Sunshine BMS sequences sound perfect (exactly as they sound in-game). Note that the game uses track 15 for Yoshi's drums; use `--disable-track=15` if you don't want them.
-- Most Pikmin BMS sequences sound a little different from how they sound in-game but are easily recognizable.
-- Most Luigi's Mansion BMS sequences sound close to in-game audio, but a few instruments are clearly wrong and some effects are missing. I think this makes the staff roll sequence sound cooler, but I still intend to fix it.
-- Mario Kart: Double Dash BMS sequences work; some volume effects appear to be missing so they sound a little different.
-- SimCity 2000 MIDI sequences play, but some instruments' base notes are set incorrectly.
+**smssynth** deals with BMS and MIDI music sequence programs. It can disassemble them, convert them into .wav files, or play them in realtime. The implementation is based on reverse-engineering multiple games and not on any official source code, so sometimes things don't work and the output sounds a bit different from the actual in-game music.
 
 Before running smssynth, you may need to do the steps in the "Getting auxiliary files" section below. Also, for sequences that loop, smssynth will run forever unless you hit Ctrl+C or give a time limit.
 
@@ -66,8 +61,33 @@ Here are some usage examples for GameCube games:
 - Example (play Super Mario Sunshine sequence in realtime, with Yoshi drums): `smssynth --audiores-directory=sms_extracted_data/AudioRes k_bianco.com --play`
 - Example (play Pikmin sequence in realtime): `smssynth --audiores-directory=pikmin_extracted_data/dataDir/SndData --play cave.jam`
 
-smssynth also can disassemble and play MIDI files. This was implemented to synthesize the Classic Mac OS version of SimCity 2000's music using the original instruments, which wouldn't play on any MIDI player I tried. Some other Classic Mac OS games appear to use the same library, and most of them work with smssynth as well. To play these sequences, provide a JSON environment file produced by resource_dasm, which is part of [realmz_dasm](http://www.github.com/fuzziqersoftware/realmz_dasm). Make sure not to move or rename any of the other files in the same directory as the JSON file, or it may not play properly.
+smssynth can also disassemble and play MIDI files. This was implemented to synthesize the Classic Mac OS version of SimCity 2000's music using the original instruments, which wouldn't play on any MIDI player I tried. Some other Classic Mac OS games use the same library (SoundMusicSys), and most of these games' music now works with smssynth as well. To play these sequences, provide a JSON environment file produced by resource_dasm, which is part of [realmz_dasm](http://www.github.com/fuzziqersoftware/realmz_dasm). Make sure not to move or rename any of the other files in the same directory as the JSON file, or it may not play properly.
 - Example (extract and play Creep Night Demo title theme): `resource_dasm "Creep Night Demo Music" ./creep_night.out && smssynth --json-environment="./creep_night.out/Creep Night Demo Music_SONG_1000_smssynth_env.json" --play`
+
+#### Compatibility
+
+I've tested smssynth with the following GameCube games that use JAudio/BMS:
+- Almost all __Super Mario Sunshine__ songs sound perfect (exactly as they sound in-game). Note that the game uses track 15 for Yoshi's drums; use `--disable-track=15` if you don't want them.
+- Most __Pikmin__ songs sound a little different from how they sound in-game but are easily recognizable.
+- Most __Luigi's Mansion__ songs sound close to in-game audio, but a few instruments are clearly wrong and some effects are missing. I think this makes the staff roll sequence sound cooler, but I still intend to fix it.
+- __Mario Kart: Double Dash!!__ songs work; some volume effects appear to be missing so they sound a little different.
+
+Classic Mac OS games currently fare a bit better:
+- __Castles - Siege and Conquest__ songs play, but are missing some instruments.
+- __Creep Night Pinball__ songs play correctly.
+- __DinoPark Tycoon__ songs play correctly.
+- __Flashback__ songs play, but many note pitches seem incorrect.
+- __Monopoly CD-ROM__ songs play flawlessly. The SoundMusicSys implementation appears to drop some notes when playing some of these; the songs sound more complete with smssynth because it doesn't drop notes.
+- __Odell Down Under__ songs play, but I don't know if they're correct since I don't remember what they're supposed to sound like.
+- __Prince of Persia__ songs play, but some instruments are mapped incorrectly. Some songs have super fast tempos and might fall behind; increasing `--play-buffers` fixes this.
+- __SimCity 2000__ songs play correctly, but a few songs are too slow because global tempo bias isn't implemented.
+- __SimTown__ songs probably play correctly, but I only have the demo so I only tested the one song in the demo.
+- __Snapdragon__ songs play correctly.
+- __The Amazon Trail__ songs play, but I don't know if they're correct since I don't remember what they're supposed to sound like.
+- __The Yukon Trail__ songs play correctly.
+- __Troggle Trouble Math__ songs play correctly.
+- __Ultimate Spin Doctor__ songs appear to play correctly.
+- The __Widget Workshop__ song plays correctly.
 
 ### Getting auxiliary files from GameCube games
 
