@@ -2005,6 +2005,7 @@ int main(int argc, char** argv) {
       env_json_filename = &argv[x][19];
     } else if (!strncmp(argv[x], "--output-filename=", 18)) {
       output_filename = &argv[x][18];
+      debug_flags &= ~DebugFlag::ShowLongStatus;
     } else if (!strcmp(argv[x], "--no-decay-when-off")) {
       decay_when_off = false;
     } else if (!strcmp(argv[x], "--midi")) {
@@ -2194,6 +2195,7 @@ int main(int argc, char** argv) {
 
   if (output_filename) {
     auto samples = r->render_until_seconds(time_limit);
+    fprintf(stderr, "\nsaving output file: %s\n", output_filename);
     save_wav(output_filename, samples, sample_rate, 2);
 
   } else if (play) {
