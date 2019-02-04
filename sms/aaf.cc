@@ -802,10 +802,10 @@ SoundEnvironment create_json_sound_environment(
       s.decoded_samples = wav.samples;
       s.num_channels = wav.num_channels;
       s.sample_rate = wav.sample_rate;
-      if (wav.base_note >= 0) {
-        s.base_note = wav.base_note;
-      } else if (base_note > 0) {
+      if (base_note > 0) {
         s.base_note = base_note;
+      } else if (wav.base_note >= 0) {
+        s.base_note = wav.base_note;
       } else {
         s.base_note = 0x3C;
       }

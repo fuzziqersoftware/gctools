@@ -1701,6 +1701,7 @@ class MIDIRenderer : public Renderer {
 protected:
   shared_ptr<string> midi_contents;
   bool ignore_tempo_events;
+  bool allow_program_change;
   uint8_t channel_instrument[0x10];
 
 public:
@@ -1708,11 +1709,15 @@ public:
       shared_ptr<const SoundEnvironment> env,
       const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
       const unordered_set<int16_t>& disable_tracks, bool ignore_tempo_events,
-      bool decay_when_off) :
+      bool decay_when_off, uint8_t percussion_instrument, bool allow_program_change) :
       Renderer(sample_rate, env, mute_tracks, solo_tracks, disable_tracks, decay_when_off),
-      midi_contents(midi_contents), ignore_tempo_events(ignore_tempo_events) {
+      midi_contents(midi_contents), ignore_tempo_events(ignore_tempo_events),
+      allow_program_change(allow_program_change) {
     for (uint8_t x = 0; x < 0x10; x++) {
-      channel_instrument[x] = x;
+      this->channel_instrument[x] = x;
+    }
+    if (percussion_instrument) {
+      this->channel_instrument[9] = percussion_instrument;
     }
 
     StringReader r(this->midi_contents);
@@ -1837,7 +1842,10 @@ protected:
 
     } else if ((t->midi_status & 0xF0) == 0xC0) { // program change
       uint8_t channel = t->midi_status & 0x0F;
-      this->channel_instrument[channel] = t->r.get_u8();
+      uint8_t program = t->r.get_u8();
+      if (this->allow_program_change) {
+        this->channel_instrument[channel] = program;
+      }
 
     } else if ((t->midi_status & 0xF0) == 0xD0) { // channel key pressure
       // uint8_t channel = t->midi_status & 0x0F;
@@ -1879,13 +1887,14 @@ static shared_ptr<Renderer> create_renderer(shared_ptr<SequenceProgram> seq,
     shared_ptr<const SoundEnvironment> env,
     const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
     const unordered_set<int16_t>& disable_tracks, bool ignore_tempo_events,
-    bool decay_when_off) {
+    bool decay_when_off, uint8_t percussion_instrument, bool allow_midi_program_change) {
   if (seq.get()) {
     return shared_ptr<Renderer>(new BMSRenderer(seq, sample_rate, env,
         mute_tracks, solo_tracks, disable_tracks, decay_when_off));
   } else {
     return shared_ptr<Renderer>(new MIDIRenderer(midi_contents, sample_rate,
-        env, mute_tracks, solo_tracks, disable_tracks, ignore_tempo_events, decay_when_off));
+        env, mute_tracks, solo_tracks, disable_tracks, ignore_tempo_events,
+        decay_when_off, percussion_instrument, allow_midi_program_change));
   }
 }
 
@@ -2147,25 +2156,47 @@ int main(int argc, char** argv) {
     seq->index = default_bank;
   }
 
-  if (output_filename) {
-    shared_ptr<Renderer> r = create_renderer(seq, midi_contents, sample_rate,
-        env, mute_tracks, solo_tracks, disable_tracks, ignore_tempo_events, decay_when_off);
-
-    if (start_time) {
-      r->render_until_seconds(start_time);
+  // if not playing and not writing to a file, disassemble
+  if (!output_filename && !play) {
+    if (midi) {
+      StringReader r(midi_contents);
+      disassemble_midi(r);
+    } else {
+      shared_ptr<string> seq_data(new string(seq->data));
+      StringReader r(seq_data);
+      disassemble_bms(r, seq->index);
     }
+    return 0;
+  }
 
+  // set up the percussion track if it's provided
+  // TODO: generalize this interface in case we need to override more tracks in
+  // the future for other things I dunno lolz
+  uint8_t midi_percussion_instrument = 0;
+  bool allow_midi_program_change = true;
+  if (env_json.get()) {
+    try {
+      midi_percussion_instrument = env_json->as_dict().at("percussion_instrument")->as_int();
+    } catch (const out_of_range&) { }
+    try {
+      allow_midi_program_change = env_json->as_dict().at("allow_program_change")->as_bool();
+    } catch (const out_of_range&) { }
+  }
+
+  shared_ptr<Renderer> r = create_renderer(seq, midi_contents, sample_rate,
+      env, mute_tracks, solo_tracks, disable_tracks, ignore_tempo_events,
+      decay_when_off, midi_percussion_instrument, allow_midi_program_change);
+
+  // skip the first bit if requested
+  if (start_time) {
+    r->render_until_seconds(start_time);
+  }
+
+  if (output_filename) {
     auto samples = r->render_until_seconds(time_limit);
     save_wav(output_filename, samples, sample_rate, 2);
 
   } else if (play) {
-    shared_ptr<Renderer> r = create_renderer(seq, midi_contents, sample_rate,
-        env, mute_tracks, solo_tracks, disable_tracks, ignore_tempo_events, decay_when_off);
-
-    if (start_time) {
-      r->render_until_seconds(start_time);
-    }
-
     init_al();
     AudioStream stream(sample_rate, AL_FORMAT_STEREO16, num_buffers);
     for (;;) {
@@ -2183,16 +2214,6 @@ int main(int argc, char** argv) {
     }
     stream.wait();
     exit_al();
-
-  } else {
-    if (midi) {
-      StringReader r(midi_contents);
-      disassemble_midi(r);
-    } else {
-      shared_ptr<string> seq_data(new string(seq->data));
-      StringReader r(seq_data);
-      disassemble_bms(r, seq->index);
-    }
   }
 
   return 0;
