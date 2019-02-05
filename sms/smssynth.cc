@@ -1707,7 +1707,7 @@ protected:
 class MIDIRenderer : public Renderer {
 protected:
   shared_ptr<string> midi_contents;
-  bool ignore_tempo_events;
+  double tempo_bias;
   bool allow_program_change;
   uint8_t channel_instrument[0x10];
 
@@ -1715,10 +1715,10 @@ public:
   explicit MIDIRenderer(shared_ptr<string> midi_contents, size_t sample_rate,
       shared_ptr<const SoundEnvironment> env,
       const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
-      const unordered_set<int16_t>& disable_tracks, bool ignore_tempo_events,
+      const unordered_set<int16_t>& disable_tracks, double tempo_bias,
       bool decay_when_off, uint8_t percussion_instrument, bool allow_program_change) :
       Renderer(sample_rate, env, mute_tracks, solo_tracks, disable_tracks, decay_when_off),
-      midi_contents(midi_contents), ignore_tempo_events(ignore_tempo_events),
+      midi_contents(midi_contents), tempo_bias(tempo_bias),
       allow_program_change(allow_program_change) {
     for (uint8_t x = 0; x < 0x10; x++) {
       this->channel_instrument[x] = x;
@@ -1772,11 +1772,11 @@ public:
       uint8_t ticks_per_frame = header.division & 0xFF;
       int64_t ticks_per_sec = static_cast<int64_t>(ticks_per_frame) *
           static_cast<int64_t>(frames_per_sec);
-      this->tempo = 120;
+      this->tempo = 120 * this->tempo_bias;
       this->pulse_rate = ticks_per_sec / 2;
 
     } else {
-      this->tempo = 120;
+      this->tempo = 120 * this->tempo_bias;
       this->pulse_rate = header.division;
     }
   }
@@ -1874,11 +1874,7 @@ protected:
         this->next_event_to_track.erase(track_it);
 
       } else if (type == 0x51) { // set tempo
-        if (!this->ignore_tempo_events) {
-          this->tempo = 60000000 / t->r.get_u24r();
-        } else {
-          t->r.get_u24();
-        }
+        this->tempo = (60000000 / t->r.get_u24r()) * tempo_bias;
 
       } else { // anything else? just skip it
         t->r.go(t->r.where() + size);
@@ -1886,24 +1882,6 @@ protected:
     }
   }
 };
-
-
-
-static shared_ptr<Renderer> create_renderer(shared_ptr<SequenceProgram> seq,
-    shared_ptr<string> midi_contents, size_t sample_rate,
-    shared_ptr<const SoundEnvironment> env,
-    const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
-    const unordered_set<int16_t>& disable_tracks, bool ignore_tempo_events,
-    bool decay_when_off, uint8_t percussion_instrument, bool allow_midi_program_change) {
-  if (seq.get()) {
-    return shared_ptr<Renderer>(new BMSRenderer(seq, sample_rate, env,
-        mute_tracks, solo_tracks, disable_tracks, decay_when_off));
-  } else {
-    return shared_ptr<Renderer>(new MIDIRenderer(midi_contents, sample_rate,
-        env, mute_tracks, solo_tracks, disable_tracks, ignore_tempo_events,
-        decay_when_off, percussion_instrument, allow_midi_program_change));
-  }
-}
 
 
 
@@ -1960,8 +1938,6 @@ Logging options:\n\
 Debugging options:\n\
   --default-bank=N: override automatic instrument bank detection and use bank\n\
       N instead.\n\
-  --midi-ignore-tempo-events: don\'t execute MIDI events that change the speed\n\
-      of the sequence.\n\
   --no-decay-when-off: make note off events only terminate audio loops instead\n\
       of also tapering off the volume of the note.\n\
 ", argv0);
@@ -1989,7 +1965,6 @@ int main(int argc, char** argv) {
   bool list_sequences = false;
   int32_t default_bank = -1;
   size_t num_buffers = 32;
-  bool ignore_tempo_events = false;
   bool decay_when_off = true;
   bool resample_method_set = false;
   string env_json_filename;
@@ -2017,8 +1992,6 @@ int main(int argc, char** argv) {
       decay_when_off = false;
     } else if (!strcmp(argv[x], "--midi")) {
       midi = true;
-    } else if (!strcmp(argv[x], "--midi-ignore-tempo-events")) {
-      ignore_tempo_events = true;
     } else if (!strncmp(argv[x], "--midi-channel-instrument=", 26)) {
       auto tokens = split(&argv[x][26], ':');
       if (tokens.size() < 2 || tokens.size() > 3) {
@@ -2177,23 +2150,30 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  // set up the percussion track if it's provided
-  // TODO: generalize this interface in case we need to override more tracks in
-  // the future for other things I dunno lolz
-  uint8_t midi_percussion_instrument = 0;
-  bool allow_midi_program_change = true;
-  if (env_json.get()) {
-    try {
-      midi_percussion_instrument = env_json->as_dict().at("percussion_instrument")->as_int();
-    } catch (const out_of_range&) { }
-    try {
-      allow_midi_program_change = env_json->as_dict().at("allow_program_change")->as_bool();
-    } catch (const out_of_range&) { }
+  shared_ptr<Renderer> r;
+  if (seq.get()) {
+    r.reset(new BMSRenderer(seq, sample_rate, env, mute_tracks, solo_tracks,
+        disable_tracks, decay_when_off));
+  } else {
+    // midi has some extra params; get them from the json if possible
+    uint8_t percussion_instrument = 0;
+    bool allow_program_change = true;
+    double tempo_bias = 1.0;
+    if (env_json.get()) {
+      try {
+        percussion_instrument = env_json->as_dict().at("percussion_instrument")->as_int();
+      } catch (const out_of_range&) { }
+      try {
+        allow_program_change = env_json->as_dict().at("allow_program_change")->as_bool();
+      } catch (const out_of_range&) { }
+      try {
+        tempo_bias = env_json->as_dict().at("tempo_bias")->as_float();
+      } catch (const out_of_range&) { }
+    }
+    r.reset(new MIDIRenderer(midi_contents, sample_rate, env, mute_tracks,
+        solo_tracks, disable_tracks, tempo_bias, decay_when_off,
+        percussion_instrument, allow_program_change));
   }
-
-  shared_ptr<Renderer> r = create_renderer(seq, midi_contents, sample_rate,
-      env, mute_tracks, solo_tracks, disable_tracks, ignore_tempo_events,
-      decay_when_off, midi_percussion_instrument, allow_midi_program_change);
 
   // skip the first bit if requested
   if (start_time) {

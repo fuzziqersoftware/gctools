@@ -89,7 +89,7 @@ Classic Mac OS games currently fare a bit better:
 - __Monopoly CD-ROM__ songs play flawlessly. The SoundMusicSys implementation appears to drop some notes when playing some of these; the songs sound more complete with smssynth because it doesn't drop notes.
 - __Odell Down Under__ songs play, but I don't know if they're correct since I don't remember what they're supposed to sound like.
 - __Prince of Persia__ songs play, but some instruments are mapped incorrectly. Some songs have super fast tempos and might fall behind; increasing `--play-buffers` fixes this.
-- __SimCity 2000__ songs play correctly, but a few songs are too slow because global tempo bias isn't implemented.
+- __SimCity 2000__ songs play correctly.
 - __SimTown__ songs probably play correctly, but I only have the demo so I only tested the one song in the demo.
 - __Snapdragon__ songs play correctly.
 - __The Amazon Trail__ songs play, but I don't know if they're correct since I don't remember what they're supposed to sound like.
