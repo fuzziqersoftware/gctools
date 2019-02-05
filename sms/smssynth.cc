@@ -1213,16 +1213,23 @@ public:
         }
 
         // only draw the note in the text view if it's on
-        if (v->note_off_decay_remaining < 0) {
-          int8_t note = v->note;
-          char track_char = (t->id < 10) ? ('0' + t->id) : ('A' + t->id - 10);
-          if (notes_table[note] == track_char) {
-            continue;
-          }
-          if (notes_table[note] == ' ') {
-            notes_table[note] = track_char;
+        if ((v->note_off_decay_remaining < 0) && (v->note >= 0)) {
+          char track_char;
+          if (t->id < 0) {
+            track_char = '/';
+          } else if (t->id < 10) {
+            track_char = '0' + t->id;
+          } else if (t->id < 36) {
+            track_char = 'A' + (t->id - 10);
+          } else if (t->id < 62) {
+            track_char = 'a' + (t->id - 36);
           } else {
-            notes_table[note] = '+';
+            track_char = '&';
+          }
+          if (notes_table[v->note] == ' ') {
+            notes_table[v->note] = track_char;
+          } else if (notes_table[v->note] != track_char) {
+            notes_table[v->note] = '+';
           }
         }
       }
