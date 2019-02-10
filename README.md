@@ -76,29 +76,31 @@ After doing this, you can play the songs with (for example) `smssynth --json-env
 #### Compatibility
 
 I've tested smssynth with the following GameCube games that use JAudio/BMS:
-- Almost all __Super Mario Sunshine__ songs sound perfect (exactly as they sound in-game). Note that the game uses track 15 for Yoshi's drums; use `--disable-track=15` if you don't want them.
-- Most __Pikmin__ songs sound a little different from how they sound in-game but are easily recognizable.
 - Most __Luigi's Mansion__ songs sound close to in-game audio, but a few instruments are clearly wrong and some effects are missing. I think this makes the staff roll sequence sound cooler, but I still intend to fix it.
 - __Mario Kart: Double Dash!!__ songs work; some volume effects appear to be missing so they sound a little different.
+- Most __Pikmin__ songs sound a little different from how they sound in-game but are easily recognizable.
+- Almost all __Super Mario Sunshine__ songs sound perfect (exactly as they sound in-game). Note that the game uses track 15 for Yoshi's drums; use `--disable-track=15` if you don't want them.
 
-Classic Mac OS games currently fare a bit better:
+Classic Mac OS games that use SoundMusicSys currently fare a bit better:
 - __Castles - Siege and Conquest__ songs play, but are missing some instruments.
 - __Creep Night Pinball__ songs play correctly.
 - __DinoPark Tycoon__ songs play correctly.
 - __Flashback__ songs play, but many note pitches seem incorrect.
 - __Monopoly CD-ROM__ songs play flawlessly. The SoundMusicSys implementation appears to drop some notes when playing some of these; the songs sound more complete with smssynth because it doesn't drop notes.
-- __Odell Down Under__ songs play, but I don't know if they're correct since I don't remember what they're supposed to sound like.
-- __Prince of Persia__ songs play, but some instruments are mapped incorrectly. Some songs have super fast tempos and might fall behind; increasing `--play-buffers` fixes this.
+- __Odell Down Under__ songs play, but an instrument is missing from one of them.
+- __Prince of Persia__ songs play, but a few instrument pitches are incorrect. Some songs have super fast tempos and might fall behind; increasing `--play-buffers` fixes this.
 - __SimCity 2000__ songs play correctly.
 - __SimTown__ songs probably play correctly, but I only have the demo so I only tested the one song in the demo.
 - __Snapdragon__ songs play correctly.
-- __The Amazon Trail__ songs play, but I don't know if they're correct since I don't remember what they're supposed to sound like.
+- __The Amazon Trail__ songs play correctly.
 - __The Yukon Trail__ songs play correctly.
 - __Troggle Trouble Math__ songs play correctly.
 - __Ultimate Spin Doctor__ songs appear to play correctly.
 - The __Widget Workshop__ song plays correctly.
 
 ### Getting auxiliary files from GameCube games
+
+Luigi's Mansion should work without any modifications. Just point `--audiores-directory` at the directory extracted from the disc image.
 
 #### Getting msound.aaf from Super Mario Sunshine
 
@@ -114,4 +116,4 @@ You'll have to manually extract the BARC data from default.dol (it's embedded so
 
 #### Getting Banks directory from Mario Kart: Double Dash
 
-After extracting the AudioRes directory, just rename the Waves subdirectory to Banks.
+After extracting the AudioRes directory, rename the Waves subdirectory to Banks.
