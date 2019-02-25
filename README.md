@@ -88,7 +88,7 @@ Classic Mac OS games that use SoundMusicSys currently fare a bit better:
 - __Flashback__ songs play, but many note pitches seem incorrect.
 - __Monopoly CD-ROM__ songs play flawlessly. The SoundMusicSys implementation appears to drop some notes when playing some of these; the songs sound more complete with smssynth because it doesn't drop notes.
 - __Odell Down Under__ songs play, but an instrument is missing from one of them.
-- __Prince of Persia__ songs play, but a few instrument pitches are incorrect. Some songs have super fast tempos and might fall behind; increasing `--play-buffers` fixes this.
+- __Prince of Persia__ songs play, but a few instrument pitches are incorrect.
 - __SimCity 2000__ songs play correctly.
 - __SimTown__ songs probably play correctly, but I only have the demo so I only tested the one song in the demo.
 - __Snapdragon__ songs play correctly.

@@ -1926,7 +1926,7 @@ Synthesis options:\n\
       are sinc-best (default when generating an output file), sinc-medium,\n\
       sinc-fast, hold, and linear (default when playing).\n\
   --play-buffers=N: generate this many steps of audio in advance of the play\n\
-      position (default 32). If play lags, especially during pitch bends, try\n\
+      position (default 128). If play lags, especially during pitch bends, try\n\
       increasing this value.\n\
 \n\
 Logging options:\n\
@@ -1964,7 +1964,7 @@ int main(int argc, char** argv) {
   bool play = false;
   bool list_sequences = false;
   int32_t default_bank = -1;
-  size_t num_buffers = 32;
+  size_t num_buffers = 128;
   bool decay_when_off = true;
   bool resample_method_set = false;
   string env_json_filename;
