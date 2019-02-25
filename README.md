@@ -82,12 +82,12 @@ I've tested smssynth with the following GameCube games that use JAudio/BMS:
 - Almost all __Super Mario Sunshine__ songs sound perfect (exactly as they sound in-game). Note that the game uses track 15 for Yoshi's drums; use `--disable-track=15` if you don't want them.
 
 Classic Mac OS games that use SoundMusicSys currently fare a bit better:
-- __Castles - Siege and Conquest__ songs play, but are missing some instruments.
+- __Castles - Siege and Conquest__ songs play correctly.
 - __Creep Night Pinball__ songs play correctly.
 - __DinoPark Tycoon__ songs play correctly.
 - __Flashback__ songs play correctly.
 - __Monopoly CD-ROM__ songs play flawlessly. SoundMusicSys drops some notes when playing some of these songs; the songs sound more complete with smssynth because it doesn't drop notes.
-- __Odell Down Under__ songs play, but an instrument is missing from one of them.
+- __Odell Down Under__ songs play correctly.
 - __Prince of Persia__ songs play correctly.
 - __SimCity 2000__ songs play correctly.
 - __SimTown__ songs probably play correctly, but I only have the demo so I only tested the one song in the demo.
