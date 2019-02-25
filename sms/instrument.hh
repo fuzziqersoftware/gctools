@@ -44,12 +44,14 @@ struct VelocityRegion {
   uint16_t sound_id;
   float freq_mult;
   float volume_mult;
+  bool constant_pitch;
 
   int8_t base_note;
   const Sound* sound;
 
   VelocityRegion(uint8_t vel_low, uint8_t vel_high, uint16_t sample_bank_id,
-      uint16_t sound_id, float freq_mult, float volume_mult, int8_t base_note = -1);
+      uint16_t sound_id, float freq_mult, float volume_mult,
+      int8_t base_note = -1, bool constant_pitch = false);
 };
 
 struct KeyRegion {

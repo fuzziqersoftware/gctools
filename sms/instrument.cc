@@ -31,9 +31,10 @@ const vector<float>& Sound::samples() const {
 
 VelocityRegion::VelocityRegion(uint8_t vel_low, uint8_t vel_high,
     uint16_t sample_bank_id, uint16_t sound_id, float freq_mult,
-    float volume_mult, int8_t base_note) : vel_low(vel_low), vel_high(vel_high),
-    sample_bank_id(sample_bank_id), sound_id(sound_id), freq_mult(freq_mult),
-    volume_mult(volume_mult), base_note(base_note), sound(NULL) { }
+    float volume_mult, int8_t base_note, bool constant_pitch) :
+    vel_low(vel_low), vel_high(vel_high), sample_bank_id(sample_bank_id),
+    sound_id(sound_id), freq_mult(freq_mult), volume_mult(volume_mult),
+    constant_pitch(constant_pitch), base_note(base_note), sound(NULL) { }
 
 KeyRegion::KeyRegion(uint8_t key_low, uint8_t key_high) : key_low(key_low),
     key_high(key_high) { }

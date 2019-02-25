@@ -786,6 +786,11 @@ SoundEnvironment create_json_sound_environment(
         freq_mult = rgn_dict.at("freq_mult")->as_float();
       } catch (const out_of_range&) { }
 
+      bool constant_pitch = false;
+      try {
+        constant_pitch = rgn_dict.at("constant_pitch")->as_bool();
+      } catch (const out_of_range&) { }
+
       WAVContents wav;
       try {
         wav = load_wav(filename.c_str());
@@ -826,10 +831,8 @@ SoundEnvironment create_json_sound_environment(
       // create the key region and vel region objects
       inst.key_regions.emplace_back(key_low, key_high);
       auto& key_rgn = inst.key_regions.back();
-      key_rgn.vel_regions.emplace_back(0, 0x7F, 0, sound_id, freq_mult, 1, s.base_note);
-
-      //fprintf(stderr, "[create_json_sound_environment:%" PRId64 "] creating region %02" PRIX64 ":%02" PRIX64 "@%02hhX -> %s (%zu)\n",
-      //    id, key_low, key_high, s.base_note, filename.c_str(), sound_id);
+      key_rgn.vel_regions.emplace_back(0, 0x7F, 0, sound_id, freq_mult, 1,
+          s.base_note, constant_pitch);
 
       // use up the sound id
       sound_id++;

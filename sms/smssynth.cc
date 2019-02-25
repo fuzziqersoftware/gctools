@@ -892,8 +892,6 @@ public:
       vel_region(&this->key_region->region_for_velocity(vel)), src_ratio(1.0f),
       offset(0), cache(cache) {
 
-    //fprintf(stderr, "[SampleVoice] play %s:%" PRIX32 "\n", this->vel_region->sound->source_filename.c_str(), this->vel_region->sound->source_offset);
-
     if (!this->vel_region->sound) {
       throw out_of_range("instrument sound is missing");
     }
@@ -919,8 +917,8 @@ public:
     if (base_note < 0) {
       base_note = this->vel_region->sound->base_note;
     }
-    float note_factor = frequency_for_note(base_note) /
-        frequency_for_note(this->note);
+    float note_factor = this->vel_region->constant_pitch ? 1.0 :
+        (frequency_for_note(base_note) / frequency_for_note(this->note));
 
     {
       float pitch_bend_factor = pow(2, (pitch_bend * pitch_bend_semitone_range) / 12.0) * freq_mult;
