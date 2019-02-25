@@ -85,17 +85,17 @@ Classic Mac OS games that use SoundMusicSys currently fare a bit better:
 - __Castles - Siege and Conquest__ songs play, but are missing some instruments.
 - __Creep Night Pinball__ songs play correctly.
 - __DinoPark Tycoon__ songs play correctly.
-- __Flashback__ songs play, but many note pitches seem incorrect.
-- __Monopoly CD-ROM__ songs play flawlessly. The SoundMusicSys implementation appears to drop some notes when playing some of these; the songs sound more complete with smssynth because it doesn't drop notes.
+- __Flashback__ songs play correctly.
+- __Monopoly CD-ROM__ songs play flawlessly. SoundMusicSys drops some notes when playing some of these songs; the songs sound more complete with smssynth because it doesn't drop notes.
 - __Odell Down Under__ songs play, but an instrument is missing from one of them.
-- __Prince of Persia__ songs play, but a few instrument pitches are incorrect.
+- __Prince of Persia__ songs play correctly.
 - __SimCity 2000__ songs play correctly.
 - __SimTown__ songs probably play correctly, but I only have the demo so I only tested the one song in the demo.
-- __Snapdragon__ songs play correctly.
+- __Snapdragon__ songs play correctly, but the percussion track pitch is incorrect.
 - __The Amazon Trail__ songs play correctly.
 - __The Yukon Trail__ songs play correctly.
 - __Troggle Trouble Math__ songs play correctly.
-- __Ultimate Spin Doctor__ songs appear to play correctly.
+- __Ultimate Spin Doctor__ songs play correctly.
 - The __Widget Workshop__ song plays correctly.
 
 ### Getting auxiliary files from GameCube games
