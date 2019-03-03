@@ -89,6 +89,7 @@ Classic Mac OS games that use SoundMusicSys currently fare a bit better:
 - __Monopoly CD-ROM__ songs play flawlessly. SoundMusicSys drops some notes when playing some of these songs; the songs sound more complete with smssynth because it doesn't drop notes.
 - __Odell Down Under__ songs play correctly.
 - __Prince of Persia__ songs play correctly.
+- __Prince of Persia 2__ songs play mostly correctly. The JSON environments have to be assembled manually because the MIDI sequences are in a Mohawk archive rather than in the game itself (where the instruments are).
 - __SimCity 2000__ songs play correctly.
 - __SimTown__ songs probably play correctly, but I only have the demo so I only tested the one song in the demo.
 - __Snapdragon__ songs play correctly, but the percussion track pitch is incorrect.
