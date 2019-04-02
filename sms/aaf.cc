@@ -642,7 +642,8 @@ SoundEnvironment bx_decode(void* vdata, size_t size, const char* base_directory)
       ibnk.chunk_id = x;
       ret.instrument_banks.emplace(x, move(ibnk));
     } else {
-      ret.instrument_banks.emplace(x, x);
+      ret.instrument_banks.emplace(piecewise_construct, forward_as_tuple(x),
+          forward_as_tuple(x));
     }
     entry++;
   }
@@ -711,17 +712,20 @@ SoundEnvironment create_midi_sound_environment(
   SoundEnvironment env;
 
   // create instrument bank 0
-  auto& inst_bank = env.instrument_banks.emplace(0, 0).first->second;
+  auto& inst_bank = env.instrument_banks.emplace(piecewise_construct,
+      forward_as_tuple(0), forward_as_tuple(0)).first->second;
   for (const auto& it : instrument_metadata) {
     // TODO: do we need to pass in base_note for the vel region?
-    auto& inst = inst_bank.id_to_instrument.emplace(it.first, it.first).first->second;
+    auto& inst = inst_bank.id_to_instrument.emplace(piecewise_construct,
+        forward_as_tuple(it.first), forward_as_tuple(it.first)).first->second;
     inst.key_regions.emplace_back(0, 0x7F);
     auto& key_region = inst.key_regions.back();
     key_region.vel_regions.emplace_back(0, 0x7F, 0, it.first, 1, 1);
   }
 
   // create sample bank 0
-  auto& sample_bank = env.sample_banks.emplace(0, 0).first->second;
+  auto& sample_bank = env.sample_banks.emplace(piecewise_construct,
+      forward_as_tuple(0), forward_as_tuple(0)).first->second;
   for (const auto& it : instrument_metadata) {
     sample_bank.emplace_back();
     Sound& s = sample_bank.back();
@@ -763,14 +767,17 @@ SoundEnvironment create_json_sound_environment(
   SoundEnvironment env;
 
   // create instrument bank 0 and sample bank 0
-  auto& inst_bank = env.instrument_banks.emplace(0, 0).first->second;
-  auto& sample_bank = env.sample_banks.emplace(0, 0).first->second;
+  auto& inst_bank = env.instrument_banks.emplace(piecewise_construct,
+      forward_as_tuple(0), forward_as_tuple(0)).first->second;
+  auto& sample_bank = env.sample_banks.emplace(piecewise_construct,
+      forward_as_tuple(0), forward_as_tuple(0)).first->second;
 
   // create instruments
   size_t sound_id = 1;
   for (const auto& inst_json : instruments_json->as_list()) {
     int64_t id = inst_json->as_dict().at("id")->as_int();
-    auto& inst = inst_bank.id_to_instrument.emplace(id, id).first->second;
+    auto& inst = inst_bank.id_to_instrument.emplace(piecewise_construct,
+        forward_as_tuple(id), forward_as_tuple(id)).first->second;
 
     //fprintf(stderr, "[create_json_sound_environment] creating instrument %" PRId64 "\n", id);
 

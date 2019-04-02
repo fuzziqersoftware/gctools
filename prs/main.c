@@ -1,4 +1,4 @@
-//#include <stdio.h>
+#include <inttypes.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
 
     } else if (!strncmp(argv[x], "--start-offset=", 15)) {
       if (argv[x][15] == '0' && argv[x][16] == 'x') {
-        sscanf(&argv[x][17], "%llx", &start_offset);
+        sscanf(&argv[x][17], "%" PRIX64, &start_offset);
       } else {
         start_offset = atoi(&argv[x][15]);
       }
@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
 
     } else if (!strncmp(argv[x], "--raw-bytes=", 12)) {
       if (argv[x][12] == '0' && argv[x][13] == 'x') {
-        sscanf(&argv[x][14], "%llx", &raw_bytes);
+        sscanf(&argv[x][14], "%" PRIX64, &raw_bytes);
       } else {
         raw_bytes = atoi(&argv[x][12]);
       }
@@ -99,8 +99,8 @@ int main(int argc, char* argv[]) {
     if (format == FORMAT_YAY0) {
       format_str = "FORMAT_YAY0";
     }
-    fprintf(stderr, "prs: action=%s, format=%s, start_offset=%016llX, "
-        "raw_bytes=%016llX\n", action_str, format_str, start_offset, raw_bytes);
+    fprintf(stderr, "prs: action=%s, format=%s, start_offset=%016" PRIX64 ", "
+        "raw_bytes=%016" PRIX64 "\n", action_str, format_str, start_offset, raw_bytes);
   }
 
   int64_t ret = ERROR_UNSUPPORTED;
@@ -138,10 +138,10 @@ int main(int argc, char* argv[]) {
   }
 
   if (ret < 0) {
-    fprintf(stderr, "prs: operation failed with error %lld\n", ret);
+    fprintf(stderr, "prs: operation failed with error %" PRId64 "\n", ret);
   } else if (verbose) {
     if (ret > 0) {
-      fprintf(stderr, "prs: %lld (0x%llX) bytes written\n", ret, ret);
+      fprintf(stderr, "prs: %" PRId64 " (0x%" PRIX64 ") bytes written\n", ret, ret);
     } else {
       fprintf(stderr, "prs: warning: result was empty\n");
     }

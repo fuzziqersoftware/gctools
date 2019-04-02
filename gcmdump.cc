@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <inttypes.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -6,6 +7,7 @@
 #include <string.h>
 #include <sys/types.h>
 
+#include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
 #include <string>
 #include <unordered_set>
@@ -16,40 +18,40 @@ using namespace std;
 #pragma pack(1)
 
 struct GCMHeader {
-  int32_t game_id;
-  int16_t company_id;
-  int8_t disk_id;
-  int8_t version;
-  int8_t audio_streaming;
-  int8_t stream_buffer_size;
-  int8_t unused1[0x0E];
-  int32_t wii_magic;
-  int32_t gc_magic;
+  uint32_t game_id;
+  uint16_t company_id;
+  uint8_t disk_id;
+  uint8_t version;
+  uint8_t audio_streaming;
+  uint8_t stream_buffer_size;
+  uint8_t unused1[0x0E];
+  uint32_t wii_magic;
+  uint32_t gc_magic;
   char name[0x03E0];
-  int32_t debug_offset;
-  int32_t debug_addr;
-  int8_t unused2[0x18];
-  int32_t dol_offset;
-  int32_t fst_offset;
-  int32_t fst_size;
-  int32_t fst_max_size;
+  uint32_t debug_offset;
+  uint32_t debug_addr;
+  uint8_t unused2[0x18];
+  uint32_t dol_offset;
+  uint32_t fst_offset;
+  uint32_t fst_size;
+  uint32_t fst_max_size;
 };
 
 struct TGCHeader {
-  int32_t magic;
-  int32_t unknown1;
-  int32_t header_size;
-  int32_t unknown2;
-  int32_t fst_offset;
-  int32_t fst_size;
-  int32_t fst_max_size;
-  int32_t dol_offset;
-  int32_t dol_size;
-  int32_t file_area;
-  int32_t unknown3; // 10
-  int32_t banner_offset;
-  int32_t banner_size;
-  int32_t file_offset_base;
+  uint32_t magic;
+  uint32_t unknown1;
+  uint32_t header_size;
+  uint32_t unknown2;
+  uint32_t fst_offset;
+  uint32_t fst_size;
+  uint32_t fst_max_size;
+  uint32_t dol_offset;
+  uint32_t dol_size;
+  uint32_t file_area;
+  uint32_t unknown3; // 10
+  uint32_t banner_offset;
+  uint32_t banner_size;
+  uint32_t file_offset_base;
 };
 
 union ImageHeader {
@@ -71,24 +73,24 @@ struct DOLHeader {
 };
 
 struct FSTRootEntry {
-  int8_t dir_flag;
-  int32_t string_offset:24;
-  int32_t parent_offset;
-  int32_t num_entries;
+  uint8_t dir_flag;
+  uint32_t string_offset:24;
+  uint32_t parent_offset;
+  uint32_t num_entries;
 };
 
 struct FSTDirEntry {
-  int8_t dir_flag;
-  int32_t string_offset:24;
-  int32_t parent_offset;
-  int32_t next_offset;
+  uint8_t dir_flag;
+  uint32_t string_offset:24;
+  uint32_t parent_offset;
+  uint32_t next_offset;
 };
 
 struct FSTFileEntry {
-  int8_t dir_flag;
-  int32_t string_offset:24;
-  int32_t file_offset;
-  int32_t file_size;
+  uint8_t dir_flag;
+  uint32_t string_offset:24;
+  uint32_t file_offset;
+  uint32_t file_size;
 };
 
 union FSTEntry {
@@ -98,17 +100,12 @@ union FSTEntry {
 };
 
 
-int32_t byteswap(int32_t a) {
-  return ((a >> 24) & 0x000000FF) | ((a >> 8) & 0x0000FF00) |
-         ((a << 8) & 0x00FF0000) | ((a << 24) & 0xFF000000);
-}
-
 uint32_t dol_file_size(const DOLHeader* dol) {
   static const int num_sections = 18;
   uint32_t x, max_offset = 0;
   for (x = 0; x < num_sections; x++) {
-    uint32_t section_end_offset = byteswap(dol->text_offset[x]) +
-        byteswap(dol->text_size[x]);
+    uint32_t section_end_offset = bswap32(dol->text_offset[x]) +
+        bswap32(dol->text_size[x]);
     if (section_end_offset > max_offset) {
       max_offset = section_end_offset;
     }
@@ -128,9 +125,9 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
   for (x = start; x < end; x++) {
     FSTEntry this_entry;
     this_entry.file.dir_flag = fst[x].file.dir_flag;
-    this_entry.file.string_offset = byteswap(fst[x].file.string_offset) >> 8;
-    this_entry.file.file_offset = byteswap(fst[x].file.file_offset);
-    this_entry.file.file_size = byteswap(fst[x].file.file_size);
+    this_entry.file.string_offset = bswap32(fst[x].file.string_offset) >> 8;
+    this_entry.file.file_offset = bswap32(fst[x].file.file_offset);
+    this_entry.file.file_size = bswap32(fst[x].file.file_size);
 
     if (this_entry.file.dir_flag) {
       printf("> entry: %08X $ %02X %08X %08X %08X %s%s/\n", x,
@@ -223,17 +220,17 @@ int main(int argc, char* argv[]) {
   int32_t base_offset;
   if (format == Format::GCM) {
     printf("format: gcm (%s)\n", header.gcm.name);
-    fst_offset = byteswap(header.gcm.fst_offset);
-    fst_size = byteswap(header.gcm.fst_size);
+    fst_offset = bswap32(header.gcm.fst_offset);
+    fst_size = bswap32(header.gcm.fst_size);
     base_offset = 0;
-    dol_offset = byteswap(header.gcm.dol_offset);
+    dol_offset = bswap32(header.gcm.dol_offset);
 
   } else if (format == Format::TGC) {
     printf("format: tgc\n");
-    fst_offset = byteswap(header.tgc.fst_offset);
-    fst_size = byteswap(header.tgc.fst_size);
-    base_offset = byteswap(header.tgc.file_area) - byteswap(header.tgc.file_offset_base);
-    dol_offset = byteswap(header.tgc.dol_offset);
+    fst_offset = bswap32(header.tgc.fst_offset);
+    fst_size = bswap32(header.tgc.fst_size);
+    base_offset = bswap32(header.tgc.file_area) - bswap32(header.tgc.file_offset_base);
+    dol_offset = bswap32(header.tgc.dol_offset);
 
   } else {
     fprintf(stderr, "can\'t determine format; use one of --tgc or --gcm\n");
@@ -261,7 +258,7 @@ int main(int argc, char* argv[]) {
     save_file("fst.bin", fst_data);
   }
 
-  int num_entries = byteswap(fst[0].root.num_entries);
+  int num_entries = bswap32(fst[0].root.num_entries);
   printf("> root: %08X files\n", num_entries);
 
   char* string_table = (char*)fst + (sizeof(FSTEntry) * num_entries);

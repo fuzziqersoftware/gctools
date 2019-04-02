@@ -9,8 +9,8 @@ using namespace std;
 
 
 struct AFSHeader {
-  int32_t magic;
-  int32_t num_files;
+  uint32_t magic;
+  uint32_t num_files;
   struct {
     uint32_t offset;
     uint32_t size;

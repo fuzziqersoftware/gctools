@@ -5,6 +5,7 @@
 
 #include <samplerate.h>
 
+#include <algorithm>
 #include <map>
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
@@ -1157,8 +1158,8 @@ public:
     if (this->next_event_to_track.empty()) {
       for (auto& it : this->id_to_track) {
         unordered_set<uint8_t> voices_on;
-        for (const auto& it : it.second->voices) {
-          voices_on.emplace(it.first);
+        for (const auto& voice_it : it.second->voices) {
+          voices_on.emplace(voice_it.first);
         }
         for (uint8_t voice_id : voices_on) {
           it.second->voice_off(voice_id);
