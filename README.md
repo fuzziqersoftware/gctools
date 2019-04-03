@@ -13,7 +13,7 @@ gctools is a set of tools for reading and translating video game files. These to
 
 ## Building
 
-- Build and install phosg (https://github.com/fuzziqersoftware/phosg).
+- Build and install phosg (https://github.com/fuzziqersoftware/phosg) and phosg-audio (https://github.com/fuzziqersoftware/phosg-audio).
 - Install OpenAL if you don't have it already.
 - Install libsamplerate (http://www.mega-nerd.com/SRC/).
 - Run `make` in the root directory of gctools. Executables will be generated for each tool. These tools all build and run on Mac OS X and Ubuntu, but are untested on other platforms.
