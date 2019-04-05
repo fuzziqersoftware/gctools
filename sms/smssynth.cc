@@ -1274,8 +1274,8 @@ public:
 
       bool short_status = !(debug_flags & DebugFlag::ShowLongStatus);
       bool all_tracks_finished = this->next_event_to_track.empty();
-      char when_str[8];
-      snprintf(when_str, 8, "%-7g", when);
+      char when_str[16];
+      snprintf(when_str, 16, "%-7g", when);
 
       if ((debug_flags & DebugFlag::ColorField) || (short_status && (debug_flags & DebugFlag::ColorStatus))) {
         fprintf(stderr, "\r%08" PRIX64 "%c %s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.8s%s @ %-7s + %s%zu/%zu%s%c",
