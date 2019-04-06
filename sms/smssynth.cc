@@ -2011,6 +2011,8 @@ int main(int argc, char** argv) {
       debug_flags &= ~DebugFlag::AllColorOptions;
     } else if (!strcmp(argv[x], "--short-status")) {
       debug_flags &= ~DebugFlag::ShowLongStatus;
+    } else if (!strcmp(argv[x], "--quiet")) {
+      debug_flags = 0;
 
     } else if (!strcmp(argv[x], "--resample-method=sinc-best")) {
       resample_method = SRC_SINC_BEST_QUALITY;
