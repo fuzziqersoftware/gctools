@@ -29,12 +29,15 @@ enum DebugFlag {
   ShowUnknownParamOptions     = 0x0000000000000010,
   ShowUnimplementedConditions = 0x0000000000000020,
   ShowLongStatus              = 0x0000000000000040,
+  ShowMissingNotes            = 0x0000000000000080,
 
-  ColorField                  = 0x0000000000000080,
-  ColorStatus                 = 0x0000000000000100,
-  AllColorOptions             = 0x0000000000000180,
+  PlayMissingNotes            = 0x0000000000000100,
 
-  Default                     = 0x00000000000001C2,
+  ColorField                  = 0x0000000000000200,
+  ColorStatus                 = 0x0000000000000400,
+  AllColorOptions             = 0x0000000000000600,
+
+  Default                     = 0x0000000000000682,
 };
 
 uint64_t debug_flags = DebugFlag::Default;
@@ -854,6 +857,18 @@ public:
   ssize_t note_off_decay_remaining;
 };
 
+class SilentVoice : public Voice {
+public:
+  SilentVoice(size_t sample_rate, int8_t note, int8_t vel) :
+      Voice(sample_rate, note, vel, true) { }
+  virtual ~SilentVoice() = default;
+
+  virtual vector<float> render(size_t count, float volume, float pitch_bend,
+      float pitch_bend_semitone_range, float panning, float freq_mult) {
+    return vector<float>(count * 2, 0.0f);
+  }
+};
+
 class SineVoice : public Voice {
 public:
   SineVoice(size_t sample_rate, int8_t note, int8_t vel) :
@@ -1109,10 +1124,16 @@ protected:
         t->voices[voice_id].reset(v);
       } catch (const out_of_range& e) {
         string key_str = name_for_note(key);
-        fprintf(stderr, "warning: can\'t find sample (%s): bank=%" PRIX32
-            " instrument=%" PRIX32 " key=%02hhX=%s vel=%02hhX\n", e.what(),
-            t->bank, t->instrument, key, key_str.c_str(), vel);
-        t->voices[voice_id].reset(new SineVoice(this->sample_rate, key, vel));
+        if (debug_flags & DebugFlag::ShowMissingNotes) {
+          fprintf(stderr, "warning: can\'t find sample (%s): bank=%" PRIX32
+              " instrument=%" PRIX32 " key=%02hhX=%s vel=%02hhX\n", e.what(),
+              t->bank, t->instrument, key, key_str.c_str(), vel);
+        }
+        if (debug_flags & DebugFlag::PlayMissingNotes) {
+          t->voices[voice_id].reset(new SineVoice(this->sample_rate, key, vel));
+        } else {
+          t->voices[voice_id].reset(new SilentVoice(this->sample_rate, key, vel));
+        }
       }
     } else {
       t->voices[voice_id].reset(new SineVoice(this->sample_rate, key, vel));
@@ -1939,6 +1960,8 @@ Debugging options:\n\
       N instead.\n\
   --no-decay-when-off: make note off events only terminate audio loops instead\n\
       of also tapering off the volume of the note.\n\
+  --play-missing-notes: for notes that have no associated instrument/sample,\n\
+      play a sine wave instead.\n\
 ", argv0);
 }
 
@@ -2011,6 +2034,8 @@ int main(int argc, char** argv) {
       debug_flags &= ~DebugFlag::AllColorOptions;
     } else if (!strcmp(argv[x], "--short-status")) {
       debug_flags &= ~DebugFlag::ShowLongStatus;
+    } else if (!strcmp(argv[x], "--play-missing-notes")) {
+      debug_flags |= DebugFlag::PlayMissingNotes;
     } else if (!strcmp(argv[x], "--quiet")) {
       debug_flags = 0;
 
