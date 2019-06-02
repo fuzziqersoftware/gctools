@@ -10,6 +10,12 @@
 
 #include "aaf.hh"
 
+#ifdef WINDOWS
+#define PRIu32 "u"
+#define PRIX32 "X"
+#define PRIX64 "llX"
+#endif
+
 using namespace std;
 
 

@@ -4,8 +4,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <phosg-audio/File.hh>
-#include <phosg-audio/Stream.hh>
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
 #include <phosg/Strings.hh>

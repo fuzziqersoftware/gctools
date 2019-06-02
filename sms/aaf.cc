@@ -16,6 +16,13 @@
 
 using namespace std;
 
+#ifdef WINDOWS
+#define PRIu32 "u"
+#define PRIX32 "X"
+#define PRId64 "lld"
+#define PRIX64 "llX"
+#endif
+
 
 
 struct wave_table_entry {
@@ -322,8 +329,15 @@ unordered_map<string, SequenceProgram> barc_decode(void* vdata, size_t size,
   unordered_map<string, SequenceProgram> ret;
   for (size_t x = 0; x < barc->entry_count; x++) {
     const auto& e = barc->entries[x];
+#ifdef WINDOWS
+    // windows doesn't have pread, so simulate it in a non-thread-safe way
+    lseek(sequence_archive_fd, e.offset, SEEK_SET);
+    string data = readx(sequence_archive_fd, e.size);
+#else
+    string data = preadx(sequence_archive_fd, e.size, e.offset);
+#endif
     ret.emplace(piecewise_construct, forward_as_tuple(e.name),
-        forward_as_tuple(x, preadx(sequence_archive_fd, e.size, e.offset)));
+        forward_as_tuple(x, move(data)));
   }
 
   return ret;

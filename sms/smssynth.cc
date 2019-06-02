@@ -17,6 +17,16 @@
 
 #include "aaf.hh"
 
+#ifdef WINDOWS
+
+#define PRId32 "d"
+#define PRIu32 "u"
+#define PRIX32 "X"
+#define PRIu64 "llu"
+#define PRIX64 "llX"
+
+#endif
+
 using namespace std;
 
 
@@ -37,7 +47,12 @@ enum DebugFlag {
   ColorStatus                 = 0x0000000000000400,
   AllColorOptions             = 0x0000000000000600,
 
-  Default                     = 0x0000000000000682,
+#ifndef WINDOWS
+  Default                     = 0x00000000000006C2,
+#else
+  // no color by default on windows (cmd.exe doesn't handle the escapes)
+  Default                     = 0x00000000000000C2,
+#endif
 };
 
 uint64_t debug_flags = DebugFlag::Default;
@@ -1911,49 +1926,57 @@ Usage:\n\
   %s sequence_name [options]\n\
 \n\
 Input options:\n\
-  sequence_name: the name of the sequence to be disassembled, played, or\n\
-      rendered. This can be a filename, or if --audiores-directory is used,\n\
-      it can also be the name of a sequence defined in the environment. If\n\
-      --list is used, no sequence name should be given.\n\
+  sequence_name: the name of the sequence. This can be a filename, or if\n\
+      --audiores-directory is used, it can also be the name of a sequence\n\
+      defined in the environment. If --list is used, no sequence name should\n\
+      be given.\n\
   --audiores-directory=dir_name: load environment from this directory. The\n\
       directory should include a file named pikibank.bx, JaiInit.aaf,\n\
       GCKart.baa, or msound.aaf.\n\
   --json-environment=filename.json: load MIDI environment from this JSON file.\n\
       If given, --midi is implied.\n\
-  --midi: treat input sequence as MIDI instead of BMS. When using this option,\n\
-      neither of the above options may be used.\n\
-  --midi-instrument=N:filename.wav[:base_note]: map midi channel N to an\n\
+  --midi: treat input sequence as MIDI instead of BMS.\n\
+  --midi-instrument=N:filename.wav[:base_note]: map MIDI channel N to an\n\
       instrument composed of the given sound, with an optional base note\n\
       (default 0x3C).\n\
 \n\
 Output options (only one of these may be given):\n\
   --list: list the names of sequences in the loaded environment.\n\
-  --disassemble: disassemble the sequence instead of playing it (default).\n\
-  --play: play the sequence to the default audio device using OpenAL streaming.\n\
-  --output-filename=file.wav: write the synthesized audio to this file.\n\
+  --disassemble: disassemble the sequence (default).\n"
+#ifndef WINDOWS // play not supported on windows
+"  --play: play the sequence to the default audio device using OpenAL streaming.\n"
+#endif
+"  --output-filename=file.wav: write the synthesized audio to this file.\n\
 \n\
 Synthesis options:\n\
   --disable-track=N: disable track N entirely (can be given multiple times).\n\
   --solo-track=N: disable all tracks except N (can be given multiple times).\n\
       For BMS, the default track (-1) is not disabled by this option.\n\
   --mute-track=N: execute instructions for track N, but mute its sound.\n\
-  --time-limit=N: stop playing or rendering after this many seconds. Default\n\
-      is 300 seconds (5 minutes). When --play is used, there is no time limit\n\
-      and this option is ignored.\n\
-  --start-time=N: discard this many seconds of audio at the beginning.\n\
-  --sample-rate=N: render or play at this sample rate (default 48000).\n\
+  --time-limit=N: stop after this many seconds (default 5 minutes).\n"
+#ifndef WINDOWS
+"      When --play is used, this option is ignored.\n"
+#endif
+"  --start-time=N: discard this many seconds of audio at the beginning.\n\
+  --sample-rate=N: generate output at this sample rate (default 48000).\n\
   --resample-method=METHOD: use this method for resampling waveforms. Values\n\
-      are sinc-best (default when generating an output file), sinc-medium,\n\
-      sinc-fast, hold, and linear (default when playing).\n\
+      are sinc-best, sinc-medium, sinc-fast, hold, and linear. When generating\n\
+      a WAV output file, the default method is sinc-best.\n"
+#ifndef WINDOWS
+"      When playing, the default method is linear.\n\
   --play-buffers=N: generate this many steps of audio in advance of the play\n\
       position (default 128). If play lags, especially during pitch bends, try\n\
-      increasing this value.\n\
-\n\
+      increasing this value.\n"
+#endif
+"\n\
 Logging options:\n\
   --silent: don't print any status information.\n\
-  --verbose: print extra debugging events.\n\
-  --no-color: don\'t use terminal escape codes for color in the output.\n\
-  --short-status: only show one line of status information.\n\
+  --verbose: print extra debugging events.\n"
+#ifndef WINDOWS
+"  --no-color: don\'t use terminal escape codes for color in the output.\n"
+#endif
+"  --short-status: only show one line of status information.\n\
+  --long-status: show status history (default unless writing an output file).\n\
 \n\
 Debugging options:\n\
   --default-bank=N: override automatic instrument bank detection and use bank\n\
@@ -1984,9 +2007,11 @@ int main(int argc, char** argv) {
   float start_time = 0.0f;
   size_t sample_rate = 48000;
   bool play = false;
+#ifndef WINDOWS
+  size_t num_buffers = 128;
+#endif
   bool list_sequences = false;
   int32_t default_bank = -1;
-  size_t num_buffers = 128;
   bool decay_when_off = true;
   bool resample_method_set = false;
   string env_json_filename;
@@ -2030,10 +2055,14 @@ int main(int argc, char** argv) {
       debug_flags = 0xFFFFFFFFFFFFFFFF;
     } else if (!strncmp(argv[x], "--debug-flags=", 14)) {
       debug_flags = atoi(&argv[x][14]);
+#ifndef WINDOWS
     } else if (!strcmp(argv[x], "--no-color")) {
       debug_flags &= ~DebugFlag::AllColorOptions;
+#endif
     } else if (!strcmp(argv[x], "--short-status")) {
       debug_flags &= ~DebugFlag::ShowLongStatus;
+    } else if (!strcmp(argv[x], "--long-status")) {
+      debug_flags |= DebugFlag::ShowLongStatus;
     } else if (!strcmp(argv[x], "--play-missing-notes")) {
       debug_flags |= DebugFlag::PlayMissingNotes;
     } else if (!strcmp(argv[x], "--quiet")) {
@@ -2057,24 +2086,30 @@ int main(int argc, char** argv) {
 
     } else if (!strncmp(argv[x], "--default-bank=", 15)) {
       default_bank = atoi(&argv[x][15]);
+#ifndef WINDOWS
+    } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
+      num_buffers = atoi(&argv[x][15]);
     } else if (!strcmp(argv[x], "--play")) {
       play = true;
       if (!resample_method_set) {
         resample_method = SRC_LINEAR;
       }
+#endif
     } else if (!strcmp(argv[x], "--disassemble")) {
       play = false;
       list_sequences = false;
     } else if (!strcmp(argv[x], "--list")) {
       list_sequences = true;
-    } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
-      num_buffers = atoi(&argv[x][15]);
     } else if (filename.empty()) {
       filename = argv[x];
     } else {
       throw invalid_argument("too many positional command-line args");
     }
   }
+
+#ifdef WINDOWS
+  (void)resample_method_set; // suppress warning about unused variable
+#endif
 
   shared_ptr<JSONObject> env_json;
   string env_json_dir;
@@ -2211,6 +2246,7 @@ int main(int argc, char** argv) {
     fprintf(stderr, "\nsaving output file: %s\n", output_filename);
     save_wav(output_filename, samples, sample_rate, 2);
 
+#ifndef WINDOWS
   } else if (play) {
     init_al();
     AudioStream stream(sample_rate, AL_FORMAT_STEREO16, num_buffers);
@@ -2229,6 +2265,7 @@ int main(int argc, char** argv) {
     }
     stream.wait();
     exit_al();
+#endif
   }
 
   return 0;

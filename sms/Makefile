@@ -1,33 +1,40 @@
 CC=gcc
 CXX=g++
 OBJECTS=aaf.o afc.o instrument.o
-CFLAGS=-g -O0 -Wall -Werror
-CXXFLAGS=-std=c++14 -g -O0 -Wall -Werror -I/usr/local/include -I /opt/local/include
-LDFLAGS=-g -lphosg -lphosg-audio -L/usr/local/lib -L/opt/local/lib
-EXECUTABLES=smsdumpbanks smssynth
+CFLAGS=-g -Wall -Werror
+CXXFLAGS=-std=c++14 -g -Wall -Werror -I/usr/local/include -I /opt/local/include
+LDFLAGS=-g -lphosg -L/usr/local/lib -L/opt/local/lib
 LIBS=-lphosg -lphosg-audio -lsamplerate
 
-UNAME = $(shell uname -s)
-ifeq ($(UNAME),Darwin)
-	CXXFLAGS += -DMACOSX -I/opt/local/include
-	LDFLAGS += -framework OpenAL -framework Cocoa -framework IOKit
-endif
-ifeq ($(UNAME),Linux)
-	CXXFLAGS += -DLINUX
-	LDFLAGS += -L/usr/lib/x86_64-linux-gnu
-	LIBS += -lopenal -lpthread
+ifeq ($(OS),Windows_NT)
+	CXXFLAGS +=  -DWINDOWS -D__USE_MINGW_ANSI_STDIO=1 -D_USE_MATH_DEFINES
+	RM=del /S
+	EXE_EXTENSION=.exe
+else
+	ifeq ($(shell uname -s),Darwin)
+		CXXFLAGS += -DMACOSX -I/opt/local/include
+		LDFLAGS += -framework OpenAL -framework Cocoa -framework IOKit
+		LIBS += -lphosg-audio
+	else
+		CXXFLAGS += -DLINUX
+		LDFLAGS += -L/usr/lib/x86_64-linux-gnu
+		LIBS += -lopenal -lpthread
+	endif
+	RM=rm -rf
+	EXE_EXTENSION=
 endif
 
+EXECUTABLES=smsdumpbanks$(EXE_EXTENSION) smssynth$(EXE_EXTENSION)
 
 all: $(EXECUTABLES)
 
-smsdumpbanks: $(OBJECTS) smsdumpbanks.o
-	g++ $(LDFLAGS) -o smsdumpbanks $^ $(LIBS)
+smsdumpbanks$(EXE_EXTENSION): $(OBJECTS) smsdumpbanks.o
+	g++ $(LDFLAGS) -o $@ $^ $(LIBS)
 
-smssynth: $(OBJECTS) smssynth.o
-	g++ $(LDFLAGS) -o smssynth $^ $(LIBS)
+smssynth$(EXE_EXTENSION): $(OBJECTS) smssynth.o
+	g++ $(LDFLAGS) -o $@ $^ $(LIBS)
 
 clean:
-	-rm -rf *.o $(EXECUTABLES) *.dSYM
+	$(RM) *.o $(EXECUTABLES) *.dSYM
 
 .PHONY: clean
