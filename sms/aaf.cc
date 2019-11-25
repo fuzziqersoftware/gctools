@@ -186,7 +186,6 @@ pair<uint32_t, vector<Sound>> wsys_decode(void* vdata,
     for (size_t y = 0; y < cdf->record_count; y++) {
       cdf_record* record = reinterpret_cast<cdf_record*>(data + cdf->record_offsets[y]);
       record->byteswap();
-
       sound_ids.emplace(make_pair(record->aw_file_index, y), record->sound_id);
     }
   }
@@ -204,9 +203,24 @@ pair<uint32_t, vector<Sound>> wsys_decode(void* vdata,
       continue;
     }
 
-    string aw_filename = string_printf("%s/Banks/%s", base_directory,
-        entry->filename);
-    string aw_file_contents = load_file(aw_filename.c_str());
+    string aw_file_contents;
+
+    // try both Banks and Waves subdirectories
+    static const vector<string> directory_names({"Banks", "Waves"});
+    for (const auto& directory_name : directory_names) {
+      string aw_filename = string_printf("%s/%s/%s", base_directory,
+          directory_name.c_str(), entry->filename);
+      try {
+        aw_file_contents = load_file(aw_filename.c_str());
+        break;
+      } catch (const cannot_open_file&) {
+        continue;
+      }
+    }
+    if (aw_file_contents.empty()) {
+      throw runtime_error(string_printf("%s does not exist in any checked subdirectory",
+          entry->filename));
+    }
 
     for (size_t y = 0; y < entry->wav_count; y++) {
       wave_table_entry* wav_entry = reinterpret_cast<wave_table_entry*>(
@@ -399,6 +413,7 @@ void SoundEnvironment::resolve_pointers() {
   }
 
   // map all velocity region pointers to the correct Sound objects
+  size_t total_sounds = 0, unresolved_sounds = 0;
   for (auto& bank_it : this->instrument_banks) {
     auto& bank = bank_it.second;
     for (auto& instrument_it : bank.id_to_instrument) {
@@ -416,6 +431,7 @@ void SoundEnvironment::resolve_pointers() {
             } catch (const out_of_range&) { }
           }
 
+          total_sounds++;
           if (!vel_region.sound) {
             fprintf(stderr, "[SoundEnvironment] error: can\'t resolve sound: bank=%" PRIX32
                 " (chunk=%" PRIX32 ") inst=%" PRIX32 " key_rgn=[%hhX,%hhX] "
@@ -424,10 +440,15 @@ void SoundEnvironment::resolve_pointers() {
                 instrument_it.first, key_region.key_low, key_region.key_high,
                 vel_region.vel_low, vel_region.vel_high, vel_region.base_note,
                 vel_region.sample_bank_id, vel_region.sound_id);
+            unresolved_sounds++;
           }
         }
       }
     }
+  }
+  if (unresolved_sounds) {
+    fprintf(stderr, "[SoundEnvironment] warning: %zu/%zu (%g%%) of all sounds are unresolved\n",
+        unresolved_sounds, total_sounds, static_cast<double>(unresolved_sounds * 100) / total_sounds);
   }
 }
 
@@ -506,7 +527,7 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
         break;
 
       default:
-        throw invalid_argument("unknown chunk type");
+        throw invalid_argument(string_printf("unknown chunk type %.4s (%08X)", &chunk_type, chunk_type));
     }
   }
 
@@ -529,9 +550,11 @@ SoundEnvironment baa_decode(void* vdata, size_t size, const char* base_directory
   SoundEnvironment ret;
   bool complete = false;
   while (!complete && (field_offset < size)) {
-    switch (bswap32(data_fields[field_offset++])) {
+    uint32_t chunk_type = bswap32(data_fields[field_offset++]);
+    switch (chunk_type) {
 
       case 0x62736674: // 'bsft'
+      case 0x62666361: // 'bfca'
         field_offset++; // offset
         break;
 
@@ -560,7 +583,6 @@ SoundEnvironment baa_decode(void* vdata, size_t size, const char* base_directory
         uint32_t chunk_id = bswap32(data_fields[field_offset++]);
         uint32_t offset = bswap32(data_fields[field_offset++]);
         // unlike 'ws  ' above, there isn't an extra unused field here
-
         auto ibnk = ibnk_decode(data + offset);
         ibnk.chunk_id = chunk_id;
         ret.instrument_banks.emplace(ibnk.id, move(ibnk));
@@ -594,7 +616,8 @@ SoundEnvironment baa_decode(void* vdata, size_t size, const char* base_directory
         break;
 
       default:
-        throw invalid_argument("unknown chunk type");
+        chunk_type = bswap32(chunk_type);
+        throw invalid_argument(string_printf("unknown chunk type %.4s (%08X)", &chunk_type, chunk_type));
     }
   }
 
@@ -686,33 +709,38 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
     }
   }
 
-  static const vector<string> filenames = {
-    "/JaiInit.aaf",
-    "/msound.aaf", // Super Mario Sunshine
-  };
-  for (const auto& filename : filenames) {
-    string data;
-    try {
-      data = load_file(base_directory + filename);
-    } catch (const cannot_open_file&) {
-      continue;
+  {
+    static const vector<string> filenames = {
+      "/JaiInit.aaf",
+      "/msound.aaf", // Super Mario Sunshine
+    };
+    for (const auto& filename : filenames) {
+      string data;
+      try {
+        data = load_file(base_directory + filename);
+      } catch (const cannot_open_file&) {
+        continue;
+      }
+      return aaf_decode(const_cast<char*>(data.data()), data.size(),
+          base_directory);
     }
-
-    return aaf_decode(const_cast<char*>(data.data()), data.size(),
-        base_directory);
   }
 
-  // Mario Kart: Double Dash!!
   {
-    string data;
-    try {
-      string filename = string_printf("%s/GCKart.baa", base_directory);
-      data = load_file(filename);
-    } catch (const cannot_open_file&) { }
-
-    if (!data.empty()) {
+    static const vector<string> filenames = {
+      "/GCKart.baa",
+      "/Z2Sound.baa",
+      "/SMR.baa",
+    };
+    for (const auto& filename : filenames) {
+      string data;
+      try {
+        data = load_file(base_directory + filename);
+      } catch (const cannot_open_file&) {
+        continue;
+      }
       return baa_decode(const_cast<char*>(data.data()), data.size(),
-          base_directory);
+            base_directory);
     }
   }
 

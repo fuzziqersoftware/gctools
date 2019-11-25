@@ -79,8 +79,8 @@ vector<float> resample(const vector<float>& input_samples, size_t num_channels,
 
   int error = src_simple(&data, resample_method, num_channels);
   if (error) {
-    throw runtime_error(string_printf("src_simple failed: %s",
-        src_strerror(error)));
+    throw runtime_error(string_printf("src_simple failed (ratio=%g): %s",
+        src_ratio, src_strerror(error)));
   }
 
   output_samples.resize(data.output_frames_gen * num_channels);
@@ -1112,7 +1112,7 @@ protected:
   };
 
   string output_data;
-  unordered_map<int16_t, shared_ptr<Track>> id_to_track;
+  unordered_set<shared_ptr<Track>> tracks;
   multimap<uint64_t, shared_ptr<Track>> next_event_to_track;
 
   size_t sample_rate;
@@ -1173,8 +1173,8 @@ public:
     }
 
     // if there are voices waiting to produce sound, we can continue rendering
-    for (const auto& it : this->id_to_track) {
-      if (!it.second->voices.empty() || !it.second->voices_off.empty()) {
+    for (const auto& t : this->tracks) {
+      if (!t->voices.empty() || !t->voices_off.empty()) {
         return true;
       }
     }
@@ -1187,18 +1187,25 @@ public:
     // run all opcodes that should execute on the current time step
     while (!this->next_event_to_track.empty() &&
            (current_time == this->next_event_to_track.begin()->first)) {
-      this->execute_opcode(this->next_event_to_track.begin());
+      auto t_it = this->next_event_to_track.begin();
+      size_t offset = t_it->second->r.where();
+      try {
+        this->execute_opcode(t_it);
+      } catch (...) {
+        fprintf(stderr, "error at offset %zX\n", offset);
+        throw;
+      }
     }
 
     // if all tracks have terminated, turn all of their voices off
     if (this->next_event_to_track.empty()) {
-      for (auto& it : this->id_to_track) {
+      for (auto& t : this->tracks) {
         unordered_set<uint8_t> voices_on;
-        for (const auto& voice_it : it.second->voices) {
+        for (const auto& voice_it : t->voices) {
           voices_on.emplace(voice_it.first);
         }
         for (uint8_t voice_id : voices_on) {
-          it.second->voice_off(voice_id);
+          t->voice_off(voice_id);
         }
       }
     }
@@ -1222,9 +1229,7 @@ public:
     char notes_table[0x81];
     memset(notes_table, ' ', 0x80);
     notes_table[0x80] = 0;
-    for (const auto& track_it : this->id_to_track) {
-      shared_ptr<Track> t = track_it.second;
-
+    for (const auto& t : this->tracks) {
       // get all voices, including those that are fading
       unordered_set<shared_ptr<Voice>> all_voices = t->voices_off;
       for (auto& it : t->voices) {
@@ -1233,15 +1238,23 @@ public:
 
       // render all the voices
       for (auto v : all_voices) {
-        vector<float> voice_samples = v->render(samples_per_pulse,
-            t->volume, t->pitch_bend, t->pitch_bend_semitone_range, t->panning,
-            t->freq_mult);
+        vector<float> voice_samples;
+        try {
+          voice_samples = v->render(samples_per_pulse, t->volume, t->pitch_bend,
+              t->pitch_bend_semitone_range, t->panning, t->freq_mult);
+        } catch (...) {
+          fprintf(stderr, "error while rendering voices for track %hd (volume=%g \
+pitch_bend=%g pitch_bend_semitone_range=%g panning=%g freq_mult=%g)\n",
+              t->id, t->volume, t->pitch_bend, t->pitch_bend_semitone_range,
+              t->panning, t->freq_mult);
+          throw;
+        }
         if (voice_samples.size() != step_samples.size()) {
           throw logic_error(string_printf(
               "voice produced incorrect sample count (returned %zu samples, expected %zu samples)",
               voice_samples.size(), step_samples.size()));
         }
-        if (!this->mute_tracks.count(track_it.first)) {
+        if (!this->mute_tracks.count(t->id)) {
           for (size_t y = 0; y < voice_samples.size(); y++) {
             step_samples[y] += voice_samples[y];
           }
@@ -1402,7 +1415,7 @@ public:
       Renderer(sample_rate, env, mute_tracks, solo_tracks, disable_tracks, decay_when_off),
       seq(seq), seq_data(new string(seq->data)) {
     shared_ptr<Track> default_track(new Track(-1, this->seq_data, 0, this->seq->index));
-    this->id_to_track.emplace(default_track->id, default_track);
+    this->tracks.emplace(default_track);
     this->next_event_to_track.emplace(0, default_track);
   }
 
@@ -1573,10 +1586,7 @@ protected:
         if ((this->solo_tracks.empty() || this->solo_tracks.count(track_id)) &&
             !this->disable_tracks.count(track_id)) {
           shared_ptr<Track> new_track(new Track(track_id, this->seq_data, offset, this->seq->index));
-          auto emplace_ret = this->id_to_track.emplace(track_id, new_track);
-          if (!emplace_ret.second) {
-            throw invalid_argument("attempted to start track that already existed");
-          }
+          this->tracks.emplace(new_track);
           this->next_event_to_track.emplace(this->current_time, new_track);
         }
         break;
@@ -1657,7 +1667,7 @@ protected:
       }
 
       case 0xFF: {
-        // note: we don't delete from id_to_track here because the track can
+        // note: we don't delete from this->tracks here because the track can
         // contain voices that are producing sound (Luigi's Mansion does this)
         this->next_event_to_track.erase(track_it);
         break;
@@ -1793,7 +1803,7 @@ public:
       if ((this->solo_tracks.empty() || this->solo_tracks.count(track_id)) &&
           !this->disable_tracks.count(track_id)) {
         shared_ptr<Track> t(new Track(track_id, this->midi_contents, r.where(), 0));
-        this->id_to_track.emplace(t->id, t);
+        this->tracks.emplace(t);
         this->next_event_to_track.emplace(0, t);
       }
 
@@ -1905,7 +1915,7 @@ protected:
       uint8_t size = t->r.get_u8();
 
       if (type == 0x2F) { // end track
-        this->id_to_track.erase(t->id);
+        this->tracks.erase(t);
         this->next_event_to_track.erase(track_it);
 
       } else if (type == 0x51) { // set tempo

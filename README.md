@@ -81,7 +81,10 @@ I've tested smssynth with the following GameCube games that use JAudio/BMS:
 - Most __Pikmin__ songs sound a little different from how they sound in-game but are easily recognizable.
 - Almost all __Super Mario Sunshine__ songs sound perfect (exactly as they sound in-game). Note that the game uses track 15 for Yoshi's drums; use `--disable-track=15` if you don't want them.
 
-Classic Mac OS games that use SoundMusicSys currently fare a bit better:
+I've tested with a couple of Wii games, but not extensively:
+- Many songs from __The Legend of Zelda: Twilight Princess__ and __Super Mario Galaxy__ don't play or sound terrible. Some are recognizable but don't sound like the in-game music.
+
+Classic Mac OS games that use SoundMusicSys currently fare much better than GameCube and Wii games:
 - __Castles - Siege and Conquest__ songs play correctly.
 - __Creep Night Pinball__ songs play correctly.
 - __DinoPark Tycoon__ songs play correctly.
@@ -118,3 +121,17 @@ You'll have to manually extract the BARC data from default.dol (it's embedded so
 #### Getting Banks directory from Mario Kart: Double Dash
 
 After extracting the AudioRes directory, rename the Waves subdirectory to Banks.
+
+#### Getting files from The Legend of Zelda: Twilight Princess
+
+The sequences are stored in a compressed RARC file, and don't appear to be listed in the environment index. (This means `--list` won't work and you'll have to specify a sequence file manually.) To get the sequences:
+- Decompress the sequence file: `prs -d --yaz0 < Seqs/Z2SoundSeqs.arc > .Seqs/Z2SoundSeqs.arc.dec`
+- Extract the sequences: `rarcdump Seqs/Z2SoundSeqs.arc.dec`
+
+#### Getting files from Super Mario Galaxy
+
+Like Twilight Princess, the sequences are stored in a RARC archive, but this time each individual sequence is compressed, and the index is compressed too. Fortunately they're all Yaz0:
+
+- Decompress the index file: `prs -d --yaz0 < SMR.szs > SMR.baa`
+- Extract the sequences: `rarcdump Seqs/JaiSeq.arc)`
+- Decompress the sequences: `ls Seqs/JaiSeq.arc_dir/szs/*.szs | xargs -I {} bash -c "prs -d --yaz0 < {} > {}.bms"`
