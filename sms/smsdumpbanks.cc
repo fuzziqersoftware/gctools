@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
       for (const Sound& s : bank_it.second) {
         string sound_basename = base_filename_for_sound(s);
         fprintf(f.get(), "\
-    SampleName=%s\n\
+    SampleName=%s.wav\n\
         SampleRate=%zu\n\
         Key=%hhu\n\
         FineTune=0\n\
@@ -176,7 +176,7 @@ Comments=\n");
         continue;
       }
       string basename = base_filename_for_sound(s);
-      string filename = string_printf("%s/%s", argv[2], basename.c_str());
+      string filename = string_printf("%s/%s.wav", argv[2], basename.c_str());
       save_wav(filename.c_str(), samples, s.sample_rate, s.num_channels);
     }
   }
