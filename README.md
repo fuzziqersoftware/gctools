@@ -85,6 +85,7 @@ I've tested with a couple of Wii games, but not extensively:
 - Many songs from __The Legend of Zelda: Twilight Princess__ and __Super Mario Galaxy__ don't play or sound terrible. Some are recognizable but don't sound like the in-game music.
 
 Classic Mac OS games that use SoundMusicSys currently fare much better than GameCube and Wii games:
+- __After Dark__ songs play mostly correctly, but some seem to rely on SMOD effects that aren't implemented.
 - __Castles - Siege and Conquest__ songs play correctly.
 - __Creep Night Pinball__ songs play correctly.
 - __DinoPark Tycoon__ songs play correctly.
