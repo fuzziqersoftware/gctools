@@ -40,15 +40,16 @@ enum DebugFlag {
   ShowUnimplementedConditions = 0x0000000000000020,
   ShowLongStatus              = 0x0000000000000040,
   ShowMissingNotes            = 0x0000000000000080,
+  ShowUnimplementedOpcodes    = 0x0000000000000100,
 
-  PlayMissingNotes            = 0x0000000000000100,
+  PlayMissingNotes            = 0x0000000000010000,
 
-  ColorField                  = 0x0000000000000200,
-  ColorStatus                 = 0x0000000000000400,
-  AllColorOptions             = 0x0000000000000600,
+  ColorField                  = 0x0000000000020000,
+  ColorStatus                 = 0x0000000000040000,
+  AllColorOptions             = 0x0000000000060000,
 
 #ifndef WINDOWS
-  Default                     = 0x00000000000006C2,
+  Default                     = 0x00000000000600C2,
 #else
   // no color by default on windows (cmd.exe doesn't handle the escapes)
   Default                     = 0x00000000000000C2,
@@ -1646,7 +1647,6 @@ protected:
 
       case 0xE7: { // sync_gpu; note: arookas writes this as "track init"
         t->r.get_u16r();
-        // TODO: should we do more stuff here?
         break;
       }
 
@@ -1680,6 +1680,9 @@ protected:
       case 0xE1:
       case 0xFA:
       case 0xBF:
+        if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+          fprintf(stderr, "unimplemented opcode: 0x%02hhX\n", opcode);
+        }
         break;
 
       case 0xC2:
@@ -1689,7 +1692,11 @@ protected:
       case 0xDB:
       case 0xF1:
       case 0xF4:
-        t->r.get_u8();
+        if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+          fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%02hhX\n", opcode, t->r.get_u8());
+        } else {
+          t->r.get_u8();
+        }
         break;
 
       case 0xD0:
@@ -1705,7 +1712,11 @@ protected:
       case 0xCC:
       case 0xE6:
       case 0xF9:
-        t->r.get_u16r();
+        if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+          fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%04hX\n", opcode, t->r.get_u16r());
+        } else {
+          t->r.get_u16r();
+        }
         break;
 
       case 0xAD:
@@ -1714,13 +1725,21 @@ protected:
       case 0xD6:
       case 0xDD:
       case 0xEF:
-        t->r.get_u24r();
+        if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+          fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%06X\n", opcode, t->r.get_u24r());
+        } else {
+          t->r.get_u24r();
+        }
         break;
 
       case 0xA9:
       case 0xAA:
       case 0xDF:
-        t->r.get_u32r();
+        if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+          fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%08X\n", opcode, t->r.get_u32r());
+        } else {
+          t->r.get_u32r();
+        }
         break;
 
       case 0xD8: {
@@ -1728,16 +1747,24 @@ protected:
         int16_t value = t->r.get_s16r();
         if (reg == 0x62) {
           this->pulse_rate = value;
+        } else if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+          fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%02hhX 0x%04hX\n", opcode, reg, value);
         }
+
         break;
       }
 
       case 0xB1: {
         uint8_t param1 = t->r.get_u8();
+        uint32_t param2 = 0;
         if (param1 == 0x40) {
-          t->r.get_u16r();
+          param2 = t->r.get_u16r();
         } else if (param1 == 0x80) {
-          t->r.get_u32r();
+          param2 = t->r.get_u32r();
+        }
+        if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+          fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%02hhX 0x%08X\n",
+              opcode, param1, param2);
         }
         break;
       }
