@@ -1942,7 +1942,8 @@ protected:
       uint8_t size = t->r.get_u8();
 
       if (type == 0x2F) { // end track
-        this->tracks.erase(t);
+        // note: we don't delete from this->tracks here because the track can
+        // contain voices that are producing sound (After Dark does this)
         this->next_event_to_track.erase(track_it);
 
       } else if (type == 0x51) { // set tempo
