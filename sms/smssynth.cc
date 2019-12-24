@@ -881,6 +881,7 @@ public:
 
   virtual vector<float> render(size_t count, float volume, float pitch_bend,
       float pitch_bend_semitone_range, float panning, float freq_mult) {
+    this->advance_note_off_factor();
     return vector<float>(count * 2, 0.0f);
   }
 };
