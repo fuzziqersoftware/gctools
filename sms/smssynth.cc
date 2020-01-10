@@ -1992,6 +1992,8 @@ Synthesis options:\n\
   --solo-track=N: disable all tracks except N (can be given multiple times).\n\
       For BMS, the default track (-1) is not disabled by this option.\n\
   --mute-track=N: execute instructions for track N, but mute its sound.\n\
+  --midi-tempo-bias=BIAS: for MIDI, play songs at this proportion of their\n\
+      original speed.\n\
   --time-limit=N: stop after this many seconds (default 5 minutes).\n"
 #ifndef WINDOWS
 "      When --play is used, this option is ignored.\n"
@@ -2046,6 +2048,7 @@ int main(int argc, char** argv) {
   float start_time = 0.0f;
   size_t sample_rate = 48000;
   bool play = false;
+  float tempo_bias = 1.0;
 #ifndef WINDOWS
   size_t num_buffers = 128;
 #endif
@@ -2125,6 +2128,8 @@ int main(int argc, char** argv) {
 
     } else if (!strncmp(argv[x], "--default-bank=", 15)) {
       default_bank = atoi(&argv[x][15]);
+    } else if (!strncmp(argv[x], "--midi-tempo-bias=", 18)) {
+      tempo_bias = atof(&argv[x][18]);
 #ifndef WINDOWS
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
       num_buffers = atoi(&argv[x][15]);
@@ -2258,7 +2263,6 @@ int main(int argc, char** argv) {
     // midi has some extra params; get them from the json if possible
     uint8_t percussion_instrument = 0;
     bool allow_program_change = true;
-    double tempo_bias = 1.0;
     if (env_json.get()) {
       try {
         percussion_instrument = env_json->as_dict().at("percussion_instrument")->as_int();
@@ -2267,7 +2271,7 @@ int main(int argc, char** argv) {
         allow_program_change = env_json->as_dict().at("allow_program_change")->as_bool();
       } catch (const out_of_range&) { }
       try {
-        tempo_bias = env_json->as_dict().at("tempo_bias")->as_float();
+        tempo_bias *= env_json->as_dict().at("tempo_bias")->as_float();
       } catch (const out_of_range&) { }
     }
     r.reset(new MIDIRenderer(midi_contents, sample_rate, env, mute_tracks,
