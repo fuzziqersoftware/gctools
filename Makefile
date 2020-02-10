@@ -32,8 +32,8 @@ gcmdump$(EXE_EXTENSION): gcmdump.cc
 gsldump$(EXE_EXTENSION): gsldump.c
 	gcc $(CFLAGS) -o $@ gsldump.c
 
-gvmdump$(EXE_EXTENSION): gvmdump.c
-	gcc $(CFLAGS) -o $@ gvmdump.c
+gvmdump$(EXE_EXTENSION): gvmdump.cc
+	g++ $(CXXFLAGS) -o $@ gvmdump.cc $(CXXLIBS)
 
 rcfdump$(EXE_EXTENSION): rcfdump.cc
 	g++ $(CXXFLAGS) -o $@ rcfdump.cc $(CXXLIBS)

@@ -29,7 +29,7 @@ gctools is a set of tools for reading and translating video game files. These to
 **gsldump** - extracts all files in a GSL archive to the current directory. This format was used in multiple versions of Phantasy Star Online for various game parameters.
 - Example: `mkdir out && cd out && gsldump ../archive.gsl`
 
-**gvmdump** - extracts all files in a GVM archive to the current directory. Note: not thoroughly tested; may fail for some archives.
+**gvmdump** - extracts all files in a GVM archive to the current directory, and converts the GVR textures to Windows BMP files if they use pixel formats that gvmdump understands (which is not all of them). Also can decode individual GVR files outside of a GVM archive.
 - Example: `mkdir out && cd out && gvmdump ../archive.gvm`
 
 **rcfdump** - extracts all files in a RCF archive to the current directory.
