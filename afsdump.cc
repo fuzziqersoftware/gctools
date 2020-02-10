@@ -14,9 +14,7 @@ struct AFSHeader {
   struct {
     uint32_t offset;
     uint32_t size;
-  } entries[0xFFFE];
-  uint32_t filename_offset;
-  uint32_t unknown;
+  } entries[0];
 };
 
 
@@ -36,15 +34,8 @@ int main(int argc, char* argv[]) {
     return 2;
   }
 
-  uint32_t filename_offset = header->filename_offset;
   for (size_t x = 0; x < header->num_files; x++) {
-    string output_filename;
-    if (filename_offset) {
-      const char* internal_filename = data.data() + (filename_offset + 0x30 * x);
-      output_filename = string_printf("%s-%-.32s", argv[1], internal_filename);
-    } else {
-      output_filename = string_printf("%s-%zu", argv[1], x);
-    }
+    string output_filename = string_printf("%s-%zu", argv[1], x);
 
     if (header->entries[x].offset + header->entries[x].size > data.size()) {
       throw runtime_error("file size exceeds archive boundary");
