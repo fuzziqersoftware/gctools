@@ -674,9 +674,9 @@ void disassemble_midi(StringReader& r) {
         uint8_t controller = r.get_u8();
         uint8_t value = r.get_u8();
         if (controller == 0x07) {
-          printf("volume       channel%hhu, 0x02%hhX\n", channel, value);
+          printf("volume       channel%hhu, 0x%02hhX\n", channel, value);
         } else if (controller == 0x0A) {
-          printf("panning      channel%hhu, 0x02%hhX\n", channel, value);
+          printf("panning      channel%hhu, 0x%02hhX\n", channel, value);
         } else if (controller == 0x78) {
           printf("mute_all     channel%hhu\n", channel);
         } else if (controller == 0x79) {
@@ -829,17 +829,63 @@ private:
 
 
 
+struct Channel {
+  float pitch_bend_semitone_range;
+
+  float volume;
+  float volume_target;
+  uint16_t volume_target_frames;
+
+  float pitch_bend;
+  float pitch_bend_target;
+  uint16_t pitch_bend_target_frames;
+
+  float reverb;
+  float reverb_target;
+  uint16_t reverb_target_frames;
+
+  float panning;
+  float panning_target;
+  uint16_t panning_target_frames;
+
+  Channel() : pitch_bend_semitone_range(48.0), volume(1.0), volume_target(0),
+      volume_target_frames(0), pitch_bend(0), pitch_bend_target(0),
+      pitch_bend_target_frames(0), reverb(0), reverb_target(0),
+      reverb_target_frames(0), panning(0.5f), panning_target(0.5f),
+      panning_target_frames(0) { }
+
+  void attenuate() {
+    if (this->volume_target_frames) {
+      this->volume += (this->volume_target - this->volume) / this->volume_target_frames;
+      this->volume_target_frames--;
+    }
+    if (this->pitch_bend_target_frames) {
+      this->pitch_bend += (this->pitch_bend_target - this->pitch_bend) / this->pitch_bend_target_frames;
+      this->pitch_bend_target_frames--;
+    }
+    if (this->reverb_target_frames) {
+      this->reverb += (this->reverb_target - this->reverb) / this->reverb_target_frames;
+      this->reverb_target_frames--;
+    }
+    if (this->panning_target_frames) {
+      this->panning += (this->panning_target - this->panning) / this->panning_target_frames;
+      this->panning_target_frames--;
+    }
+  }
+};
+
+
+
 class Voice {
 public:
-  Voice(size_t sample_rate, int8_t note, int8_t vel, bool decay_when_off) :
-      sample_rate(sample_rate), note(note), vel(vel),
-      decay_when_off(decay_when_off),
+  Voice(size_t sample_rate, int8_t note, int8_t vel, bool decay_when_off,
+      shared_ptr<Channel> channel) : sample_rate(sample_rate), note(note),
+      vel(vel), channel(channel), decay_when_off(decay_when_off),
       note_off_decay_total(this->sample_rate / 5),
       note_off_decay_remaining(-1) { }
   virtual ~Voice() = default;
 
-  virtual vector<float> render(size_t count, float volume, float pitch_bend,
-      float pitch_bend_semitone_range, float panning, float freq_mult) = 0;
+  virtual vector<float> render(size_t count, float freq_mult) = 0;
 
   void off() {
     // TODO: for now we use a constant release time of 1/5 second; we probably
@@ -868,6 +914,7 @@ public:
   size_t sample_rate;
   int8_t note;
   int8_t vel;
+  shared_ptr<Channel> channel;
   bool decay_when_off;
   ssize_t note_off_decay_total;
   ssize_t note_off_decay_remaining;
@@ -875,12 +922,11 @@ public:
 
 class SilentVoice : public Voice {
 public:
-  SilentVoice(size_t sample_rate, int8_t note, int8_t vel) :
-      Voice(sample_rate, note, vel, true) { }
+  SilentVoice(size_t sample_rate, int8_t note, int8_t vel,
+      shared_ptr<Channel> channel) : Voice(sample_rate, note, vel, true, channel) { }
   virtual ~SilentVoice() = default;
 
-  virtual vector<float> render(size_t count, float volume, float pitch_bend,
-      float pitch_bend_semitone_range, float panning, float freq_mult) {
+  virtual vector<float> render(size_t count, float freq_mult) {
     this->advance_note_off_factor();
     return vector<float>(count * 2, 0.0f);
   }
@@ -888,12 +934,12 @@ public:
 
 class SineVoice : public Voice {
 public:
-  SineVoice(size_t sample_rate, int8_t note, int8_t vel) :
-      Voice(sample_rate, note, vel, true), offset(0) { }
+  SineVoice(size_t sample_rate, int8_t note, int8_t vel,
+      shared_ptr<Channel> channel) : Voice(sample_rate, note, vel, true, channel),
+      offset(0) { }
   virtual ~SineVoice() = default;
 
-  virtual vector<float> render(size_t count, float volume, float pitch_bend,
-      float pitch_bend_semitone_range, float panning, float freq_mult) {
+  virtual vector<float> render(size_t count, float freq_mult) {
     // TODO: implement pitch bend and freq_mult somehow
     vector<float> data(count * 2, 0.0f);
 
@@ -902,8 +948,8 @@ public:
     for (size_t x = 0; x < count; x++) {
       // panning is 0.0f (left) - 1.0f (right)
       float off_factor = this->advance_note_off_factor();
-      data[2 * x + 0] = vel_factor * off_factor * (1.0f - panning) * volume * sin((2.0f * M_PI * frequency) / this->sample_rate * (x + this->offset));
-      data[2 * x + 1] = vel_factor * off_factor * panning * volume * sin((2.0f * M_PI * frequency) / this->sample_rate * (x + this->offset));
+      data[2 * x + 0] = vel_factor * off_factor * (1.0f - this->channel->panning) * this->channel->volume * sin((2.0f * M_PI * frequency) / this->sample_rate * (x + this->offset));
+      data[2 * x + 1] = vel_factor * off_factor * this->channel->panning * this->channel->volume * sin((2.0f * M_PI * frequency) / this->sample_rate * (x + this->offset));
     }
     this->offset += count;
 
@@ -917,8 +963,8 @@ class SampleVoice : public Voice {
 public:
   SampleVoice(size_t sample_rate, shared_ptr<const SoundEnvironment> env,
       shared_ptr<SampleCache> cache, uint16_t bank_id, uint16_t instrument_id,
-      int8_t note, int8_t vel, bool decay_when_off) :
-      Voice(sample_rate, note, vel, decay_when_off),
+      int8_t note, int8_t vel, bool decay_when_off, shared_ptr<Channel> channel) :
+      Voice(sample_rate, note, vel, decay_when_off, channel),
       instrument_bank(&env->instrument_banks.at(bank_id)),
       instrument(&this->instrument_bank->id_to_instrument.at(instrument_id)),
       key_region(&this->instrument->region_for_key(note)),
@@ -992,16 +1038,16 @@ public:
     }
   }
 
-  virtual vector<float> render(size_t count, float volume, float pitch_bend,
-      float pitch_bend_semitone_range, float panning, float freq_mult) {
+  virtual vector<float> render(size_t count, float freq_mult) {
     vector<float> data(count * 2, 0.0f);
 
-    const auto& samples = this->get_samples(pitch_bend, pitch_bend_semitone_range, freq_mult);
+    const auto& samples = this->get_samples(this->channel->pitch_bend,
+        this->channel->pitch_bend_semitone_range, freq_mult);
     float vel_factor = static_cast<float>(this->vel) / 0x7F;
     for (size_t x = 0; (x < count) && (this->offset < samples.size()); x++) {
       float off_factor = this->advance_note_off_factor();
-      data[2 * x + 0] = vel_factor * off_factor * (1.0f - panning) * volume * samples[this->offset];
-      data[2 * x + 1] = vel_factor * off_factor * panning * volume * samples[this->offset];
+      data[2 * x + 0] = vel_factor * off_factor * (1.0f - this->channel->panning) * this->channel->volume * samples[this->offset];
+      data[2 * x + 1] = vel_factor * off_factor * this->channel->panning * this->channel->volume * samples[this->offset];
 
       this->offset++;
       if ((this->note_off_decay_remaining < 0) && (this->loop_end_offset > 0) && (this->offset > this->loop_end_offset)) {
@@ -1046,27 +1092,12 @@ protected:
     bool reading_wait_opcode; // only used for midi
     uint8_t midi_status; // only used for midi
 
-    float volume;
-    float volume_target;
-    uint16_t volume_target_frames;
-
-    float pitch_bend;
-    float pitch_bend_target;
-    uint16_t pitch_bend_target_frames;
-
-    float reverb;
-    float reverb_target;
-    uint16_t reverb_target_frames;
-
-    float panning;
-    float panning_target;
-    uint16_t panning_target_frames;
+    unordered_map<size_t, shared_ptr<Channel>> channels;
 
     float freq_mult;
 
     int32_t bank; // technically uint16, but uninitialized as -1
     int32_t instrument; // technically uint16, but uninitialized as -1
-    float pitch_bend_semitone_range;
 
     unordered_map<size_t, shared_ptr<Voice>> voices;
     unordered_set<shared_ptr<Voice>> voices_off;
@@ -1075,29 +1106,12 @@ protected:
     unordered_map<uint8_t, int16_t> registers;
 
     Track(int16_t id, shared_ptr<string> data, size_t start_offset, uint32_t bank = -1) :
-        id(id), r(data, start_offset), reading_wait_opcode(true), volume(1.0),
-        volume_target(0), volume_target_frames(0), pitch_bend(0),
-        pitch_bend_target(0), pitch_bend_target_frames(0), reverb(0),
-        reverb_target(0), reverb_target_frames(0), panning(0.5f),
-        panning_target(0.5f), panning_target_frames(0), freq_mult(1),
-        bank(bank), instrument(-1), pitch_bend_semitone_range(48.0) { }
+        id(id), r(data, start_offset), reading_wait_opcode(true), freq_mult(1),
+        bank(bank), instrument(-1) { }
 
     void attenuate_perf() {
-      if (this->volume_target_frames) {
-        this->volume += (this->volume_target - this->volume) / this->volume_target_frames;
-        this->volume_target_frames--;
-      }
-      if (this->pitch_bend_target_frames) {
-        this->pitch_bend += (this->pitch_bend_target - this->pitch_bend) / this->pitch_bend_target_frames;
-        this->pitch_bend_target_frames--;
-      }
-      if (this->reverb_target_frames) {
-        this->reverb += (this->reverb_target - this->reverb) / this->reverb_target_frames;
-        this->reverb_target_frames--;
-      }
-      if (this->panning_target_frames) {
-        this->panning += (this->panning_target - this->panning) / this->panning_target_frames;
-        this->panning_target_frames--;
+      for (auto& channel_it : this->channels) {
+        channel_it.second->attenuate();
       }
     }
 
@@ -1110,6 +1124,14 @@ protected:
         this->voices_off.emplace(move(v_it->second));
         this->voices.erase(v_it);
       }
+    }
+
+    shared_ptr<Channel> channel(size_t id) {
+      auto it = this->channels.find(id);
+      if (it != this->channels.end()) {
+        return it->second;
+      }
+      return this->channels.emplace(id, new Channel()).first->second;
     }
   };
 
@@ -1133,11 +1155,14 @@ protected:
 
   virtual void execute_opcode(multimap<uint64_t, shared_ptr<Track>>::iterator track_it) = 0;
 
-  void voice_on(shared_ptr<Track> t, size_t voice_id, uint8_t key, uint8_t vel) {
+  void voice_on(shared_ptr<Track> t, size_t voice_id, uint8_t key, uint8_t vel,
+      size_t channel_id) {
+    shared_ptr<Channel> c = t->channel(channel_id);
+
     if (this->env) {
       try {
         SampleVoice* v = new SampleVoice(this->sample_rate, this->env,
-            this->cache, t->bank, t->instrument, key, vel, this->decay_when_off);
+            this->cache, t->bank, t->instrument, key, vel, this->decay_when_off, c);
         t->voices[voice_id].reset(v);
       } catch (const out_of_range& e) {
         string key_str = name_for_note(key);
@@ -1147,13 +1172,13 @@ protected:
               t->bank, t->instrument, key, key_str.c_str(), vel);
         }
         if (debug_flags & DebugFlag::PlayMissingNotes) {
-          t->voices[voice_id].reset(new SineVoice(this->sample_rate, key, vel));
+          t->voices[voice_id].reset(new SineVoice(this->sample_rate, key, vel, c));
         } else {
-          t->voices[voice_id].reset(new SilentVoice(this->sample_rate, key, vel));
+          t->voices[voice_id].reset(new SilentVoice(this->sample_rate, key, vel, c));
         }
       }
     } else {
-      t->voices[voice_id].reset(new SineVoice(this->sample_rate, key, vel));
+      t->voices[voice_id].reset(new SineVoice(this->sample_rate, key, vel, c));
     }
   }
 
@@ -1242,13 +1267,10 @@ public:
       for (auto v : all_voices) {
         vector<float> voice_samples;
         try {
-          voice_samples = v->render(samples_per_pulse, t->volume, t->pitch_bend,
-              t->pitch_bend_semitone_range, t->panning, t->freq_mult);
+          voice_samples = v->render(samples_per_pulse, t->freq_mult);
         } catch (...) {
-          fprintf(stderr, "error while rendering voices for track %hd (volume=%g \
-pitch_bend=%g pitch_bend_semitone_range=%g panning=%g freq_mult=%g)\n",
-              t->id, t->volume, t->pitch_bend, t->pitch_bend_semitone_range,
-              t->panning, t->freq_mult);
+          fprintf(stderr, "error while rendering voices for track %hd (freq_mult=%g)\n",
+              t->id, t->freq_mult);
           throw;
         }
         if (voice_samples.size() != step_samples.size()) {
@@ -1427,19 +1449,20 @@ protected:
 
   void execute_set_perf(shared_ptr<Track> t, uint8_t type, float value,
       uint16_t duration) {
+    shared_ptr<Channel> c = t->channel(0);
     if (duration) {
       if (type == 0x00) {
-        t->volume_target = value;
-        t->volume_target_frames = duration;
+        c->volume_target = value;
+        c->volume_target_frames = duration;
       } else if (type == 0x01) {
-        t->pitch_bend_target = value;
-        t->pitch_bend_target_frames = duration;
+        c->pitch_bend_target = value;
+        c->pitch_bend_target_frames = duration;
       } else if (type == 0x02) {
-        t->reverb_target = value;
-        t->reverb_target_frames = duration;
+        c->reverb_target = value;
+        c->reverb_target_frames = duration;
       } else if (type == 0x03) {
-        t->panning_target = value;
-        t->panning_target_frames = duration;
+        c->panning_target = value;
+        c->panning_target_frames = duration;
       } else {
         if (debug_flags & DebugFlag::ShowUnknownPerfOptions) {
           fprintf(stderr, "unknown perf type option: %02hhX (value=%g)\n", type,
@@ -1449,17 +1472,17 @@ protected:
 
     } else {
       if (type == 0x00) {
-        t->volume = value;
-        t->volume_target_frames = 0;
+        c->volume = value;
+        c->volume_target_frames = 0;
       } else if (type == 0x01) {
-        t->pitch_bend = value;
-        t->pitch_bend_target_frames = 0;
+        c->pitch_bend = value;
+        c->pitch_bend_target_frames = 0;
       } else if (type == 0x02) {
-        t->reverb = value;
-        t->reverb_target_frames = 0;
+        c->reverb = value;
+        c->reverb_target_frames = 0;
       } else if (type == 0x03) {
-        t->panning = value;
-        t->panning_target_frames = 0;
+        c->panning = value;
+        c->panning_target_frames = 0;
       } else {
         if (debug_flags & DebugFlag::ShowUnknownPerfOptions) {
           fprintf(stderr, "unknown perf type option: %02hhX (value=%g)\n", type,
@@ -1479,7 +1502,7 @@ protected:
       // is [-0x2000, +0x2000), but we convert [-0x8000, +0x7FFF) into
       // [-1.0, +1.0) linearly. so to correct for this, multiply by 4 here
       // TODO: verify if this is actually correct
-      t->pitch_bend_semitone_range = static_cast<float>(value) * 4.0;
+      t->channel(0)->pitch_bend_semitone_range = static_cast<float>(value) * 4.0;
     } else {
       if (debug_flags & DebugFlag::ShowUnknownParamOptions) {
         fprintf(stderr, "unknown param type option: %02hhX (value=%hu)\n",
@@ -1496,7 +1519,7 @@ protected:
       // note: opcode is also the note
       uint8_t voice = t->r.get_u8() - 1; // between 1 and 8 inclusive
       uint8_t vel = t->r.get_u8();
-      this->voice_on(t, voice, opcode, vel);
+      this->voice_on(t, voice, opcode, vel, 0);
       return;
     }
 
@@ -1899,7 +1922,7 @@ protected:
 
       uint32_t voice_id = (static_cast<uint32_t>(channel) << 8) |
           static_cast<uint32_t>(key);
-      this->voice_on(t, voice_id, key, vel);
+      this->voice_on(t, voice_id, key, vel, channel);
 
     } else if ((t->midi_status & 0xF0) == 0xA0) { // change key pressure
       // uint8_t channel = t->midi_status & 0x0F;
@@ -1908,15 +1931,15 @@ protected:
       // TODO
 
     } else if ((t->midi_status & 0xF0) == 0xB0) { // controller change OR channel mode
-      // uint8_t channel = t->midi_status & 0x0F;
+      uint8_t channel = t->midi_status & 0x0F;
       uint8_t controller = t->r.get_u8();
       uint8_t value = t->r.get_u8();
       if (controller == 0x07) {
-        t->volume_target = static_cast<float>(value) / 0x7F;
-        t->volume = t->volume_target;
+        t->channel(channel)->volume_target = static_cast<float>(value) / 0x7F;
+        t->channel(channel)->volume = static_cast<float>(value) / 0x7F;
       } else if (controller == 0x0A) {
-        t->panning_target = static_cast<float>(value) / 0x7F;
-        t->panning = static_cast<float>(value) / 0x7F;
+        t->channel(channel)->panning_target = static_cast<float>(value) / 0x7F;
+        t->channel(channel)->panning = static_cast<float>(value) / 0x7F;
       }
       // TODO: implement more controller messages
 
