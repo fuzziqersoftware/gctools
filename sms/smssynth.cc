@@ -1144,6 +1144,7 @@ protected:
   size_t samples_rendered;
   uint16_t tempo;
   uint16_t pulse_rate;
+  double tempo_bias;
 
   shared_ptr<const SoundEnvironment> env;
   unordered_set<int16_t> mute_tracks;
@@ -1185,11 +1186,11 @@ protected:
 public:
   explicit Renderer(size_t sample_rate, shared_ptr<const SoundEnvironment> env,
       const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
-      const unordered_set<int16_t>& disable_tracks, bool decay_when_off) :
+      const unordered_set<int16_t>& disable_tracks, double tempo_bias, bool decay_when_off) :
       sample_rate(sample_rate), current_time(0), samples_rendered(0), tempo(0),
-      pulse_rate(0), env(env), mute_tracks(mute_tracks), solo_tracks(solo_tracks),
-      disable_tracks(disable_tracks), decay_when_off(decay_when_off),
-      cache(new SampleCache()) { }
+      pulse_rate(0), tempo_bias(tempo_bias), env(env), mute_tracks(mute_tracks),
+      solo_tracks(solo_tracks), disable_tracks(disable_tracks),
+      decay_when_off(decay_when_off), cache(new SampleCache()) { }
 
   virtual ~Renderer() = default;
 
@@ -1435,8 +1436,8 @@ public:
   explicit BMSRenderer(shared_ptr<SequenceProgram> seq, size_t sample_rate,
       shared_ptr<const SoundEnvironment> env,
       const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
-      const unordered_set<int16_t>& disable_tracks, bool decay_when_off) :
-      Renderer(sample_rate, env, mute_tracks, solo_tracks, disable_tracks, decay_when_off),
+      const unordered_set<int16_t>& disable_tracks, double tempo_bias, bool decay_when_off) :
+      Renderer(sample_rate, env, mute_tracks, solo_tracks, disable_tracks, tempo_bias, decay_when_off),
       seq(seq), seq_data(new string(seq->data)) {
     shared_ptr<Track> default_track(new Track(-1, this->seq_data, 0, this->seq->index));
     this->tracks.emplace(default_track);
@@ -1686,7 +1687,7 @@ protected:
 
       case 0xE0:
       case 0xFE: {
-        this->tempo = t->r.get_u16r();
+        this->tempo = t->r.get_u16r() * this->tempo_bias;
         break;
       }
 
@@ -1803,7 +1804,6 @@ protected:
 class MIDIRenderer : public Renderer {
 protected:
   shared_ptr<string> midi_contents;
-  double tempo_bias;
   bool allow_program_change;
   uint8_t channel_instrument[0x10];
 
@@ -1813,9 +1813,8 @@ public:
       const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
       const unordered_set<int16_t>& disable_tracks, double tempo_bias,
       bool decay_when_off, uint8_t percussion_instrument, bool allow_program_change) :
-      Renderer(sample_rate, env, mute_tracks, solo_tracks, disable_tracks, decay_when_off),
-      midi_contents(midi_contents), tempo_bias(tempo_bias),
-      allow_program_change(allow_program_change) {
+      Renderer(sample_rate, env, mute_tracks, solo_tracks, disable_tracks, tempo_bias, decay_when_off),
+      midi_contents(midi_contents), allow_program_change(allow_program_change) {
     for (uint8_t x = 0; x < 0x10; x++) {
       this->channel_instrument[x] = x;
     }
@@ -1971,7 +1970,7 @@ protected:
         this->next_event_to_track.erase(track_it);
 
       } else if (type == 0x51) { // set tempo
-        this->tempo = (60000000 / t->r.get_u24r()) * tempo_bias;
+        this->tempo = (60000000 / t->r.get_u24r()) * this->tempo_bias;
 
       } else { // anything else? just skip it
         t->r.go(t->r.where() + size);
@@ -2151,8 +2150,8 @@ int main(int argc, char** argv) {
 
     } else if (!strncmp(argv[x], "--default-bank=", 15)) {
       default_bank = atoi(&argv[x][15]);
-    } else if (!strncmp(argv[x], "--midi-tempo-bias=", 18)) {
-      tempo_bias = atof(&argv[x][18]);
+    } else if (!strncmp(argv[x], "--tempo-bias=", 13)) {
+      tempo_bias = atof(&argv[x][13]);
 #ifndef WINDOWS
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
       num_buffers = atoi(&argv[x][15]);
@@ -2281,7 +2280,7 @@ int main(int argc, char** argv) {
   shared_ptr<Renderer> r;
   if (seq.get()) {
     r.reset(new BMSRenderer(seq, sample_rate, env, mute_tracks, solo_tracks,
-        disable_tracks, decay_when_off));
+        disable_tracks, tempo_bias, decay_when_off));
   } else {
     // midi has some extra params; get them from the json if possible
     uint8_t percussion_instrument = 0;
