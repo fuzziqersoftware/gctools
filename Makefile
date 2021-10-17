@@ -1,5 +1,5 @@
 CFLAGS=-g -Wall -Werror
-CXXFLAGS=-g -Wall -Werror -I/opt/local/include -L/opt/local/lib -std=c++14
+CXXFLAGS=-g -Wall -Werror -I/opt/local/include -L/opt/local/lib -std=c++20
 CXXLIBS=-lphosg -lpthread
 
 ifeq ($(OS),Windows_NT)

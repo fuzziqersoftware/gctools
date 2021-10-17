@@ -50,6 +50,8 @@ gctools is a set of tools for reading and translating video game files. These to
 
 **sms/smssynth** - synthesizes and debugs music sequences in BMS or MIDI format. There are many ways to use smssynth; see the next section.
 
+**sms/modsynth** - synthesizes and debugs music sequences in Protracker MOD format. Run it with no arguments for usage information.
+
 ### Using smssynth
 
 **smssynth** deals with BMS and MIDI music sequence programs. It can disassemble them, convert them into .wav files, or play them in realtime. The implementation is based on reverse-engineering multiple games and not on any official source code, so sometimes the output sounds a bit different from the actual in-game music.

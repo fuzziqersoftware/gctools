@@ -16,6 +16,7 @@
 #include <unordered_map>
 
 #include "aaf.hh"
+#include "SampleCache.hh"
 
 #ifdef WINDOWS
 
@@ -57,36 +58,6 @@ enum DebugFlag {
 };
 
 uint64_t debug_flags = DebugFlag::Default;
-
-int resample_method = SRC_SINC_BEST_QUALITY;
-
-vector<float> resample(const vector<float>& input_samples, size_t num_channels,
-    double src_ratio) {
-  size_t input_frame_count = input_samples.size() / num_channels;
-  size_t output_frame_count = (input_frame_count * src_ratio) + 1;
-  size_t output_sample_count = output_frame_count * num_channels;
-
-  vector<float> output_samples(output_sample_count, 0.0f);
-
-  SRC_DATA data;
-  data.data_in = const_cast<float*>(input_samples.data());
-  data.data_out = const_cast<float*>(output_samples.data());
-  data.input_frames = input_frame_count;
-  data.output_frames = output_frame_count;
-  data.input_frames_used = 0;
-  data.output_frames_gen = 0;
-  data.end_of_input = 0;
-  data.src_ratio = src_ratio;
-
-  int error = src_simple(&data, resample_method, num_channels);
-  if (error) {
-    throw runtime_error(string_printf("src_simple failed (ratio=%g): %s",
-        src_ratio, src_strerror(error)));
-  }
-
-  output_samples.resize(data.output_frames_gen * num_channels);
-  return output_samples;
-}
 
 
 
@@ -168,8 +139,13 @@ uint64_t read_variable_int(StringReader& r) {
 
 
 
-void disassemble_set_perf(size_t opcode_offset, uint8_t opcode, uint8_t type,
-    uint8_t data_type, int16_t value, uint8_t duration_flags,
+void disassemble_set_perf(
+    size_t opcode_offset,
+    uint8_t opcode,
+    uint8_t type,
+    uint8_t data_type,
+    int16_t value,
+    uint8_t duration_flags,
     uint16_t duration) {
 
   string param_name;
@@ -810,25 +786,6 @@ void disassemble_midi(StringReader& r) {
 
 
 
-class SampleCache {
-public:
-  SampleCache() = default;
-  ~SampleCache() = default;
-
-  const vector<float>& at(const Sound* s, float conversion_rate) {
-    return this->cache.at(s).at(conversion_rate);
-  }
-
-  void add(const Sound* s, float conversion_rate, vector<float>&& data) {
-    this->cache[s].emplace(conversion_rate, move(data));
-  }
-
-private:
-  unordered_map<const Sound*, unordered_map<float, vector<float>>> cache;
-};
-
-
-
 struct Channel {
   float pitch_bend_semitone_range;
 
@@ -962,7 +919,7 @@ public:
 class SampleVoice : public Voice {
 public:
   SampleVoice(size_t sample_rate, shared_ptr<const SoundEnvironment> env,
-      shared_ptr<SampleCache> cache, uint16_t bank_id, uint16_t instrument_id,
+      shared_ptr<SampleCache<const Sound*>> cache, uint16_t bank_id, uint16_t instrument_id,
       int8_t note, int8_t vel, bool decay_when_off, shared_ptr<Channel> channel) :
       Voice(sample_rate, note, vel, decay_when_off, channel),
       instrument_bank(&env->instrument_banks.at(bank_id)),
@@ -1012,9 +969,9 @@ public:
     try {
       return this->cache->at(this->vel_region->sound, this->src_ratio);
     } catch (const out_of_range&) {
-      auto samples = resample(this->vel_region->sound->samples(),
+      const auto& ret = this->cache->resample_add(
+          this->vel_region->sound, this->vel_region->sound->samples(),
           this->vel_region->sound->num_channels, this->src_ratio);
-
       if (debug_flags & DebugFlag::ShowResampleEvents) {
         string key_low_str = name_for_note(this->key_region->key_low);
         string key_high_str = name_for_note(this->key_region->key_high);
@@ -1023,18 +980,28 @@ public:
             "%zuHz to %zuHz (%g) with loop at [%zu,%zu]->[%zu,%zu] for an overall "
             "ratio of %g; %zu samples were converted to %zu samples\n",
             this->vel_region->sound->source_filename.c_str(),
-            this->vel_region->sound->sound_id, this->note,
-            this->key_region->key_low, this->key_region->key_high,
-            key_low_str.c_str(), key_high_str.c_str(), base_note,
-            (this->vel_region->base_note == -1) ? "sample" : "vel region", note_factor,
-            this->vel_region->freq_mult, this->vel_region->sound->sample_rate,
-            this->sample_rate, sample_rate_factor,
-            this->vel_region->sound->loop_start, this->vel_region->sound->loop_end,
-            this->loop_start_offset, this->loop_end_offset, this->src_ratio,
-            this->vel_region->sound->samples().size(), samples.size());
+            this->vel_region->sound->sound_id,
+            this->note,
+            this->key_region->key_low,
+            this->key_region->key_high,
+            key_low_str.c_str(),
+            key_high_str.c_str(),
+            base_note,
+            (this->vel_region->base_note == -1) ? "sample" : "vel region",
+            note_factor,
+            this->vel_region->freq_mult,
+            this->vel_region->sound->sample_rate,
+            this->sample_rate,
+            sample_rate_factor,
+            this->vel_region->sound->loop_start,
+            this->vel_region->sound->loop_end,
+            this->loop_start_offset,
+            this->loop_end_offset,
+            this->src_ratio,
+            this->vel_region->sound->samples().size(),
+            ret.size());
       }
-      this->cache->add(this->vel_region->sound, this->src_ratio, move(samples));
-      return this->cache->at(this->vel_region->sound, this->src_ratio);
+      return ret;
     }
   }
 
@@ -1079,7 +1046,7 @@ public:
   size_t loop_end_offset;
   size_t offset;
 
-  shared_ptr<SampleCache> cache;
+  shared_ptr<SampleCache<const Sound*>> cache;
 };
 
 
@@ -1152,7 +1119,7 @@ protected:
   unordered_set<int16_t> disable_tracks;
   bool decay_when_off;
 
-  shared_ptr<SampleCache> cache;
+  shared_ptr<SampleCache<const Sound*>> cache;
 
   virtual void execute_opcode(multimap<uint64_t, shared_ptr<Track>>::iterator track_it) = 0;
 
@@ -1184,13 +1151,27 @@ protected:
   }
 
 public:
-  explicit Renderer(size_t sample_rate, shared_ptr<const SoundEnvironment> env,
-      const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
-      const unordered_set<int16_t>& disable_tracks, double tempo_bias, bool decay_when_off) :
-      sample_rate(sample_rate), current_time(0), samples_rendered(0), tempo(0),
-      pulse_rate(0), tempo_bias(tempo_bias), env(env), mute_tracks(mute_tracks),
-      solo_tracks(solo_tracks), disable_tracks(disable_tracks),
-      decay_when_off(decay_when_off), cache(new SampleCache()) { }
+  explicit Renderer(
+      size_t sample_rate,
+      int resample_method,
+      shared_ptr<const SoundEnvironment> env,
+      const unordered_set<int16_t>& mute_tracks,
+      const unordered_set<int16_t>& solo_tracks,
+      const unordered_set<int16_t>& disable_tracks,
+      double tempo_bias,
+      bool decay_when_off)
+    : sample_rate(sample_rate),
+      current_time(0),
+      samples_rendered(0),
+      tempo(0),
+      pulse_rate(0),
+      tempo_bias(tempo_bias),
+      env(env),
+      mute_tracks(mute_tracks),
+      solo_tracks(solo_tracks),
+      disable_tracks(disable_tracks),
+      decay_when_off(decay_when_off),
+      cache(new SampleCache<const Sound*>(resample_method)) { }
 
   virtual ~Renderer() = default;
 
@@ -1433,12 +1414,27 @@ protected:
   shared_ptr<string> seq_data;
 
 public:
-  explicit BMSRenderer(shared_ptr<SequenceProgram> seq, size_t sample_rate,
+  explicit BMSRenderer(
+      shared_ptr<SequenceProgram> seq,
+      size_t sample_rate,
+      int resample_method,
       shared_ptr<const SoundEnvironment> env,
-      const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
-      const unordered_set<int16_t>& disable_tracks, double tempo_bias, bool decay_when_off) :
-      Renderer(sample_rate, env, mute_tracks, solo_tracks, disable_tracks, tempo_bias, decay_when_off),
-      seq(seq), seq_data(new string(seq->data)) {
+      const unordered_set<int16_t>& mute_tracks,
+      const unordered_set<int16_t>& solo_tracks,
+      const unordered_set<int16_t>& disable_tracks,
+      double tempo_bias,
+      bool decay_when_off)
+    : Renderer(
+        sample_rate,
+        resample_method,
+        env,
+        mute_tracks,
+        solo_tracks,
+        disable_tracks,
+        tempo_bias,
+        decay_when_off),
+      seq(seq),
+      seq_data(new string(seq->data)) {
     shared_ptr<Track> default_track(new Track(-1, this->seq_data, 0, this->seq->index));
     this->tracks.emplace(default_track);
     this->next_event_to_track.emplace(0, default_track);
@@ -1808,13 +1804,29 @@ protected:
   uint8_t channel_instrument[0x10];
 
 public:
-  explicit MIDIRenderer(shared_ptr<string> midi_contents, size_t sample_rate,
+  explicit MIDIRenderer(
+      shared_ptr<string> midi_contents,
+      size_t sample_rate,
+      int resample_method,
       shared_ptr<const SoundEnvironment> env,
-      const unordered_set<int16_t>& mute_tracks, const unordered_set<int16_t>& solo_tracks,
-      const unordered_set<int16_t>& disable_tracks, double tempo_bias,
-      bool decay_when_off, uint8_t percussion_instrument, bool allow_program_change) :
-      Renderer(sample_rate, env, mute_tracks, solo_tracks, disable_tracks, tempo_bias, decay_when_off),
-      midi_contents(midi_contents), allow_program_change(allow_program_change) {
+      const unordered_set<int16_t>& mute_tracks,
+      const unordered_set<int16_t>& solo_tracks,
+      const unordered_set<int16_t>& disable_tracks,
+      double tempo_bias,
+      bool decay_when_off,
+      uint8_t percussion_instrument,
+      bool allow_program_change)
+    : Renderer(
+        sample_rate,
+        resample_method,
+        env,
+        mute_tracks,
+        solo_tracks,
+        disable_tracks,
+        tempo_bias,
+        decay_when_off),
+      midi_contents(midi_contents),
+      allow_program_change(allow_program_change) {
     for (uint8_t x = 0; x < 0x10; x++) {
       this->channel_instrument[x] = x;
     }
@@ -2077,6 +2089,7 @@ int main(int argc, char** argv) {
   bool list_sequences = false;
   int32_t default_bank = -1;
   bool decay_when_off = true;
+  int resample_method = SRC_SINC_BEST_QUALITY;
   bool resample_method_set = false;
   string env_json_filename;
   for (int x = 1; x < argc; x++) {
@@ -2279,8 +2292,16 @@ int main(int argc, char** argv) {
 
   shared_ptr<Renderer> r;
   if (seq.get()) {
-    r.reset(new BMSRenderer(seq, sample_rate, env, mute_tracks, solo_tracks,
-        disable_tracks, tempo_bias, decay_when_off));
+    r.reset(new BMSRenderer(
+        seq,
+        sample_rate,
+        resample_method,
+        env,
+        mute_tracks,
+        solo_tracks,
+        disable_tracks,
+        tempo_bias,
+        decay_when_off));
   } else {
     // midi has some extra params; get them from the json if possible
     uint8_t percussion_instrument = 0;
@@ -2296,9 +2317,18 @@ int main(int argc, char** argv) {
         tempo_bias *= env_json->as_dict().at("tempo_bias")->as_float();
       } catch (const out_of_range&) { }
     }
-    r.reset(new MIDIRenderer(midi_contents, sample_rate, env, mute_tracks,
-        solo_tracks, disable_tracks, tempo_bias, decay_when_off,
-        percussion_instrument, allow_program_change));
+    r.reset(new MIDIRenderer(
+        midi_contents,
+        sample_rate,
+        resample_method,
+        env,
+        mute_tracks,
+        solo_tracks,
+        disable_tracks,
+        tempo_bias,
+        decay_when_off,
+        percussion_instrument,
+        allow_program_change));
   }
 
   // skip the first bit if requested

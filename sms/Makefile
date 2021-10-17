@@ -1,6 +1,7 @@
 CC=gcc
 CXX=g++
-OBJECTS=aaf.o afc.o instrument.o
+COMMON_OBJECTS=SampleCache.o
+AAF_OBJECTS=aaf.o afc.o instrument.o
 CFLAGS=-g -Wall -Werror
 CXXFLAGS=-std=c++14 -g -Wall -Werror -I/usr/local/include -I /opt/local/include
 LDFLAGS=-g -lphosg -L/usr/local/lib -L/opt/local/lib
@@ -24,14 +25,17 @@ else
 	EXE_EXTENSION=
 endif
 
-EXECUTABLES=smsdumpbanks$(EXE_EXTENSION) smssynth$(EXE_EXTENSION)
+EXECUTABLES=smsdumpbanks$(EXE_EXTENSION) smssynth$(EXE_EXTENSION) modsynth$(EXE_EXTENSION)
 
 all: $(EXECUTABLES)
 
-smsdumpbanks$(EXE_EXTENSION): $(OBJECTS) smsdumpbanks.o
+smsdumpbanks$(EXE_EXTENSION): $(COMMON_OBJECTS) $(AAF_OBJECTS) smsdumpbanks.o
 	g++ $(LDFLAGS) -o $@ $^ $(LIBS)
 
-smssynth$(EXE_EXTENSION): $(OBJECTS) smssynth.o
+smssynth$(EXE_EXTENSION): $(COMMON_OBJECTS) $(AAF_OBJECTS) smssynth.o
+	g++ $(LDFLAGS) -o $@ $^ $(LIBS)
+
+modsynth$(EXE_EXTENSION): $(COMMON_OBJECTS) modsynth.o
 	g++ $(LDFLAGS) -o $@ $^ $(LIBS)
 
 clean:
