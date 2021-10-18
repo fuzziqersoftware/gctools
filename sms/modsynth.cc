@@ -810,6 +810,9 @@ void render_mod(
           }
 
           uint16_t effective_period = track.period;
+          if (i.finetune) {
+            effective_period *= pow(2, -static_cast<float>(i.finetune) / (12.0 * 8.0));
+          }
           if (track.vibrato_amplitude && track.vibrato_cycles) {
             float integer_part;
             float wave_progress = modff(track.vibrato_offset, &integer_part);
@@ -912,7 +915,9 @@ void render_mod(
               track.input_sample_offset = i.sample_data.size();
               break;
             }
-            float effective_sample = resampled_data->at(static_cast<size_t>(resampled_offset)) * track_volume_factor * ins_volume_factor;
+            float effective_sample =
+                resampled_data->at(static_cast<size_t>(resampled_offset)) *
+                track_volume_factor * ins_volume_factor;
 
             tick_samples[tick_output_offset + 0] +=
               effective_sample * (1.0 - static_cast<float>(track.panning) / 64.0); // L
