@@ -490,7 +490,9 @@ void render_mod(
     uint8_t current_pattern = mod.partition_table.at(current_partition);
     fprintf(stderr, "  %02zu", current_partition);
     disassemble_pattern_row(stderr, mod, current_pattern, current_cell, flags);
-    fprintf(stderr, "  @ %.07gs\n",
+    fprintf(stderr, " =  %3zu/%-2zu @ %.07gs\n",
+        timing.beats_per_minute,
+        timing.ticks_per_division,
         static_cast<float>(total_output_samples) / (2 * output_sample_rate));
 
     // Execute all commands in the current division in each track
@@ -935,30 +937,34 @@ void render_mod(
               break;
             }
           }
-          if (track.per_tick_period_increment) {
-            track.period += track.per_tick_period_increment;
-            // If a slide to note effect (3) is underway, enforce the limit given
-            // by the effect command
-            if (track.slide_target_period &&
-                (((track.per_tick_period_increment > 0) &&
-                  (track.period > track.slide_target_period)) ||
-                 ((track.per_tick_period_increment < 0) &&
-                  (track.period < track.slide_target_period)))) {
-              track.period = track.slide_target_period;
-              track.per_tick_period_increment = 0;
-              track.slide_target_period = 0;
+          // Apparently per-tick slides don't happen after the last tick in the
+          // division (why? Protracker bug?)
+          if (tick_num != timing.ticks_per_division - 1) {
+            if (track.per_tick_period_increment) {
+              track.period += track.per_tick_period_increment;
+              // If a slide to note effect (3) is underway, enforce the limit
+              // given by the effect command
+              if (track.slide_target_period &&
+                  (((track.per_tick_period_increment > 0) &&
+                    (track.period > track.slide_target_period)) ||
+                   ((track.per_tick_period_increment < 0) &&
+                    (track.period < track.slide_target_period)))) {
+                track.period = track.slide_target_period;
+                track.per_tick_period_increment = 0;
+                track.slide_target_period = 0;
+              }
+              // TODO: implement limits here (they may be different across trackers)
+              if (track.period <= 0) {
+                track.period = 1;
+              }
             }
-            // TODO: implement limits here (they may be different across trackers)
-            if (track.period <= 0) {
-              track.period = 1;
-            }
-          }
-          if (track.per_tick_volume_increment) {
-            track.volume += track.per_tick_volume_increment;
-            if (track.volume < 0) {
-              track.volume = 0;
-            } else if (track.volume > 64) {
-              track.volume = 64;
+            if (track.per_tick_volume_increment) {
+              track.volume += track.per_tick_volume_increment;
+              if (track.volume < 0) {
+                track.volume = 0;
+              } else if (track.volume > 64) {
+                track.volume = 64;
+              }
             }
           }
           // TODO: Should we advance this only sometimes? What would the right
