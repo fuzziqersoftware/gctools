@@ -401,7 +401,8 @@ struct Timing {
 struct TrackState {
   int32_t instrument_num; // 1-based! 0 = no instrument
   int32_t period;
-  int32_t volume;
+  int32_t volume; // 0 - 64
+  int32_t panning; // 0 (left) - 64 (right)
   double input_sample_offset; // relative to input samples, not any resampling thereof
   uint8_t vibrato_waveform;
   float vibrato_offset;
@@ -409,6 +410,9 @@ struct TrackState {
   uint8_t arpeggio_arg;
   uint8_t sample_retrigger_interval_ticks;
   uint8_t sample_start_delay_ticks;
+  int8_t cut_sample_after_ticks;
+  int32_t delayed_sample_instrument_num;
+  int32_t delayed_sample_period;
   int16_t per_tick_period_increment;
   int16_t per_tick_volume_increment;
   int16_t slide_target_period;
@@ -439,6 +443,9 @@ struct TrackState {
     this->arpeggio_arg = 0;
     this->sample_retrigger_interval_ticks = 0;
     this->sample_start_delay_ticks = 0;
+    this->cut_sample_after_ticks = -1;
+    this->delayed_sample_instrument_num = 0;
+    this->delayed_sample_period = 0;
     this->per_tick_period_increment = 0;
     this->per_tick_volume_increment = 0;
     this->slide_target_period = 0;
@@ -469,6 +476,14 @@ void render_mod(
   }
 
   vector<TrackState> tracks(mod.num_tracks);
+
+  // Tracks 1 and 2 (mod 4) are on the right; the others are on the left. These
+  // assignments can be overridden by a [14][8][x] (0xE8x) effect.
+  for (size_t track_index = 0; track_index < tracks.size(); track_index++) {
+    bool right_pan = ((track_index & 3) == 1) || ((track_index & 3) == 2);
+    tracks[track_index].panning = right_pan ? 0x30 : 0x10;
+  }
+
   size_t total_output_samples = 0;
   while (current_partition < mod.partition_count) {
     // Show current state
@@ -490,21 +505,21 @@ void render_mod(
       // period, and the sample data offset (it will play from the beginning).
       // Effects [3] and [5] are special cases and do not result in a new note
       // being played, since they use the period as an additional parameter.
+      // Effect [14][13] is special in that it does not start the new note
+      // immediately, and the existing note, if any, should continue playing for
+      // at least another tick.
       uint16_t effect = div.effect();
-      if (((effect & 0xF00) != 0x300) && ((effect & 0xF00) != 0x500)) {
-        if (div.instrument_num()) {
-          track.instrument_num = div.instrument_num();
-          track.input_sample_offset = 0.0;
-          track.volume = 64;
-          if (!(track.vibrato_waveform & 4)) {
-            track.vibrato_offset = 0.0;
-          }
-        }
+      if (((effect & 0xF00) != 0x300) && ((effect & 0xF00) != 0x500) && ((effect & 0xFF0) != 0xED0)) {
         if (div.period()) {
           track.period = div.period();
           track.input_sample_offset = 0.0;
-          // It seems like volume should NOT get reset in this case. TODO: is
-          // this actually true?
+          // It seems like volume should NOT get reset unless the instrument
+          // number is explicitly specified in the same division. TODO: is this
+          // actually true?
+          if (div.instrument_num()) {
+            track.instrument_num = div.instrument_num();
+            track.volume = 64;
+          }
           if (!(track.vibrato_waveform & 4)) {
             track.vibrato_offset = 0.0;
           }
@@ -670,9 +685,28 @@ void render_mod(
 [14][7]: Set tremolo waveform
      Where [14][7][x] means "set the waveform of succeeding 'tremolo'
      effects to wave #x". Similar to [14][4], but alters effect [7] -
-     the 'tremolo' effect.
+     the 'tremolo' effect. */
 
-[14][8]: -- Unused -- */
+            case 0x080: { // Set panning (PlayerPRO)
+              uint8_t panning = effect & 0x00F;
+
+              // To deal with the "halves" of the range not being equal sizes,
+              // we stretch out the right half a bit so [14][8][15] hits the
+              // right side exactly.
+              if (panning <= 8) {
+                panning *= 16;
+              } else {
+                panning *= 17;
+              }
+              track.panning = (panning * 64) / 0xFF;
+
+              if (track.panning < 0) {
+                track.panning = 0;
+              } else if (track.panning > 64) {
+                track.panning = 64;
+              }
+              break;
+            }
 
             case 0x090: // Retrigger sample every x ticks
               track.sample_retrigger_interval_ticks = effect & 0x0F;
@@ -689,17 +723,13 @@ void render_mod(
                 track.volume = 0;
               }
               break;
-/*
-[14][12]: Cut sample
-     Where [14][12][x] means "after the current sample has been played
-     for x ticks in this division, its volume will be set to 0". This
-     implies that if x is 0, then you will not hear any of the sample.
-     If you wish to insert "silence" in a pattern, it is better to use a
-     "silence"-sample (see above) due to the lack of proper support for
-     this effect. */
-
+            case 0x0C0: // Cut sample after ticks
+              track.cut_sample_after_ticks = effect & 0x00F;
+              break;
             case 0x0D0: // Delay sample
               track.sample_start_delay_ticks = effect & 0x00F;
+              track.delayed_sample_instrument_num = div.instrument_num();
+              track.delayed_sample_period = div.period();
               break;
             case 0x0E0: // Delay pattern
               divisions_to_delay = effect & 0x00F;
@@ -755,13 +785,26 @@ void render_mod(
           if (track.input_sample_offset >= i.sample_data.size()) {
             continue; // Previous sound is already done
           }
-          if (track.sample_start_delay_ticks > tick_num && track.input_sample_offset == 0) {
-            // Delay was requested via effect EDx and we shouldn't start sound yet
-            continue;
+          if (track.sample_start_delay_ticks && (track.sample_start_delay_ticks == tick_num)) {
+            // Delay was requested via effect EDx and we should start the sample now
+            track.instrument_num = track.delayed_sample_instrument_num;
+            track.period = track.delayed_sample_period;
+            track.volume = 64;
+            track.input_sample_offset = 0.0;
+            if (!(track.vibrato_waveform & 4)) {
+              track.vibrato_offset = 0.0;
+            }
+
+            track.sample_start_delay_ticks = 0;
+            track.delayed_sample_instrument_num = 0;
+            track.delayed_sample_period = 0;
           }
           if (track.sample_retrigger_interval_ticks &&
               ((tick_num % track.sample_retrigger_interval_ticks) == 0)) {
             track.input_sample_offset = 0;
+          }
+          if (track.cut_sample_after_ticks >= 0 && tick_num == track.cut_sample_after_ticks) {
+            track.volume = 0;
           }
 
           uint16_t effective_period = track.period;
@@ -869,15 +912,10 @@ void render_mod(
             }
             float effective_sample = resampled_data->at(static_cast<size_t>(resampled_offset)) * track_volume_factor * ins_volume_factor;
 
-            // Tracks 1 and 2 (mod 4) are on the right; the others are on the left
-            // We only pan partway from center; 100% panning sounds bad
-            if (((track_index & 3) == 1) || ((track_index & 3) == 2)) {
-              tick_samples[tick_output_offset + 0] += effective_sample * 1.0 / 4.0; // L
-              tick_samples[tick_output_offset + 1] += effective_sample * 3.0 / 4.0; // R
-            } else {
-              tick_samples[tick_output_offset + 0] += effective_sample * 3.0 / 4.0; // L
-              tick_samples[tick_output_offset + 1] += effective_sample * 1.0 / 4.0; // R
-            }
+            tick_samples[tick_output_offset + 0] +=
+              effective_sample * (1.0 - static_cast<float>(track.panning) / 64.0); // L
+            tick_samples[tick_output_offset + 1] +=
+              effective_sample * (static_cast<float>(track.panning) / 64.0); // R
 
             // TODO: The observational spec claims that the loop only begins after
             // the sample has been played to the end once. Is this true? It seems
