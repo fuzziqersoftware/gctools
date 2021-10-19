@@ -740,6 +740,9 @@ protected:
 
         case 0xC00: // Set volume
           track.volume = effect & 0x0FF;
+          if (track.volume > 64) {
+            track.volume = 64;
+          }
           break;
         case 0xD00: // Pattern break
           // This was probably just a typo in the original Protracker, but it's
@@ -831,7 +834,7 @@ protected:
             case 0x090: // Retrigger sample every x ticks
               track.sample_retrigger_interval_ticks = effect & 0x0F;
               break;
-            case 0x0A0: // Fine volumne slide up
+            case 0x0A0: // Fine volume slide up
               track.volume += effect & 0x00F;
               if (track.volume > 64) {
                 track.volume = 64;
@@ -937,6 +940,8 @@ protected:
         if (i.finetune) {
           effective_period *= pow(2, -static_cast<float>(i.finetune) / (12.0 * 8.0));
         }
+        // TODO: Vibrato still doesn't sound quite right. See MODs:
+        //   2badshep
         if (track.vibrato_amplitude && track.vibrato_cycles) {
           float integer_part;
           float wave_progress = modff(track.vibrato_offset, &integer_part);
@@ -976,6 +981,12 @@ protected:
 
         // Apply the appropriate portion of the instrument's sample data to the
         // tick output data
+        // TODO: Using volume linearly here seems incorrect; seems it should be
+        // something superlinear (so amplitude at 0x20 > 0.5*amp at 0x40).
+        // See MODs:
+        //   hoffipolkka
+        //   Kid
+        //   Yooomo
         float track_volume_factor = static_cast<float>(track.volume) / 64.0;
         float ins_volume_factor = static_cast<float>(i.volume) / 64.0;
         const vector<float>* resampled_data = nullptr;
@@ -1249,12 +1260,12 @@ void normalize_amplitude(vector<float>& data) {
 void print_usage() {
   fprintf(stderr, "\
 \n\
-modsynth - a synthesizer for ProTracker modules\n\
+modsynth - a synthesizer for Protracker/Soundtracker modules\n\
 \n\
 Usage:\n\
   modsynth --disassemble [options] input_filename\n\
-    Disassembles the instruments and sequence program from the module.\n\
-    Options:\n\
+    Prints a human-readable representation of the instruments and sequence\n\
+    program from the module. Options:\n\
       --show-sample-data: Shows raw sample data in a hex/ASCII view.\n\
       --show-sample-saveforms: Shows sample waveforms vertically. If color is\n\
           enabled, possibly-clipped samples are highlighted in red.\n\
@@ -1270,12 +1281,23 @@ Usage:\n\
       --skip-partitions=N: Start at this offset in the partition table (instead\n\
           of zero).\n\
       --sample-rate=N: Output audio at this sample rate (default 48000).\n\
+      --solo-track=N: Mute all the tracks except this one. May be given\n\
+          multiple times.\n\
+      --mute-track=N: Mute this track. May be given multiple times.\n\
+      --tempo-bias=N: Speed up or slow down the sequence by this factor\n\
+          (default 1.0). For example, 2.0 plays the sequence twice as fast,\n\
+          and 0.5 plays the sequence at half speed.\n\
 \n\
   modsynth --play [options] input_filename\n\
     Plays the sequence through the default audio device.\n\
     All options to --render apply here too. Additional options:\n\
       --play-buffers=N: Generate this many ticks of audio ahead of the output\n\
           device (default 16). If audio is choppy, try increasing this value.\n\
+\n\
+Options for all usage modes:\n\
+  --color/--no-color: Enables or disables the generation of color escape codes\n\
+      for visualizing pattern and instrument data. By default, color escapes\n\
+      are generated only if the output is to a terminal.\n\
 \n");
 }
 

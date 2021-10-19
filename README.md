@@ -11,6 +11,7 @@ gctools is a set of tools for reading and translating video game files. These to
 - Yay0 and Yaz0 files from various Nintendo games (prs)
 - AAF, BX, and AW files from Super Mario Sunshine, Luigi's Mansion, Pikmin, and other games (smsdumpbanks, smssynth)
 - MIDI, INST, SONG, and related resources from classic Macintosh games (smssynth)
+- Protracker/Soundtracker modules (modsynth)
 
 ## Building
 
@@ -50,7 +51,7 @@ gctools is a set of tools for reading and translating video game files. These to
 
 **sms/smssynth** - synthesizes and debugs music sequences in BMS or MIDI format. There are many ways to use smssynth; see the next section.
 
-**sms/modsynth** - synthesizes and debugs music sequences in Protracker MOD format. Run it with no arguments for usage information.
+**sms/modsynth** - synthesizes and debugs music sequences in Protracker/Soundtracker MOD format. Run it with no arguments for usage information.
 
 ### Using smssynth
 
