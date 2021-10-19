@@ -470,6 +470,10 @@ protected:
     int16_t last_vibrato_amplitude;
     int16_t last_vibrato_cycles;
 
+    float last_sample;
+    float dc_offset;
+    bool next_sample_may_be_discontinuous;
+
     TrackState()
       : index(0),
         instrument_num(0),
@@ -481,7 +485,10 @@ protected:
         last_slide_target_period(0),
         last_per_tick_period_increment(0),
         last_vibrato_amplitude(0),
-        last_vibrato_cycles (0) {
+        last_vibrato_cycles(0),
+        last_sample(0),
+        dc_offset(0),
+        next_sample_may_be_discontinuous(false) {
       this->reset_division_scoped_effects();
     }
 
@@ -497,6 +504,34 @@ protected:
       this->slide_target_period = 0;
       this->vibrato_amplitude = 0;
       this->vibrato_cycles = 0;
+    }
+
+    void start_note(int32_t instrument_num, int32_t period, int32_t volume) {
+      this->instrument_num = instrument_num;
+      this->period = period;
+      this->volume = volume;
+      this->input_sample_offset = 0.0;
+      if (!(this->vibrato_waveform & 4)) {
+        this->vibrato_offset = 0.0;
+      }
+      this->dc_offset = this->last_sample;
+      this->next_sample_may_be_discontinuous = true;
+    }
+
+    void decay_dc_offset(float delta) {
+      if (this->dc_offset > 0) {
+        if (this->dc_offset <= delta) {
+          this->dc_offset = 0;
+        } else {
+          this->dc_offset -= delta;
+        }
+      } else if (this->dc_offset < 0) {
+        if (this->dc_offset >= -delta) {
+          this->dc_offset = 0;
+        } else {
+          this->dc_offset += delta;
+        }
+      }
     }
   };
 
@@ -515,6 +550,8 @@ protected:
   int32_t pattern_break_target;
   ssize_t divisions_to_delay;
 
+  float dc_offset_decay;
+
   virtual void on_tick_samples_ready(vector<float>&&) = 0;
 
 public:
@@ -531,7 +568,8 @@ public:
       jump_to_pattern_loop_start(false),
       total_output_samples(0),
       pattern_break_target(-1),
-      divisions_to_delay(0) {
+      divisions_to_delay(0),
+      dc_offset_decay(0.001) {
     // Initialize track state which depends on track index
     for (size_t x = 0; x < this->tracks.size(); x++) {
       this->tracks[x].index = x;
@@ -582,17 +620,13 @@ protected:
       uint16_t effect = div.effect();
       if (((effect & 0xF00) != 0x300) && ((effect & 0xF00) != 0x500) && ((effect & 0xFF0) != 0xED0)) {
         if (div.period()) {
-          track.period = div.period();
-          track.input_sample_offset = 0.0;
-          // It seems like volume should NOT get reset unless the instrument
-          // number is explicitly specified in the same division. TODO: is this
-          // actually true?
           if (div.instrument_num()) {
-            track.instrument_num = div.instrument_num();
-            track.volume = 64;
-          }
-          if (!(track.vibrato_waveform & 4)) {
-            track.vibrato_offset = 0.0;
+            track.start_note(div.instrument_num(), div.period(), 64);
+          } else {
+            // It seems like volume should NOT get reset unless the instrument
+            // number is explicitly specified in the same division. TODO: is
+            // this actually true?
+            track.start_note(track.instrument_num, div.period(), track.volume);
           }
         }
       }
@@ -858,28 +892,25 @@ protected:
         if (this->opts->mute_tracks.count(track.index) ||
             (!this->opts->solo_tracks.empty() &&
              !this->opts->solo_tracks.count(track.index))) {
+          track.last_sample = 0;
           continue;
         }
 
         if (track.instrument_num == 0) {
+          track.last_sample = 0;
           continue; // Track has not played any sound yet
         }
 
         const auto& i = this->mod->instruments.at(track.instrument_num - 1);
         if (track.input_sample_offset >= i.sample_data.size()) {
+          track.last_sample = 0;
           continue; // Previous sound is already done
         }
 
         if (track.sample_start_delay_ticks &&
             (track.sample_start_delay_ticks == tick_num)) {
           // Delay requested via effect EDx and we should start the sample now
-          track.instrument_num = track.delayed_sample_instrument_num;
-          track.period = track.delayed_sample_period;
-          track.volume = 64;
-          track.input_sample_offset = 0.0;
-          if (!(track.vibrato_waveform & 4)) {
-            track.vibrato_offset = 0.0;
-          }
+          track.start_note(track.delayed_sample_instrument_num, track.delayed_sample_period, 64);
           track.sample_start_delay_ticks = 0;
           track.delayed_sample_instrument_num = 0;
           track.delayed_sample_period = 0;
@@ -1000,14 +1031,29 @@ protected:
             }
             break;
           }
-          float effective_sample =
-              resampled_data->at(static_cast<size_t>(resampled_offset)) *
-              track_volume_factor * ins_volume_factor;
+
+          // When a new sample is played on a track and it interrupts another
+          // already-playing sample, the waveform can become discontinuous,
+          // which causes an audible ticking sound. To avoid this, we store a
+          // DC offset in each track and adjust it so that the new sample begins
+          // at the same amplitude. The DC offset then decays after each
+          // subsequent sample and fairly quickly reaches zero. This eliminates
+          // the tick and doesn't leave any other audible effects.
+          float sample_from_ins = resampled_data->at(static_cast<size_t>(resampled_offset)) *
+                track_volume_factor * ins_volume_factor;
+          if (track.next_sample_may_be_discontinuous) {
+            track.dc_offset -= sample_from_ins;
+            track.last_sample = track.dc_offset;
+            track.next_sample_may_be_discontinuous = false;
+          } else {
+            track.last_sample = sample_from_ins + track.dc_offset;
+          }
+          track.decay_dc_offset(this->dc_offset_decay);
 
           tick_samples[tick_output_offset + 0] +=
-            effective_sample * (1.0 - static_cast<float>(track.panning) / 64.0); // L
+            track.last_sample * (1.0 - static_cast<float>(track.panning) / 64.0); // L
           tick_samples[tick_output_offset + 1] +=
-            effective_sample * (static_cast<float>(track.panning) / 64.0); // R
+            track.last_sample * (static_cast<float>(track.panning) / 64.0); // R
 
           // TODO: The observational spec claims that the loop only begins after
           // the sample has been played to the end once. Is this true? It seems
