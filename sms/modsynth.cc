@@ -348,12 +348,12 @@ void export_mod_instruments(
     const auto& i = mod->instruments[x];
     if (i.sample_data.empty()) {
       fprintf(stderr, "... (%zu) \"%s\" -> (no sound data)\n",
-          x,
+          x + 1,
           i.name.c_str());
     } else {
       string escaped_name = escape_quotes(i.name);
       fprintf(stderr, "... (%zu) \"%s\" -> %zu samples, +%hhdft, %02hhX vol, loop [%hux%hu]\n",
-          x,
+          x + 1,
           escaped_name.c_str(),
           i.sample_data.size(),
           i.finetune,
