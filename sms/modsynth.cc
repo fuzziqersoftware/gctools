@@ -629,7 +629,14 @@ protected:
           // actually true?
           uint8_t note_volume = div_ins_num ? 64 : track.volume;
           track.start_note(note_ins_num, note_period, note_volume);
+        } else if ((div_ins_num == track.instrument_num) && (track.period != 0)) {
+          // If ins_num is specified and matches the currently-playing
+          // instrument, but period is not specified, then reset the volume
+          // only. This isn't documented, but seems to be the correct behavior.
+          track.volume = 64;
         }
+        // TODO: Should we do anything if ins_num is given but does NOT match
+        // track.instrument_num, and period is not given?
       }
 
       switch (effect & 0xF00) {
