@@ -1061,18 +1061,23 @@ protected:
           // the loop region, even the first time we reach it (which is what's
           // implemented here).
           resampled_offset++;
-          if (loop_end_offset != 0.0 && resampled_offset >= loop_end_offset) {
+          // Since we use floats to represent the loop points, we actually could
+          // miss it and think the sample ended when there's really a loop to be
+          // played! To handle this, we assume that if we reach the end and a
+          // loop is defined, we should just always use it.
+          if ((loop_end_offset != 0.0) &&
+              ((resampled_offset >= loop_end_offset) || (resampled_offset >= resampled_data->size() - 1))) {
             resampled_offset = loop_start_offset;
+          } else if (resampled_offset >= resampled_data->size()) {
+            break;
           }
 
           // Advance the input offset by a proportional amount to the sound we
-          // just generated, so the next tick will start at the right place
+          // just generated, so the next tick or segment will start at the right
+          // place
           track.input_sample_offset = resampled_offset / src_ratio;
-
-          if (resampled_offset >= resampled_data->size()) {
-            break;
-          }
         }
+
         // Apparently per-tick slides don't happen after the last tick in the
         // division. (Why? Protracker bug?)
         if (tick_num != timing.ticks_per_division - 1) {
