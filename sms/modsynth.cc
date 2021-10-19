@@ -590,7 +590,7 @@ protected:
         pattern_index,
         this->division_index,
         this->opts->flags);
-    fprintf(stderr, " =  %3zu/%-2zu @ %.7gs\n",
+    fprintf(stderr, "  =  %3zu/%-2zu @ %.7gs\n",
         this->timing.beats_per_minute,
         this->timing.ticks_per_division,
         static_cast<float>(this->total_output_samples) /
@@ -619,15 +619,16 @@ protected:
       // at least another tick.
       uint16_t effect = div.effect();
       if (((effect & 0xF00) != 0x300) && ((effect & 0xF00) != 0x500) && ((effect & 0xFF0) != 0xED0)) {
-        if (div.period()) {
-          if (div.instrument_num()) {
-            track.start_note(div.instrument_num(), div.period(), 64);
-          } else {
-            // It seems like volume should NOT get reset unless the instrument
-            // number is explicitly specified in the same division. TODO: is
-            // this actually true?
-            track.start_note(track.instrument_num, div.period(), track.volume);
-          }
+        uint16_t div_period = div.period();
+        uint8_t div_ins_num = div.instrument_num();
+        if (div_period) {
+          uint16_t note_period = div_period ? div_period : track.period;
+          uint8_t note_ins_num = div_ins_num ? div_ins_num : track.instrument_num;
+          // It seems like volume should NOT get reset unless the instrument
+          // number is explicitly specified in the same division. TODO: is this
+          // actually true?
+          uint8_t note_volume = div_ins_num ? 64 : track.volume;
+          track.start_note(note_ins_num, note_period, note_volume);
         }
       }
 
@@ -1365,7 +1366,10 @@ int main(int argc, char** argv) {
       MODExporter exporter(mod, opts);
       fprintf(stderr, "Synthesis:\n");
       exporter.run();
-      save_wav(output_filename.c_str(), exporter.result(), opts->output_sample_rate, 2);
+      fprintf(stderr, "Assembling result\n");
+      const auto& result = exporter.result();
+      fprintf(stderr, "... %s\n", output_filename.c_str());
+      save_wav(output_filename.c_str(), result, opts->output_sample_rate, 2);
       break;
     }
     case Behavior::Play: {
