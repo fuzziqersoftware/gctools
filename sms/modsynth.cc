@@ -31,7 +31,7 @@ struct Module {
     uint8_t volume; // 0-64
     uint16_t loop_start_samples;
     uint16_t loop_length_samples;
-    string original_sample_data;
+    vector<int8_t> original_sample_data;
     vector<float> sample_data;
 
     bool loop_valid() const {
@@ -72,46 +72,46 @@ struct Module {
 
 
 
-Module load_mod(StringReader& r) {
-  Module mod;
+shared_ptr<Module> load_mod(StringReader& r) {
+  shared_ptr<Module> mod(new Module());
 
   // First, look ahead to see if this file uses any extensions. Annoyingly, the
   // signature field is pretty late in the file format, and some preceding
   // fields' sizes depend on the enabled extensions.
   try {
-    mod.extension_signature = r.pget_u32r(0x438);
+    mod->extension_signature = r.pget_u32r(0x438);
   } catch (const out_of_range&) {
-    mod.extension_signature = 0;
+    mod->extension_signature = 0;
   }
 
   size_t num_instruments = 31; // This is only not 31 in the default case below
-  switch (mod.extension_signature) {
+  switch (mod->extension_signature) {
     case 0x4D2E4B2E: // M.K.
     case 0x4D214B21: // M!K!
     case 0x464C5434: // FLT4
-      mod.num_tracks = 4;
+      mod->num_tracks = 4;
       break;
     case 0x464C5438: // FLT8
-      mod.num_tracks = 8;
+      mod->num_tracks = 8;
       break;
     default:
-      if ((mod.extension_signature & 0xF0FFFFFF) == 0x3043484E) { // xCHN
-        mod.num_tracks = (mod.extension_signature >> 24) & 0x0F;
-      } else if ((mod.extension_signature & 0xF0F0FFFF) == 0x30304348) { // xxCH
-        mod.num_tracks = (((mod.extension_signature >> 24) & 0x0F) * 10) +
-            ((mod.extension_signature >> 16) & 0x0F);
+      if ((mod->extension_signature & 0xF0FFFFFF) == 0x3043484E) { // xCHN
+        mod->num_tracks = (mod->extension_signature >> 24) & 0x0F;
+      } else if ((mod->extension_signature & 0xF0F0FFFF) == 0x30304348) { // xxCH
+        mod->num_tracks = (((mod->extension_signature >> 24) & 0x0F) * 10) +
+            ((mod->extension_signature >> 16) & 0x0F);
       } else { // Unrecognized signature; probably a very old MOD
         num_instruments = 15;
-        mod.num_tracks = 4;
+        mod->num_tracks = 4;
       }
   }
 
-  mod.name = r.read(0x14);
-  strip_trailing_zeroes(mod.name);
+  mod->name = r.read(0x14);
+  strip_trailing_zeroes(mod->name);
 
-  mod.instruments.resize(num_instruments);
+  mod->instruments.resize(num_instruments);
   for (size_t x = 0; x < num_instruments; x++) {
-    auto& i = mod.instruments[x];
+    auto& i = mod->instruments[x];
     i.name = r.read(0x16);
     strip_trailing_zeroes(i.name);
     i.num_samples = static_cast<uint32_t>(r.get_u16r()) << 1;
@@ -127,15 +127,15 @@ Module load_mod(StringReader& r) {
     i.loop_length_samples = static_cast<uint32_t>(r.get_u16r()) << 1;
   }
 
-  mod.partition_count = r.get_u8();
+  mod->partition_count = r.get_u8();
   r.get_u8(); // unused
-  r.read_into(mod.partition_table.data(), mod.partition_table.size());
+  r.read_into(mod->partition_table.data(), mod->partition_table.size());
 
   // We should have gotten to exactly the same offset that we read ahead to at
   // the beginning, unless there were not 31 instruments.
   uint32_t inplace_extension_signature = r.get_u32r();
-  if (mod.extension_signature &&
-      mod.extension_signature != inplace_extension_signature) {
+  if (mod->extension_signature &&
+      mod->extension_signature != inplace_extension_signature) {
     throw logic_error("read-ahead extension signature does not match inplace extension signature");
   }
 
@@ -144,17 +144,17 @@ Module load_mod(StringReader& r) {
   // pattern 0 is valid), and even patterns that do not appear in this table but
   // are less than the maximum value will exist in the file.
   size_t num_patterns = 0;
-  for (size_t x = 0; x < mod.partition_count; x++) {
-    if (num_patterns <= mod.partition_table[x]) {
-      num_patterns = mod.partition_table[x] + 1;
+  for (size_t x = 0; x < mod->partition_count; x++) {
+    if (num_patterns <= mod->partition_table[x]) {
+      num_patterns = mod->partition_table[x] + 1;
     }
   }
 
   // Load the patterns.
-  mod.patterns.resize(num_patterns);
+  mod->patterns.resize(num_patterns);
   for (size_t x = 0; x < num_patterns; x++) {
-    auto& pat = mod.patterns[x];
-    pat.divisions.resize(mod.num_tracks * 64);
+    auto& pat = mod->patterns[x];
+    pat.divisions.resize(mod->num_tracks * 64);
     for (auto& div : pat.divisions) {
       div.wx = r.get_u16r();
       div.yz = r.get_u16r();
@@ -162,13 +162,14 @@ Module load_mod(StringReader& r) {
   }
 
   // Load the sample data for each instrument.
-  for (auto& i : mod.instruments) {
-    i.original_sample_data = r.read(i.num_samples);
+  for (auto& i : mod->instruments) {
+    i.original_sample_data.resize(i.num_samples);
+    r.read_into(i.original_sample_data.data(), i.num_samples);
     i.sample_data.resize(i.num_samples);
     for (size_t x = 0; x < i.num_samples; x++) {
       int8_t sample = i.original_sample_data[x];
       i.sample_data[x] = (sample == -0x80)
-          ? -1.0
+          ? -0.5
           : (static_cast<float>(sample) / 255.0f);
     }
   }
@@ -180,7 +181,7 @@ Module load_mod(StringReader& r) {
 
 void disassemble_pattern_row(
     FILE* stream,
-    const Module& mod,
+    shared_ptr<const Module> mod,
     uint8_t pattern_num,
     uint8_t y,
     uint64_t flags) {
@@ -203,7 +204,7 @@ void disassemble_pattern_row(
   };
   bool use_color = flags & Flags::TerminalColor;
 
-  const auto& p = mod.patterns.at(pattern_num);
+  const auto& p = mod->patterns.at(pattern_num);
   fputs("  ", stream);
   if (use_color) {
     if (y == 0) {
@@ -213,8 +214,8 @@ void disassemble_pattern_row(
     }
   }
   fprintf(stream, "%02hhu +%2hhu", pattern_num, y);
-  for (size_t z = 0; z < mod.num_tracks; z++) {
-    const auto& div = p.divisions[y * mod.num_tracks + z];
+  for (size_t z = 0; z < mod->num_tracks; z++) {
+    const auto& div = p.divisions[y * mod->num_tracks + z];
     uint8_t instrument_num = div.instrument_num();
     uint16_t period = div.period();
     uint16_t effect = div.effect();
@@ -259,15 +260,28 @@ void disassemble_pattern_row(
   }
 }
 
-void disassemble_mod(FILE* stream, const Module& mod, uint64_t flags) {
-  fprintf(stream, "Name: %s\n", mod.name.c_str());
-  fprintf(stream, "Tracks: %zu\n", mod.num_tracks);
-  fprintf(stream, "Instruments: %zu\n", mod.instruments.size());
-  fprintf(stream, "Partitions: %hhu\n", mod.partition_count);
-  fprintf(stream, "Extension signature: %08X\n", mod.extension_signature);
+void print_mod_text(FILE* stream, shared_ptr<const Module> mod) {
+  fprintf(stream, "Name: %s\n", mod->name.c_str());
+  fprintf(stream, "Instruments/Notes:\n");
+  for (size_t x = 0; x < mod->instruments.size(); x++) {
+    const auto& i = mod->instruments[x];
+    if (i.name.empty() && i.sample_data.empty()) {
+      continue;
+    }
+    string escaped_name = escape_quotes(i.name);
+    fprintf(stream, "  [%02zu] %s\n", x + 1, escaped_name.c_str());
+  }
+}
 
-  for (size_t x = 0; x < mod.instruments.size(); x++) {
-    const auto& i = mod.instruments[x];
+void disassemble_mod(FILE* stream, shared_ptr<const Module> mod, uint64_t flags) {
+  fprintf(stream, "Name: %s\n", mod->name.c_str());
+  fprintf(stream, "Tracks: %zu\n", mod->num_tracks);
+  fprintf(stream, "Instruments: %zu\n", mod->instruments.size());
+  fprintf(stream, "Partitions: %hhu\n", mod->partition_count);
+  fprintf(stream, "Extension signature: %08X\n", mod->extension_signature);
+
+  for (size_t x = 0; x < mod->instruments.size(); x++) {
+    const auto& i = mod->instruments[x];
     fputc('\n', stream);
     string escaped_name = escape_quotes(i.name);
     fprintf(stream, "Instrument %zu: %s\n", x + 1, escaped_name.c_str());
@@ -278,7 +292,7 @@ void disassemble_mod(FILE* stream, const Module& mod, uint64_t flags) {
     fprintf(stream, "  Data: (%zu samples)\n", i.sample_data.size());
 
     if (flags & Flags::ShowSampleData) {
-      print_data(stream, i.original_sample_data);
+      print_data(stream, i.original_sample_data.data(), i.original_sample_data.size());
     }
 
     if (flags & Flags::ShowSampleWaveforms) {
@@ -305,7 +319,7 @@ void disassemble_mod(FILE* stream, const Module& mod, uint64_t flags) {
     }
   }
 
-  for (size_t x = 0; x < mod.patterns.size(); x++) {
+  for (size_t x = 0; x < mod->patterns.size(); x++) {
     fputc('\n', stream);
     fprintf(stream, "Pattern %zu\n", x);
     for (size_t y = 0; y < 64; y++) {
@@ -316,192 +330,247 @@ void disassemble_mod(FILE* stream, const Module& mod, uint64_t flags) {
 
   fputc('\n', stream);
   fprintf(stream, "Partition table:\n");
-  for (size_t x = 0; x < mod.partition_count; x++) {
-    fprintf(stream, "  Partition %zu: %hu\n", x, mod.partition_table[x]);
+  for (size_t x = 0; x < mod->partition_count; x++) {
+    fprintf(stream, "  Partition %zu: %hu\n", x, mod->partition_table[x]);
   }
 }
 
 
 
 void export_mod_instruments(
-    const Module& mod, size_t output_sample_rate, const char* output_prefix) {
+    shared_ptr<const Module> mod, size_t output_sample_rate, const char* output_prefix) {
   // Andrew's observational spec notes that about 8287 bytes of data are sent to
-  // the channel when a normal sample is played at C2. Empirically, it seems
-  // like this is 0.5x the sample rate we need to make music sound normal. I
-  // don't (yet) know why this is.
-  const float upscale_ratio = static_cast<double>(output_sample_rate) / 16574.0;
-  for (size_t x = 0; x < mod.instruments.size(); x++) {
-    const auto& i = mod.instruments[x];
+  // the channel per second when a normal sample is played at C2. Empirically,
+  // it seems like this is 0.5x the sample rate we need to make music sound
+  // normal. Maybe the spec should have said 8287 words were sent to the channel
+  // per second instead?
+  for (size_t x = 0; x < mod->instruments.size(); x++) {
+    const auto& i = mod->instruments[x];
     if (i.sample_data.empty()) {
       fprintf(stderr, "... (%zu) \"%s\" -> (no sound data)\n",
           x,
           i.name.c_str());
     } else {
-      auto upscaled_data = resample(
-          i.sample_data, 1, upscale_ratio, SRC_SINC_BEST_QUALITY);
-      string output_filename = string_printf("%s_%zu.wav", output_prefix, x + 1);
-      fprintf(stderr, "... (%zu) \"%s\" -> %zu samples, %zu upscaled, +%hhdft, %02hhX vol, loop [%hux%hu] => %s\n",
+      string escaped_name = escape_quotes(i.name);
+      fprintf(stderr, "... (%zu) \"%s\" -> %zu samples, +%hhdft, %02hhX vol, loop [%hux%hu]\n",
           x,
-          i.name.c_str(),
+          escaped_name.c_str(),
           i.sample_data.size(),
-          upscaled_data.size(),
           i.finetune,
           i.volume,
           i.loop_start_samples,
-          i.loop_length_samples,
-          output_filename.c_str());
-      save_wav(output_filename.c_str(), upscaled_data, output_sample_rate, 1);
+          i.loop_length_samples);
+
+      string output_filename_u8 = string_printf("%s_%zu.u8.wav", output_prefix, x + 1);
+      vector<uint8_t> u8_sample_data;
+      u8_sample_data.reserve(i.num_samples);
+      for (int8_t sample : i.original_sample_data) {
+        u8_sample_data.emplace_back(static_cast<uint8_t>(sample) - 0x80);
+      }
+      save_wav(output_filename_u8.c_str(), u8_sample_data, 16574, 1);
+
+      string output_filename_f32 = string_printf("%s_%zu.f32.wav", output_prefix, x + 1);
+      save_wav(output_filename_f32.c_str(), i.sample_data, 16574, 1);
     }
   }
 }
 
 
 
-struct Timing {
-  size_t sample_rate;
-  size_t beats_per_minute;
-  size_t ticks_per_division;
-  double divisions_per_minute;
-  double ticks_per_second;
-  double samples_per_tick;
+class MODSynthesizer {
+public:
+  struct Options {
+    size_t output_sample_rate;
+    int resample_method;
+    size_t skip_partitions;
+    unordered_set<size_t> mute_tracks;
+    unordered_set<size_t> solo_tracks;
+    float tempo_bias;
+    uint64_t flags;
 
-  // The observational specification by Andrew Scott gives this equation
-  // describing how timing works:
-  // divisions/minute = 24 * (beats/minute) / (ticks/division)
-  // The number of samples per tick, then, is:
-  // samples/tick = (samples/sec) * (secs/tick)
-  // samples/tick = sample_rate / (ticks/sec)
-  // samples/tick = sample_rate / (divisions/sec * ticks/division)
-  // samples/tick = sample_rate / ((divisions/min / 60) * ticks/division)
-  // samples/tick = sample_rate * 60 / (divisions/min * ticks/division)
-  Timing(
-      size_t sample_rate,
-      size_t beats_per_minute = 125,
-      size_t ticks_per_division = 6)
-    : sample_rate(sample_rate),
-      beats_per_minute(beats_per_minute),
-      ticks_per_division(ticks_per_division),
-      divisions_per_minute(static_cast<double>(24 * this->beats_per_minute)
-        / this->ticks_per_division),
-      ticks_per_second(
-        static_cast<double>(this->divisions_per_minute * this->ticks_per_division) / 60),
-      samples_per_tick(static_cast<double>(this->sample_rate * 60)
-        / (this->divisions_per_minute * this->ticks_per_division)) { }
-  string str() const {
-    return string_printf("%zukHz %zubpm %zut/d => %lgd/m %lgt/sec %lgsmp/t",
-        this->sample_rate,
-        this->beats_per_minute,
-        this->ticks_per_division,
-        this->divisions_per_minute,
-        this->ticks_per_second,
-        this->samples_per_tick);
+    Options()
+      : output_sample_rate(48000),
+        resample_method(SRC_SINC_BEST_QUALITY),
+        skip_partitions(0),
+        mute_tracks(),
+        solo_tracks(),
+        tempo_bias(1.0),
+        flags(Flags::Default) { }
+  };
+
+
+protected:
+  struct Timing {
+    size_t sample_rate;
+    size_t beats_per_minute;
+    size_t ticks_per_division;
+    double divisions_per_minute;
+    double ticks_per_second;
+    double samples_per_tick;
+
+    // The observational specification by Andrew Scott gives this equation
+    // describing how timing works:
+    // divisions/minute = 24 * (beats/minute) / (ticks/division)
+    // The number of samples per tick, then, is:
+    // samples/tick = (samples/sec) * (secs/tick)
+    // samples/tick = sample_rate / (ticks/sec)
+    // samples/tick = sample_rate / (divisions/sec * ticks/division)
+    // samples/tick = sample_rate / ((divisions/min / 60) * ticks/division)
+    // samples/tick = sample_rate * 60 / (divisions/min * ticks/division)
+    Timing(
+        size_t sample_rate,
+        size_t beats_per_minute = 125,
+        size_t ticks_per_division = 6)
+      : sample_rate(sample_rate),
+        beats_per_minute(beats_per_minute),
+        ticks_per_division(ticks_per_division),
+        divisions_per_minute(static_cast<double>(24 * this->beats_per_minute)
+          / this->ticks_per_division),
+        ticks_per_second(
+          static_cast<double>(this->divisions_per_minute * this->ticks_per_division) / 60),
+        samples_per_tick(static_cast<double>(this->sample_rate * 60)
+          / (this->divisions_per_minute * this->ticks_per_division)) { }
+    string str() const {
+      return string_printf("%zukHz %zubpm %zut/d => %lgd/m %lgt/sec %lgsmp/t",
+          this->sample_rate,
+          this->beats_per_minute,
+          this->ticks_per_division,
+          this->divisions_per_minute,
+          this->ticks_per_second,
+          this->samples_per_tick);
+    }
+  };
+
+  struct TrackState {
+    size_t index;
+
+    int32_t instrument_num; // 1-based! 0 = no instrument
+    int32_t period;
+    int32_t volume; // 0 - 64
+    int32_t panning; // 0 (left) - 64 (right)
+    double input_sample_offset; // relative to input samples, not any resampling thereof
+    uint8_t vibrato_waveform;
+    float vibrato_offset;
+
+    uint8_t arpeggio_arg;
+    uint8_t sample_retrigger_interval_ticks;
+    uint8_t sample_start_delay_ticks;
+    int8_t cut_sample_after_ticks;
+    int32_t delayed_sample_instrument_num;
+    int32_t delayed_sample_period;
+    int16_t per_tick_period_increment;
+    int16_t per_tick_volume_increment;
+    int16_t slide_target_period;
+    int16_t vibrato_amplitude;
+    int16_t vibrato_cycles;
+    // These are not reset each division, and are used for effects that continue a
+    // previous effect
+    int16_t last_slide_target_period;
+    int16_t last_per_tick_period_increment;
+    int16_t last_vibrato_amplitude;
+    int16_t last_vibrato_cycles;
+
+    TrackState()
+      : index(0),
+        instrument_num(0),
+        period(0),
+        volume(64),
+        input_sample_offset(0.0),
+        vibrato_waveform(0),
+        vibrato_offset(0.0),
+        last_slide_target_period(0),
+        last_per_tick_period_increment(0),
+        last_vibrato_amplitude(0),
+        last_vibrato_cycles (0) {
+      this->reset_division_scoped_effects();
+    }
+
+    void reset_division_scoped_effects() {
+      this->arpeggio_arg = 0;
+      this->sample_retrigger_interval_ticks = 0;
+      this->sample_start_delay_ticks = 0;
+      this->cut_sample_after_ticks = -1;
+      this->delayed_sample_instrument_num = 0;
+      this->delayed_sample_period = 0;
+      this->per_tick_period_increment = 0;
+      this->per_tick_volume_increment = 0;
+      this->slide_target_period = 0;
+      this->vibrato_amplitude = 0;
+      this->vibrato_cycles = 0;
+    }
+  };
+
+  shared_ptr<const Module> mod;
+  shared_ptr<const Options> opts;
+  Timing timing;
+  vector<TrackState> tracks;
+  SampleCache<uint8_t> sample_cache;
+
+  size_t partition_index;
+  ssize_t division_index;
+  ssize_t pattern_loop_start_index;
+  ssize_t pattern_loop_times_remaining;
+  bool jump_to_pattern_loop_start;
+  size_t total_output_samples;
+  int32_t pattern_break_target;
+  ssize_t divisions_to_delay;
+
+  virtual void on_tick_samples_ready(vector<float>&&) = 0;
+
+public:
+  MODSynthesizer(shared_ptr<const Module> mod, shared_ptr<const Options> opts)
+    : mod(mod),
+      opts(opts),
+      timing(this->opts->output_sample_rate),
+      tracks(this->mod->num_tracks),
+      sample_cache(this->opts->resample_method),
+      partition_index(this->opts->skip_partitions),
+      division_index(0),
+      pattern_loop_start_index(0),
+      pattern_loop_times_remaining(-1),
+      jump_to_pattern_loop_start(false),
+      total_output_samples(0),
+      pattern_break_target(-1),
+      divisions_to_delay(0) {
+    // Initialize track state which depends on track index
+    for (size_t x = 0; x < this->tracks.size(); x++) {
+      this->tracks[x].index = x;
+      // Tracks 1 and 2 (mod 4) are on the right; the others are on the left.
+      // These assignments can be overridden by a [14][8][x] (0xE8x) effect.
+      this->tracks[x].panning = ((x & 3) == 1) || ((x & 3) == 2) ? 0x30 : 0x10;
+    }
   }
-};
 
-struct TrackState {
-  int32_t instrument_num; // 1-based! 0 = no instrument
-  int32_t period;
-  int32_t volume; // 0 - 64
-  int32_t panning; // 0 (left) - 64 (right)
-  double input_sample_offset; // relative to input samples, not any resampling thereof
-  uint8_t vibrato_waveform;
-  float vibrato_offset;
-
-  uint8_t arpeggio_arg;
-  uint8_t sample_retrigger_interval_ticks;
-  uint8_t sample_start_delay_ticks;
-  int8_t cut_sample_after_ticks;
-  int32_t delayed_sample_instrument_num;
-  int32_t delayed_sample_period;
-  int16_t per_tick_period_increment;
-  int16_t per_tick_volume_increment;
-  int16_t slide_target_period;
-  int16_t vibrato_amplitude;
-  int16_t vibrato_cycles;
-  // These are not reset each division, and are used for effects that continue a
-  // previous effect
-  int16_t last_slide_target_period;
-  int16_t last_per_tick_period_increment;
-  int16_t last_vibrato_amplitude;
-  int16_t last_vibrato_cycles;
-
-  TrackState()
-    : instrument_num(0),
-      period(0),
-      volume(64),
-      input_sample_offset(0.0),
-      vibrato_waveform(0),
-      vibrato_offset(0.0),
-      last_slide_target_period(0),
-      last_per_tick_period_increment(0),
-      last_vibrato_amplitude(0),
-      last_vibrato_cycles (0) {
-    this->reset_division_scoped_effects();
-  }
-
-  void reset_division_scoped_effects() {
-    this->arpeggio_arg = 0;
-    this->sample_retrigger_interval_ticks = 0;
-    this->sample_start_delay_ticks = 0;
-    this->cut_sample_after_ticks = -1;
-    this->delayed_sample_instrument_num = 0;
-    this->delayed_sample_period = 0;
-    this->per_tick_period_increment = 0;
-    this->per_tick_volume_increment = 0;
-    this->slide_target_period = 0;
-    this->vibrato_amplitude = 0;
-    this->vibrato_cycles = 0;
-  }
-};
-
-void render_mod(
-    const Module& mod,
-    size_t output_sample_rate,
-    int resample_method,
-    size_t skip_partitions,
-    uint64_t flags,
-    std::function<void(vector<float>&&)> on_tick_complete) {
-  SampleCache<uint8_t> sample_cache(resample_method);
-
-  Timing timing(output_sample_rate);
-  size_t current_partition = skip_partitions; // index in partition table
-  ssize_t current_cell = 0; // division index in pattern (0-63)
-  ssize_t pattern_loop_start = 0;
-  ssize_t pattern_loop_times_remaining = -1;
-  bool jump_to_pattern_loop_start = false;
-
-  {
-    string s = timing.str();
-    fprintf(stderr, "render: initial timing is %s\n", s.c_str());
-  }
-
-  vector<TrackState> tracks(mod.num_tracks);
-
-  // Tracks 1 and 2 (mod 4) are on the right; the others are on the left. These
-  // assignments can be overridden by a [14][8][x] (0xE8x) effect.
-  for (size_t track_index = 0; track_index < tracks.size(); track_index++) {
-    bool right_pan = ((track_index & 3) == 1) || ((track_index & 3) == 2);
-    tracks[track_index].panning = right_pan ? 0x30 : 0x10;
-  }
-
-  size_t total_output_samples = 0;
-  while (current_partition < mod.partition_count) {
+protected:
+  void show_current_division() const {
     // Show current state
-    uint8_t current_pattern = mod.partition_table.at(current_partition);
-    fprintf(stderr, "  %02zu", current_partition);
-    disassemble_pattern_row(stderr, mod, current_pattern, current_cell, flags);
-    fprintf(stderr, " =  %3zu/%-2zu @ %.07gs\n",
-        timing.beats_per_minute,
-        timing.ticks_per_division,
-        static_cast<float>(total_output_samples) / (2 * output_sample_rate));
+    uint8_t pattern_index = this->mod->partition_table.at(this->partition_index);
+    fprintf(stderr, "  %02zu", this->partition_index);
+    disassemble_pattern_row(
+        stderr,
+        this->mod,
+        pattern_index,
+        this->division_index,
+        this->opts->flags);
+    fprintf(stderr, " =  %3zu/%-2zu @ %.7gs\n",
+        this->timing.beats_per_minute,
+        this->timing.ticks_per_division,
+        static_cast<float>(this->total_output_samples) /
+          (2 * this->opts->output_sample_rate));
+  }
 
-    // Execute all commands in the current division in each track
-    int32_t pattern_break_target = -1;
-    ssize_t divisions_to_delay = 0;
-    const auto& pattern = mod.patterns.at(current_pattern);
-    for (size_t track_index = 0; track_index < mod.num_tracks; track_index++) {
-      auto& track = tracks[track_index];
-      const auto& div = pattern.divisions.at(current_cell * mod.num_tracks + track_index);
+  const Module::Pattern& current_pattern() const {
+    uint8_t pattern_index = this->mod->partition_table.at(this->partition_index);
+    return this->mod->patterns.at(pattern_index);
+  }
+
+  void execute_current_division_commands() {
+    this->pattern_break_target = -1;
+    this->divisions_to_delay = 0;
+    const auto& pattern = this->current_pattern();
+    for (auto& track : this->tracks) {
+      const auto& div = pattern.divisions.at(
+          this->division_index * this->mod->num_tracks + track.index);
 
       // If a new note is to be played, reset the instrument number and/or
       // period, and the sample data offset (it will play from the beginning).
@@ -595,7 +664,14 @@ void render_mod(
      ticks)/64 cycles occur in the division". The waveform is set using
      effect [14][7]. Similar to [4].
 
-[8]: -- Unused -- */
+[8]: UNKNOWN
+     The observational spec says this effect is unused. I've seen a few MODs
+     that use it, but it's not clear for what. PlayerPRO uses it for precise
+     panning, but that doesn't seem to make sense with how it's used in the
+     MODs I've looked at. Further research is needed here.
+     See MODs:
+       @rzecho
+*/
 
         case 0x900: // Set sample offset
           // The spec says the parameter is essentially <<8 but is measured in
@@ -627,7 +703,7 @@ void render_mod(
           // This was probably just a typo in the original Protracker, but it's
           // now propagated everywhere... the high 4 bits are multiplied by 10,
           // not 16.
-          pattern_break_target = (((effect & 0x0F0) >> 4) * 10) + (effect & 0x00F);
+          this->pattern_break_target = (((effect & 0x0F0) >> 4) * 10) + (effect & 0x00F);
           break;
         case 0xE00: { // Sub-effects
           switch (effect & 0x0F0) {
@@ -670,15 +746,15 @@ void render_mod(
             case 0x060: { // Loop pattern
               uint8_t times = effect & 0x00F;
               if (times == 0) {
-                pattern_loop_start = current_cell;
+                this->pattern_loop_start_index = this->division_index;
               } else if (pattern_loop_times_remaining == -1) {
-                pattern_loop_times_remaining = times - 1;
-                jump_to_pattern_loop_start = true;
+                this->pattern_loop_times_remaining = times - 1;
+                this->jump_to_pattern_loop_start = true;
               } else if (pattern_loop_times_remaining > 0) {
-                pattern_loop_times_remaining--;
-                jump_to_pattern_loop_start = true;
+                this->pattern_loop_times_remaining--;
+                this->jump_to_pattern_loop_start = true;
               } else {
-                pattern_loop_times_remaining = -1;
+                this->pattern_loop_times_remaining = -1;
               }
               break;
             }
@@ -734,7 +810,7 @@ void render_mod(
               track.delayed_sample_period = div.period();
               break;
             case 0x0E0: // Delay pattern
-              divisions_to_delay = effect & 0x00F;
+              this->divisions_to_delay = effect & 0x00F;
               break;
 
 /*
@@ -754,283 +830,338 @@ void render_mod(
         case 0xF00: { // set speed
           uint8_t v = effect & 0xFF;
           if (v <= 32) {
-            timing = Timing(timing.sample_rate, timing.beats_per_minute, v);
+            this->timing = Timing(
+                this->timing.sample_rate, this->timing.beats_per_minute, v);
           } else {
-            timing = Timing(timing.sample_rate, v, timing.ticks_per_division);
+            this->timing = Timing(
+                this->timing.sample_rate, v, this->timing.ticks_per_division);
           }
           break;
         }
         UnimplementedEffect:
         default:
-          fprintf(stderr, "warning: (part %zu pat %hhu y %zd track %zu) unimplemented effect %03hX = [%hhu][%hhu][%hhu]\n",
-              current_partition,
-              current_pattern,
-              current_cell,
-              track_index,
-              effect,
-              static_cast<uint8_t>((effect >> 8) & 0x0F),
-              static_cast<uint8_t>((effect >> 4) & 0x0F),
-              static_cast<uint8_t>(effect & 0x0F));
+          fprintf(stderr, "warning: unimplemented effect %03hX\n", effect);
       }
     }
+  }
 
-    // Render sound for each tick within the division
-    for (ssize_t delayed_division_id = -1; delayed_division_id < divisions_to_delay; delayed_division_id++) {
-      for (size_t tick_num = 0; tick_num < timing.ticks_per_division; tick_num++) {
-        vector<float> tick_samples(timing.samples_per_tick * 2);
-        for (size_t track_index = 0; track_index < mod.num_tracks; track_index++) {
-          auto& track = tracks[track_index];
-          if (track.instrument_num == 0) {
-            continue; // Track has not played any sound yet
-          }
-          const auto& i = mod.instruments.at(track.instrument_num - 1);
-          if (track.input_sample_offset >= i.sample_data.size()) {
-            continue; // Previous sound is already done
-          }
-          if (track.sample_start_delay_ticks && (track.sample_start_delay_ticks == tick_num)) {
-            // Delay was requested via effect EDx and we should start the sample now
-            track.instrument_num = track.delayed_sample_instrument_num;
-            track.period = track.delayed_sample_period;
-            track.volume = 64;
-            track.input_sample_offset = 0.0;
-            if (!(track.vibrato_waveform & 4)) {
-              track.vibrato_offset = 0.0;
-            }
+  void render_current_division_audio() {
+    for (size_t tick_num = 0; tick_num < this->timing.ticks_per_division; tick_num++) {
+      size_t num_tick_samples = this->timing.samples_per_tick * 2;
+      if (opts->tempo_bias != 1.0) {
+        num_tick_samples /= opts->tempo_bias;
+      }
+      vector<float> tick_samples(num_tick_samples);
+      for (auto& track : this->tracks) {
 
-            track.sample_start_delay_ticks = 0;
-            track.delayed_sample_instrument_num = 0;
-            track.delayed_sample_period = 0;
-          }
-          if (track.sample_retrigger_interval_ticks &&
-              ((tick_num % track.sample_retrigger_interval_ticks) == 0)) {
-            track.input_sample_offset = 0;
-          }
-          if (track.cut_sample_after_ticks >= 0 && tick_num == track.cut_sample_after_ticks) {
-            track.volume = 0;
-          }
-
-          uint16_t effective_period = track.period;
-          if (i.finetune) {
-            effective_period *= pow(2, -static_cast<float>(i.finetune) / (12.0 * 8.0));
-          }
-          if (track.vibrato_amplitude && track.vibrato_cycles) {
-            float integer_part;
-            float wave_progress = modff(track.vibrato_offset, &integer_part);
-            float tick_vibrato_amplitude;
-            switch (track.vibrato_waveform & 3) {
-              case 0: // Sine wave
-              case 3: // Supposedly random, but that would probably sound weird
-                tick_vibrato_amplitude = sinf(wave_progress * 2 * M_PI);
-                break;
-              case 1: // Descending sawtooth wave
-                tick_vibrato_amplitude = 1.0 - (2.0 * wave_progress);
-                break;
-              case 2: // Square wave
-                tick_vibrato_amplitude = (wave_progress < 0.5) ? 1.0 : -1.0;
-                break;
-            }
-            tick_vibrato_amplitude *= static_cast<float>(track.vibrato_amplitude) / 16.0;
-            effective_period *= pow(2, -tick_vibrato_amplitude / 12.0);
-          }
-
-          // Handle arpeggio effects, which can change a sample's period within
-          // a tick. To handle this, we further divide each tick into "segments"
-          // where different periods can be used.
-          size_t division_output_offset = tick_num * tick_samples.size();
-          // This is a list of (start_at_output_sample, instrument_period) for
-          // the current tick
-          vector<pair<size_t, uint16_t>> segments({{0, effective_period}});
-          if (track.arpeggio_arg) {
-            // We multiply by 2 and 4 here since the output is stereo
-            segments.emplace_back(make_pair(
-                2 * timing.samples_per_tick * timing.ticks_per_division / 3,
-                track.period / pow(2, ((track.arpeggio_arg >> 4) & 0x0F) / 12.0)));
-            segments.emplace_back(make_pair(
-                4 * timing.samples_per_tick * timing.ticks_per_division / 3,
-                track.period / pow(2, (track.arpeggio_arg & 0x0F) / 12.0)));
-          }
-
-          // Apply the appropriate portion of the instrument's sample data to the
-          // tick output data
-          float track_volume_factor = static_cast<float>(track.volume) / 64.0;
-          float ins_volume_factor = static_cast<float>(i.volume) / 64.0;
-          const vector<float>* resampled_data = nullptr;
-          ssize_t segment_index = -1;
-          double src_ratio = -1.0;
-          double resampled_offset = -1.0;
-          double loop_start_offset = -1.0;
-          double loop_end_offset = -1.0;
-          for (size_t tick_output_offset = 0;
-               tick_output_offset < tick_samples.size();
-               tick_output_offset += 2, division_output_offset += 2) {
-
-            // Advance to the appropriate segment if there is one
-            bool changed_segment = false;
-            while ((segment_index < static_cast<ssize_t>(segments.size() - 1)) &&
-                division_output_offset >= segments.at(segment_index + 1).first) {
-              segment_index++;
-            changed_segment = true;
-            }
-            if (changed_segment) {
-              const auto& segment = segments.at(segment_index);
-
-              // Resample the instrument to the appropriate pitch
-              // TODO: For PAL Amiga, use 7093789.2 here instead. Should this be
-              // configurable?
-              // The input samples to be played per second is:
-              // track_input_samples_per_second = 7159090.5 / (2 * period)
-              // To convert this to the number of output samples per input sample,
-              // all  we have to do is divide the output sample rate by it:
-              // out_samples_per_in_sample = sample_rate / (7159090.5 / (2 * period))
-              // out_samples_per_in_sample = (sample_rate * 2 * period) / 7159090.5
-              // This gives how many samples to generate for each input sample.
-              src_ratio =
-                  static_cast<double>(2 * timing.sample_rate * segment.second) / 7159090.5;
-              resampled_data = &sample_cache.resample_add(
-                  track.instrument_num, i.sample_data, 1, src_ratio);
-              resampled_offset = track.input_sample_offset * src_ratio;
-
-              // The sample has a loop if the length in words is > 1. We convert words
-              // to samples long before this point, so we have to check for >2 here.
-              loop_start_offset = static_cast<double>(i.loop_start_samples) * src_ratio;
-              loop_end_offset = (i.loop_length_samples > 2)
-                  ? static_cast<double>(i.loop_start_samples + i.loop_length_samples) * src_ratio
-                  : 0.0;
-            }
-
-            if (!resampled_data) {
-              throw logic_error("resampled data not present at sound generation time");
-            }
-
-            // The sample could "end" here (and not below) because of
-            // floating-point imprecision
-            if (resampled_offset >= resampled_data->size()) {
-              if (loop_end_offset != 0.0) {
-                // This should only happen if the loop ends right at the end of
-                // the sample, so we can just blindly reset to the loop start
-                // offset.
-                throw runtime_error("sample ended after resample but loop is present");
-                track.input_sample_offset = loop_start_offset / src_ratio;
-              }
-              track.input_sample_offset = i.sample_data.size();
-              break;
-            }
-            float effective_sample =
-                resampled_data->at(static_cast<size_t>(resampled_offset)) *
-                track_volume_factor * ins_volume_factor;
-
-            tick_samples[tick_output_offset + 0] +=
-              effective_sample * (1.0 - static_cast<float>(track.panning) / 64.0); // L
-            tick_samples[tick_output_offset + 1] +=
-              effective_sample * (static_cast<float>(track.panning) / 64.0); // R
-
-            // TODO: The observational spec claims that the loop only begins after
-            // the sample has been played to the end once. Is this true? It seems
-            // like we should instead always jump back when we reach the end of
-            // the loop region, even the first time we reach it (which is what's
-            // implemented here).
-            resampled_offset++;
-            if (loop_end_offset != 0.0 && resampled_offset >= loop_end_offset) {
-              resampled_offset = loop_start_offset;
-            }
-
-            // Advance the input offset by a proportional amount to the sound we
-            // just generated, so the next tick will start at the right place
-            track.input_sample_offset = resampled_offset / src_ratio;
-
-            if (resampled_offset >= resampled_data->size()) {
-              break;
-            }
-          }
-          // Apparently per-tick slides don't happen after the last tick in the
-          // division (why? Protracker bug?)
-          if (tick_num != timing.ticks_per_division - 1) {
-            if (track.per_tick_period_increment) {
-              track.period += track.per_tick_period_increment;
-              // If a slide to note effect (3) is underway, enforce the limit
-              // given by the effect command
-              if (track.slide_target_period &&
-                  (((track.per_tick_period_increment > 0) &&
-                    (track.period > track.slide_target_period)) ||
-                   ((track.per_tick_period_increment < 0) &&
-                    (track.period < track.slide_target_period)))) {
-                track.period = track.slide_target_period;
-                track.per_tick_period_increment = 0;
-                track.slide_target_period = 0;
-              }
-              // TODO: implement limits here (they may be different across trackers)
-              if (track.period <= 0) {
-                track.period = 1;
-              }
-            }
-            if (track.per_tick_volume_increment) {
-              track.volume += track.per_tick_volume_increment;
-              if (track.volume < 0) {
-                track.volume = 0;
-              } else if (track.volume > 64) {
-                track.volume = 64;
-              }
-            }
-          }
-          // TODO: Should we advance this only sometimes? What would the right
-          // condition be here?
-          track.vibrato_offset += static_cast<float>(track.vibrato_cycles) / 64;
+        // If track is muted or another track is solo'd, don't play its sound
+        if (this->opts->mute_tracks.count(track.index) ||
+            (!this->opts->solo_tracks.empty() &&
+             !this->opts->solo_tracks.count(track.index))) {
+          continue;
         }
-        total_output_samples += tick_samples.size();
-        on_tick_complete(move(tick_samples));
-      }
 
-      // Clear division-scoped effects on all tracks
-      for (auto& track : tracks) {
-        track.reset_division_scoped_effects();
+        if (track.instrument_num == 0) {
+          continue; // Track has not played any sound yet
+        }
+
+        const auto& i = this->mod->instruments.at(track.instrument_num - 1);
+        if (track.input_sample_offset >= i.sample_data.size()) {
+          continue; // Previous sound is already done
+        }
+
+        if (track.sample_start_delay_ticks &&
+            (track.sample_start_delay_ticks == tick_num)) {
+          // Delay requested via effect EDx and we should start the sample now
+          track.instrument_num = track.delayed_sample_instrument_num;
+          track.period = track.delayed_sample_period;
+          track.volume = 64;
+          track.input_sample_offset = 0.0;
+          if (!(track.vibrato_waveform & 4)) {
+            track.vibrato_offset = 0.0;
+          }
+          track.sample_start_delay_ticks = 0;
+          track.delayed_sample_instrument_num = 0;
+          track.delayed_sample_period = 0;
+        }
+
+        if (track.sample_retrigger_interval_ticks &&
+            ((tick_num % track.sample_retrigger_interval_ticks) == 0)) {
+          track.input_sample_offset = 0;
+        }
+        if ((track.cut_sample_after_ticks >= 0) &&
+            (tick_num == track.cut_sample_after_ticks)) {
+          track.volume = 0;
+        }
+
+        uint16_t effective_period = track.period;
+        if (i.finetune) {
+          effective_period *= pow(2, -static_cast<float>(i.finetune) / (12.0 * 8.0));
+        }
+        if (track.vibrato_amplitude && track.vibrato_cycles) {
+          float integer_part;
+          float wave_progress = modff(track.vibrato_offset, &integer_part);
+          float tick_vibrato_amplitude;
+          switch (track.vibrato_waveform & 3) {
+            case 0: // Sine wave
+            case 3: // Supposedly random, but that would probably sound weird
+              tick_vibrato_amplitude = sinf(wave_progress * 2 * M_PI);
+              break;
+            case 1: // Descending sawtooth wave
+              tick_vibrato_amplitude = 1.0 - (2.0 * wave_progress);
+              break;
+            case 2: // Square wave
+              tick_vibrato_amplitude = (wave_progress < 0.5) ? 1.0 : -1.0;
+              break;
+          }
+          tick_vibrato_amplitude *= static_cast<float>(track.vibrato_amplitude) / 16.0;
+          effective_period *= pow(2, -tick_vibrato_amplitude / 12.0);
+        }
+
+        // Handle arpeggio effects, which can change a sample's period within
+        // a tick. To handle this, we further divide each tick into "segments"
+        // where different periods can be used.
+        size_t division_output_offset = tick_num * tick_samples.size();
+        // This is a list of (start_at_output_sample, instrument_period) for
+        // the current tick
+        vector<pair<size_t, uint16_t>> segments({{0, effective_period}});
+        if (track.arpeggio_arg) {
+          // We multiply by 2 and 4 here since the output is stereo
+          segments.emplace_back(make_pair(
+              2 * timing.samples_per_tick * timing.ticks_per_division / 3,
+              track.period / pow(2, ((track.arpeggio_arg >> 4) & 0x0F) / 12.0)));
+          segments.emplace_back(make_pair(
+              4 * timing.samples_per_tick * timing.ticks_per_division / 3,
+              track.period / pow(2, (track.arpeggio_arg & 0x0F) / 12.0)));
+        }
+
+        // Apply the appropriate portion of the instrument's sample data to the
+        // tick output data
+        float track_volume_factor = static_cast<float>(track.volume) / 64.0;
+        float ins_volume_factor = static_cast<float>(i.volume) / 64.0;
+        const vector<float>* resampled_data = nullptr;
+        ssize_t segment_index = -1;
+        double src_ratio = -1.0;
+        double resampled_offset = -1.0;
+        double loop_start_offset = -1.0;
+        double loop_end_offset = -1.0;
+        for (size_t tick_output_offset = 0;
+             tick_output_offset < tick_samples.size();
+             tick_output_offset += 2, division_output_offset += 2) {
+
+          // Advance to the appropriate segment if there is one
+          bool changed_segment = false;
+          while ((segment_index < static_cast<ssize_t>(segments.size() - 1)) &&
+              division_output_offset >= segments.at(segment_index + 1).first) {
+            segment_index++;
+            changed_segment = true;
+          }
+          if (changed_segment) {
+            const auto& segment = segments.at(segment_index);
+
+            // Resample the instrument to the appropriate pitch
+            // TODO: For PAL Amiga, use 7093789.2 here instead. Should this be
+            // configurable?
+            // The input samples to be played per second is:
+            // track_input_samples_per_second = 7159090.5 / (2 * period)
+            // To convert this to the number of output samples per input sample,
+            // all  we have to do is divide the output sample rate by it:
+            // out_samples_per_in_sample = sample_rate / (7159090.5 / (2 * period))
+            // out_samples_per_in_sample = (sample_rate * 2 * period) / 7159090.5
+            // This gives how many samples to generate for each input sample.
+            src_ratio =
+                static_cast<double>(2 * this->timing.sample_rate * segment.second) / 7159090.5;
+            resampled_data = &this->sample_cache.resample_add(
+                track.instrument_num, i.sample_data, 1, src_ratio);
+            resampled_offset = track.input_sample_offset * src_ratio;
+
+            // The sample has a loop if the length in words is > 1. We convert words
+            // to samples long before this point, so we have to check for >2 here.
+            loop_start_offset = static_cast<double>(i.loop_start_samples) * src_ratio;
+            loop_end_offset = (i.loop_length_samples > 2)
+                ? static_cast<double>(i.loop_start_samples + i.loop_length_samples) * src_ratio
+                : 0.0;
+          }
+
+          if (!resampled_data) {
+            throw logic_error("resampled data not present at sound generation time");
+          }
+
+          // The sample could "end" here (and not below) because of
+          // floating-point imprecision
+          if (resampled_offset >= resampled_data->size()) {
+            if (loop_end_offset != 0.0) {
+              // This should only happen if the loop ends right at the end of
+              // the sample, so we can just blindly reset to the loop start
+              // offset.
+              track.input_sample_offset = loop_start_offset / src_ratio;
+            } else {
+              track.input_sample_offset = i.sample_data.size();
+            }
+            break;
+          }
+          float effective_sample =
+              resampled_data->at(static_cast<size_t>(resampled_offset)) *
+              track_volume_factor * ins_volume_factor;
+
+          tick_samples[tick_output_offset + 0] +=
+            effective_sample * (1.0 - static_cast<float>(track.panning) / 64.0); // L
+          tick_samples[tick_output_offset + 1] +=
+            effective_sample * (static_cast<float>(track.panning) / 64.0); // R
+
+          // TODO: The observational spec claims that the loop only begins after
+          // the sample has been played to the end once. Is this true? It seems
+          // like we should instead always jump back when we reach the end of
+          // the loop region, even the first time we reach it (which is what's
+          // implemented here).
+          resampled_offset++;
+          if (loop_end_offset != 0.0 && resampled_offset >= loop_end_offset) {
+            resampled_offset = loop_start_offset;
+          }
+
+          // Advance the input offset by a proportional amount to the sound we
+          // just generated, so the next tick will start at the right place
+          track.input_sample_offset = resampled_offset / src_ratio;
+
+          if (resampled_offset >= resampled_data->size()) {
+            break;
+          }
+        }
+        // Apparently per-tick slides don't happen after the last tick in the
+        // division. (Why? Protracker bug?)
+        if (tick_num != timing.ticks_per_division - 1) {
+          if (track.per_tick_period_increment) {
+            track.period += track.per_tick_period_increment;
+            // If a slide to note effect (3) is underway, enforce the limit
+            // given by the effect command
+            if (track.slide_target_period &&
+                (((track.per_tick_period_increment > 0) &&
+                  (track.period > track.slide_target_period)) ||
+                 ((track.per_tick_period_increment < 0) &&
+                  (track.period < track.slide_target_period)))) {
+              track.period = track.slide_target_period;
+              track.per_tick_period_increment = 0;
+              track.slide_target_period = 0;
+            }
+            // TODO: implement limits here (they may be different across trackers)
+            if (track.period <= 0) {
+              track.period = 1;
+            }
+          }
+          if (track.per_tick_volume_increment) {
+            track.volume += track.per_tick_volume_increment;
+            if (track.volume < 0) {
+              track.volume = 0;
+            } else if (track.volume > 64) {
+              track.volume = 64;
+            }
+          }
+        }
+        // TODO: Should we advance this only sometimes? What would the right
+        // condition be here?
+        track.vibrato_offset += static_cast<float>(track.vibrato_cycles) / 64;
       }
+      this->total_output_samples += tick_samples.size();
+      on_tick_samples_ready(move(tick_samples));
     }
 
-    // Advance to the next cell or pattern, or skip to the next pattern if a
-    // pattern break was given
-    if (pattern_break_target >= 0) {
-      current_cell = pattern_break_target;
-      current_partition++;
-      pattern_loop_start = 0;
-      if (current_partition >= mod.partition_count) {
+    // Clear division-scoped effects on all tracks
+    for (auto& track : tracks) {
+      track.reset_division_scoped_effects();
+    }
+  }
+
+  void advance_division() {
+    if (this->pattern_break_target >= 0) {
+      this->division_index = this->pattern_break_target;
+      this->pattern_break_target = -1;
+      this->partition_index++;
+      this->pattern_loop_start_index = 0;
+      if (this->partition_index >= this->mod->partition_count) {
         return;
       }
-      if (current_cell >= 64) {
+      if (this->division_index >= 64) {
         throw runtime_error("pattern break opcode jumps past end of next pattern");
       }
-    } else if (jump_to_pattern_loop_start) {
-      current_cell = pattern_loop_start;
-      jump_to_pattern_loop_start = false;
+    } else if (this->jump_to_pattern_loop_start) {
+      this->division_index = this->pattern_loop_start_index;
+      this->jump_to_pattern_loop_start = false;
     } else {
-      current_cell++;
-      if (current_cell >= 64) {
-        current_cell = 0;
-        current_partition++;
-        pattern_loop_start = 0;
+      this->division_index++;
+      if (this->division_index >= 64) {
+        this->division_index = 0;
+        this->partition_index++;
+        this->pattern_loop_start_index = 0;
       }
     }
   }
-}
 
-vector<float> render_mod(
-    const Module& mod,
-    size_t output_sample_rate,
-    int resample_method,
-    size_t skip_partitions,
-    uint64_t flags) {
-  size_t all_samples_count = 0;
-  deque<vector<float>> all_tick_data;
-  render_mod(mod, output_sample_rate, resample_method, skip_partitions, flags, [&](vector<float>&& tick_data) -> void {
-    all_tick_data.emplace_back(move(tick_data));
-  });
-
-  vector<float> ret;
-  ret.reserve(all_samples_count);
-  for (const auto& tick_data : all_tick_data) {
-    ret.insert(ret.end(), tick_data.begin(), tick_data.end());
+public:
+  void run() {
+    while (this->partition_index < this->mod->partition_count) {
+      this->show_current_division();
+      this->execute_current_division_commands();
+      for (this->divisions_to_delay++;
+           this->divisions_to_delay > 0;
+           this->divisions_to_delay--) {
+        this->render_current_division_audio();
+      }
+      this->advance_division();
+    }
   }
-  return ret;
-}
+};
+
+
+
+class MODExporter : public MODSynthesizer {
+protected:
+  deque<vector<float>> tick_samples;
+  vector<float> all_tick_samples;
+
+public:
+  MODExporter(shared_ptr<const Module> mod, shared_ptr<const Options> opts)
+    : MODSynthesizer(mod, opts) { }
+
+  virtual void on_tick_samples_ready(vector<float>&& samples) {
+    this->tick_samples.emplace_back(move(samples));
+  }
+
+  const vector<float>& result() {
+    if (this->all_tick_samples.empty()) {
+      this->all_tick_samples.reserve(this->total_output_samples);
+      for (const auto& s : this->tick_samples) {
+        this->all_tick_samples.insert(
+            this->all_tick_samples.end(), s.begin(), s.end());
+      }
+    }
+    return this->all_tick_samples;
+  }
+};
+
+
+
+class MODPlayer : public MODSynthesizer {
+protected:
+  AudioStream stream;
+
+public:
+  MODPlayer(
+      shared_ptr<const Module> mod,
+      shared_ptr<const Options> opts,
+      size_t num_play_buffers)
+    : MODSynthesizer(mod, opts),
+      stream(this->opts->output_sample_rate, format_for_name("stereo-f32"),
+        num_play_buffers) { }
+
+  virtual void on_tick_samples_ready(vector<float>&& samples) {
+    this->stream.check_buffers();
+    this->stream.add_samples(samples.data(), samples.size());
+  }
+
+  void drain() {
+    this->stream.wait();
+  }
+};
 
 
 
@@ -1085,7 +1216,7 @@ Usage:\n\
     Plays the sequence through the default audio device.\n\
     All options to --render apply here too. Additional options:\n\
       --play-buffers=N: Generate this many ticks of audio ahead of the output\n\
-          device (default 32). If audio is choppy, try increasing this value.\n\
+          device (default 16). If audio is choppy, try increasing this value.\n\
 \n");
 }
 
@@ -1099,11 +1230,9 @@ int main(int argc, char** argv) {
 
   Behavior behavior = Behavior::Disassemble;
   const char* input_filename = nullptr;
-  size_t output_sample_rate = 48000;
-  size_t num_play_buffers = 64;
-  size_t skip_partitions = 0;
+  size_t num_play_buffers = 16;
   bool use_default_color_flags = true;
-  uint64_t flags = Flags::Default;
+  shared_ptr<MODSynthesizer::Options> opts(new MODSynthesizer::Options());
   for (int x = 1; x < argc; x++) {
     if (!strcmp(argv[x], "--disassemble")) {
       behavior = Behavior::Disassemble;
@@ -1111,26 +1240,36 @@ int main(int argc, char** argv) {
       behavior = Behavior::ExportInstruments;
     } else if (!strcmp(argv[x], "--render")) {
       behavior = Behavior::Render;
+      opts->resample_method = SRC_SINC_BEST_QUALITY;
     } else if (!strcmp(argv[x], "--play")) {
       behavior = Behavior::Play;
+      opts->resample_method = SRC_LINEAR;
 
     } else if (!strcmp(argv[x], "--no-color")) {
-      flags &= ~Flags::TerminalColor;
+      opts->flags &= ~Flags::TerminalColor;
       use_default_color_flags = false;
     } else if (!strcmp(argv[x], "--color")) {
-      flags |= Flags::TerminalColor;
+      opts->flags |= Flags::TerminalColor;
       use_default_color_flags = false;
     } else if (!strcmp(argv[x], "--show-sample-data")) {
-      flags |= Flags::ShowSampleData;
+      opts->flags |= Flags::ShowSampleData;
     } else if (!strcmp(argv[x], "--show-sample-waveforms")) {
-      flags |= Flags::ShowSampleWaveforms;
+      opts->flags |= Flags::ShowSampleWaveforms;
+
+    } else if (!strncmp(argv[x], "--solo-track=", 13)) {
+      opts->solo_tracks.emplace(atoi(&argv[x][13]));
+    } else if (!strncmp(argv[x], "--mute-track=", 13)) {
+      opts->mute_tracks.emplace(atoi(&argv[x][13]));
+
+    } else if (!strncmp(argv[x], "--tempo-bias=", 13)) {
+      opts->tempo_bias = atof(&argv[x][13]);
 
     } else if (!strncmp(argv[x], "--skip-partitions=", 18)) {
-      skip_partitions = atoi(&argv[x][18]);
+      opts->skip_partitions = atoi(&argv[x][18]);
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
       num_play_buffers = atoi(&argv[x][15]);
     } else if (!strncmp(argv[x], "--sample-rate=", 14)) {
-      output_sample_rate = atoi(&argv[x][14]);
+      opts->output_sample_rate = atoi(&argv[x][14]);
 
     } else if (!input_filename) {
       input_filename = argv[x];
@@ -1150,39 +1289,41 @@ int main(int argc, char** argv) {
 
   if (use_default_color_flags &&
       isatty(fileno((behavior == Behavior::Disassemble) ? stdout : stderr))) {
-    flags |= Flags::TerminalColor;
+    opts->flags |= Flags::TerminalColor;
   }
 
-  unique_ptr<Module> mod;
+  shared_ptr<Module> mod;
   {
     string input_data = load_file(input_filename);
     StringReader r(input_data.data(), input_data.size());
-    mod.reset(new Module(load_mod(r)));
+    mod = load_mod(r);
   }
 
   switch (behavior) {
     case Behavior::Disassemble:
-      disassemble_mod(stdout, *mod, flags);
+      // We don't call print_mod_text in this case because all the text is
+      // contained in the disassembly
+      disassemble_mod(stdout, mod, opts->flags);
       break;
     case Behavior::ExportInstruments:
-      export_mod_instruments(*mod, output_sample_rate, input_filename);
+      export_mod_instruments(mod, opts->output_sample_rate, input_filename);
       break;
     case Behavior::Render: {
+      print_mod_text(stderr, mod);
       string output_filename = string(input_filename) + ".wav";
-      auto result = render_mod(*mod, output_sample_rate, SRC_SINC_BEST_QUALITY, skip_partitions, flags);
-      // normalize_amplitude(result);
-      save_wav(output_filename.c_str(), result, output_sample_rate, 2);
+      MODExporter exporter(mod, opts);
+      fprintf(stderr, "Synthesis:\n");
+      exporter.run();
+      save_wav(output_filename.c_str(), exporter.result(), opts->output_sample_rate, 2);
       break;
     }
     case Behavior::Play: {
+      print_mod_text(stderr, mod);
       init_al();
-      AudioStream stream(output_sample_rate, format_for_name("stereo-f32"), num_play_buffers);
-      render_mod(*mod, output_sample_rate, SRC_LINEAR, skip_partitions, flags, [&](vector<float>&& tick_samples) {
-        stream.check_buffers();
-        stream.add_samples(tick_samples.data(), tick_samples.size());
-      });
-      fprintf(stderr, "waiting for buffers to drain\n");
-      stream.wait();
+      MODPlayer player(mod, opts, num_play_buffers);
+      fprintf(stderr, "Synthesis:\n");
+      player.run();
+      player.drain();
       exit_al();
       break;
     }
