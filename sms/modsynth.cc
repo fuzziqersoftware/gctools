@@ -1215,7 +1215,13 @@ protected:
         // TODO: Should we advance these only sometimes? What would the right
         // condition be here?
         track.vibrato_offset += static_cast<float>(track.vibrato_cycles) / 64;
+        if (track.vibrato_offset >= 1) {
+          track.vibrato_offset -= 1;
+        }
         track.tremolo_offset += static_cast<float>(track.tremolo_cycles) / 64;
+        if (track.tremolo_offset >= 1) {
+          track.tremolo_offset -= 1;
+        }
       }
       this->total_output_samples += tick_samples.size();
       on_tick_samples_ready(move(tick_samples));
