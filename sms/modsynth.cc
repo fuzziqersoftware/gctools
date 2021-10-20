@@ -1047,7 +1047,7 @@ protected:
             size_t interval_samples =
                 2 * timing.samples_per_tick * timing.ticks_per_division;
 
-            // An arpeggio effect causes six fluctuations in the order
+            // An arpeggio effect causes three fluctuations in the order
             // (note, note+x, note+y), a total of arpeggio_frequency times. The
             // intervals are evenly spaced across the division, independent of
             // tick boundaries.
