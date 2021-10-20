@@ -964,6 +964,7 @@ protected:
         }
         // TODO: Vibrato still doesn't sound quite right. See MODs:
         //   2badshep
+        //   barbapapa
         //   casimir_end_theme
         if (track.vibrato_amplitude && track.vibrato_cycles) {
           float integer_part;
@@ -1246,6 +1247,22 @@ public:
 
 
 
+class MODWriter : public MODSynthesizer {
+protected:
+  FILE* f;
+
+public:
+  MODWriter(shared_ptr<const Module> mod, shared_ptr<const Options> opts, FILE* f)
+    : MODSynthesizer(mod, opts), f(f) { }
+
+  virtual void on_tick_samples_ready(vector<float>&& samples) {
+    fwrite(samples.data(), sizeof(samples[0]), samples.size(), this->f);
+    fflush(this->f);
+  }
+};
+
+
+
 class MODExporter : public MODSynthesizer {
 protected:
   deque<vector<float>> tick_samples;
@@ -1350,8 +1367,12 @@ Usage:\n\
       --tempo-bias=N: Speed up or slow down the sequence by this factor\n\
           (default 1.0). For example, 2.0 plays the sequence twice as fast,\n\
           and 0.5 plays the sequence at half speed.\n\
-      --arpeggio-repetitions-per-division=N: Use a fixed arpeggio frequency\n\
-          instead of aligning to tick boundaries.\n\
+      --arpeggio-frequency=N: Use a fixed arpeggio frequency instead of\n\
+          aligning to tick boundaries (default).\n\
+      --write-stdout: Instead of saving to a file, write raw float32 data to\n\
+          stdout, which can be piped to audiocat --play --format=stereo-f32.\n\
+          Generally only useful for debugging problems with --render that don't\n\
+          occur when using --play.\n\
 \n\
   modsynth --play [options] input_filename\n\
     Plays the sequence through the default audio device.\n\
@@ -1378,6 +1399,7 @@ int main(int argc, char** argv) {
   const char* input_filename = nullptr;
   size_t num_play_buffers = 16;
   bool use_default_color_flags = true;
+  bool write_stdout = false;
   shared_ptr<MODSynthesizer::Options> opts(new MODSynthesizer::Options());
   for (int x = 1; x < argc; x++) {
     if (!strcmp(argv[x], "--disassemble")) {
@@ -1390,6 +1412,9 @@ int main(int argc, char** argv) {
     } else if (!strcmp(argv[x], "--play")) {
       behavior = Behavior::Play;
       opts->resample_method = SRC_LINEAR;
+
+    } else if (!strcmp(argv[x], "--write-stdout")) {
+      write_stdout = true;
 
     } else if (!strcmp(argv[x], "--no-color")) {
       opts->flags &= ~Flags::TerminalColor;
@@ -1459,14 +1484,19 @@ int main(int argc, char** argv) {
       break;
     case Behavior::Render: {
       print_mod_text(stderr, mod);
-      string output_filename = string(input_filename) + ".wav";
-      MODExporter exporter(mod, opts);
-      fprintf(stderr, "Synthesis:\n");
-      exporter.run();
-      fprintf(stderr, "Assembling result\n");
-      const auto& result = exporter.result();
-      fprintf(stderr, "... %s\n", output_filename.c_str());
-      save_wav(output_filename.c_str(), result, opts->output_sample_rate, 2);
+      if (write_stdout) {
+        MODWriter writer(mod, opts, stdout);
+        writer.run();
+      } else {
+        string output_filename = string(input_filename) + ".wav";
+        MODExporter exporter(mod, opts);
+        fprintf(stderr, "Synthesis:\n");
+        exporter.run();
+        fprintf(stderr, "Assembling result\n");
+        const auto& result = exporter.result();
+        fprintf(stderr, "... %s\n", output_filename.c_str());
+        save_wav(output_filename.c_str(), result, opts->output_sample_rate, 2);
+      }
       break;
     }
     case Behavior::Play: {
