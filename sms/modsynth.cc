@@ -908,10 +908,16 @@ protected:
 
   void render_current_division_audio() {
     for (size_t tick_num = 0; tick_num < this->timing.ticks_per_division; tick_num++) {
-      size_t num_tick_samples = this->timing.samples_per_tick * 2;
+      size_t num_tick_samples;
       if (opts->tempo_bias != 1.0) {
-        num_tick_samples /= opts->tempo_bias;
+        num_tick_samples = this->timing.samples_per_tick / opts->tempo_bias;
+      } else {
+        num_tick_samples = this->timing.samples_per_tick;
       }
+      // Note: we do this multiplication after the above computation because
+      // num_tick_samples must not be an odd number, so we don't want to *2
+      // during the floating-point computation.
+      num_tick_samples *= 2;
       vector<float> tick_samples(num_tick_samples);
       for (auto& track : this->tracks) {
 
