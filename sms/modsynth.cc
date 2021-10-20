@@ -642,15 +642,18 @@ protected:
         // not start, and different behavior for each. The correct behavior
         // seems to be:
         // 1. Period given, ins_num given: start a new note
-        // 2. Period given, ins_num missing: start a new note with old ins_num and old volume
-        // 3. Period missing, ins_num given and matches old ins_num: reset volume only
-        // 4. Period missing, ins_num given and does not match old ins_num: start a new note
+        // 2. Period given, ins_num missing: start a new note with old ins_num
+        //    and old volume
+        // 3. Period missing, ins_num given and matches old ins_num: reset
+        //    volume only
+        // 4. Period missing, ins_num given and does not match old ins_num:
+        //    start a new note, unless old ins_num is zero, in which case just
+        //    set the track's ins_num for future notes
         // 5. Period and ins_num both missing: do nothing
 
         // Cases (1), (2), and (4)
         if (div_period || // Cases (1) and (2)
-            (div_ins_num && // Case (4)
-             (div_ins_num != track.instrument_num) && (track.period != 0))) {
+            (div_ins_num && (div_ins_num != track.instrument_num))) { // Case (4)
           uint16_t note_period = div_period ? div_period : track.period;
           uint8_t note_ins_num = div_ins_num ? div_ins_num : track.instrument_num;
           // It seems like volume should NOT get reset unless the instrument
@@ -964,7 +967,7 @@ protected:
           continue;
         }
 
-        if (track.instrument_num == 0) {
+        if (track.instrument_num == 0 || track.period == 0) {
           track.last_sample = 0;
           continue; // Track has not played any sound yet
         }
