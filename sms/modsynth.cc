@@ -452,7 +452,9 @@ protected:
     int32_t panning; // 0 (left) - 64 (right)
     double input_sample_offset; // relative to input samples, not any resampling thereof
     uint8_t vibrato_waveform;
+    uint8_t tremolo_waveform;
     float vibrato_offset;
+    float tremolo_offset;
 
     uint8_t arpeggio_arg;
     uint8_t sample_retrigger_interval_ticks;
@@ -464,13 +466,17 @@ protected:
     int16_t per_tick_volume_increment;
     int16_t slide_target_period;
     int16_t vibrato_amplitude;
+    int16_t tremolo_amplitude;
     int16_t vibrato_cycles;
+    int16_t tremolo_cycles;
     // These are not reset each division, and are used for effects that continue a
     // previous effect
     int16_t last_slide_target_period;
     int16_t last_per_tick_period_increment;
     int16_t last_vibrato_amplitude;
+    int16_t last_tremolo_amplitude;
     int16_t last_vibrato_cycles;
+    int16_t last_tremolo_cycles;
 
     float last_sample;
     float dc_offset;
@@ -483,11 +489,15 @@ protected:
         volume(64),
         input_sample_offset(0.0),
         vibrato_waveform(0),
+        tremolo_waveform(0),
         vibrato_offset(0.0),
+        tremolo_offset(0.0),
         last_slide_target_period(0),
         last_per_tick_period_increment(0),
         last_vibrato_amplitude(0),
+        last_tremolo_amplitude(0),
         last_vibrato_cycles(0),
+        last_tremolo_cycles(0),
         last_sample(0),
         dc_offset(0),
         next_sample_may_be_discontinuous(false) {
@@ -505,7 +515,9 @@ protected:
       this->per_tick_volume_increment = 0;
       this->slide_target_period = 0;
       this->vibrato_amplitude = 0;
+      this->tremolo_amplitude = 0;
       this->vibrato_cycles = 0;
+      this->tremolo_cycles = 0;
     }
 
     void start_note(int32_t instrument_num, int32_t period, int32_t volume) {
@@ -515,6 +527,9 @@ protected:
       this->input_sample_offset = 0.0;
       if (!(this->vibrato_waveform & 4)) {
         this->vibrato_offset = 0.0;
+      }
+      if (!(this->tremolo_waveform & 4)) {
+        this->tremolo_offset = 0.0;
       }
       this->dc_offset = this->last_sample;
       this->next_sample_may_be_discontinuous = true;
@@ -715,20 +730,30 @@ protected:
           track.vibrato_cycles = track.last_vibrato_cycles;
           goto VolumeSlideEffect;
 
-/*
-[7]: Tremolo
-     Where [7][x][y] means "oscillate the sample volume using a
-     particular waveform with amplitude y*(ticks - 1), such that (x *
-     ticks)/64 cycles occur in the division". The waveform is set using
-     effect [14][7]. Similar to [4].
+        case 0x700: // Tremolo
+          // TODO: delete this warning when tremolo is actually implemented
+          fprintf(stderr, "warning: untested effect (tremolo)\n");
+          track.tremolo_amplitude = effect & 0x00F;
+          if (!track.tremolo_amplitude) {
+            track.tremolo_amplitude = track.last_tremolo_amplitude;
+          } else {
+            track.last_tremolo_amplitude = track.tremolo_amplitude;
+          }
+          track.tremolo_cycles = (effect & 0x0F0) >> 4;
+          if (!track.tremolo_cycles) {
+            track.tremolo_cycles = track.last_tremolo_cycles;
+          } else {
+            track.last_tremolo_cycles = track.tremolo_cycles;
+          }
+          break;
 
-[8]: UNKNOWN
-     The observational spec says this effect is unused. I've seen a few MODs
-     that use it, but it's not clear for what. PlayerPRO uses it for precise
-     panning, but that doesn't seem to make sense with how it's used in the
-     MODs I've looked at. Further research is needed here.
-     See MODs:
-       @rzecho
+/* [8]: UNKNOWN
+        The observational spec says this effect is unused. I've seen a few MODs
+        that use it, but it's not clear for what. PlayerPRO uses it for precise
+        panning, but that doesn't seem to make sense with how it's used in the
+        MODs I've looked at. Further research is needed here.
+        See MODs:
+          @rzecho
 */
 
         case 0x900: // Set sample offset
@@ -773,18 +798,14 @@ protected:
               // PlayerPRO doesn't implement it, so neither will we.
               break;
 
+            case 0x010: // Fine slide up
+              track.period -= effect & 0x00F;
+              break;
+            case 0x020: // Fine slide down
+              track.period += effect & 0x00F;
+              break;
+
 /*
-[14][1]: Fineslide up
-     Where [14][1][x] means "decrement the period of the current sample
-     by x". The incrementing takes place at the beginning of the
-     division, and hence there is no actual sliding. You cannot slide
-     beyond the note B3 (period 113).
-
-[14][2]: Fineslide down
-     Where [14][2][x] means "increment the period of the current sample
-     by x". Similar to [14][1] but shifts the pitch down. You cannot
-     slide beyond the note C1 (period 856).
-
 [14][3]: Set glissando on/off
      Where [14][3][x] means "set glissando ON if x is 1, OFF if x is 0".
      Used in conjunction with [3] ('Slide to note'). If glissando is on,
@@ -820,11 +841,9 @@ protected:
               break;
             }
 
-/*
-[14][7]: Set tremolo waveform
-     Where [14][7][x] means "set the waveform of succeeding 'tremolo'
-     effects to wave #x". Similar to [14][4], but alters effect [7] -
-     the 'tremolo' effect. */
+            case 0x070: // Set tremolo waveform
+              track.tremolo_waveform = effect & 0x007;
+              break;
 
             case 0x080: { // Set panning (PlayerPRO)
               uint8_t panning = effect & 0x00F;
@@ -906,6 +925,22 @@ protected:
     }
   }
 
+  static float get_vibrato_tremolo_wave_amplitude(float offset, uint8_t waveform) {
+    float integer_part;
+    float wave_progress = modff(offset, &integer_part);
+    switch (waveform & 3) {
+      case 0: // Sine wave
+      case 3: // Supposedly random, but that would probably sound weird
+        return sinf(wave_progress * 2 * M_PI);
+      case 1: // Descending sawtooth wave
+        return 1.0 - (2.0 * wave_progress);
+      case 2: // Square wave
+        return (wave_progress < 0.5) ? 1.0 : -1.0;
+      default:
+        throw logic_error("invalid vibrato/tremolo waveform");
+    }
+  }
+
   void render_current_division_audio() {
     for (size_t tick_num = 0; tick_num < this->timing.ticks_per_division; tick_num++) {
       size_t num_tick_samples;
@@ -967,23 +1002,10 @@ protected:
         //   barbapapa
         //   casimir_end_theme
         if (track.vibrato_amplitude && track.vibrato_cycles) {
-          float integer_part;
-          float wave_progress = modff(track.vibrato_offset, &integer_part);
-          float tick_vibrato_amplitude;
-          switch (track.vibrato_waveform & 3) {
-            case 0: // Sine wave
-            case 3: // Supposedly random, but that would probably sound weird
-              tick_vibrato_amplitude = sinf(wave_progress * 2 * M_PI);
-              break;
-            case 1: // Descending sawtooth wave
-              tick_vibrato_amplitude = 1.0 - (2.0 * wave_progress);
-              break;
-            case 2: // Square wave
-              tick_vibrato_amplitude = (wave_progress < 0.5) ? 1.0 : -1.0;
-              break;
-          }
-          tick_vibrato_amplitude *= static_cast<float>(track.vibrato_amplitude) / 16.0;
-          effective_period *= pow(2, -tick_vibrato_amplitude / 12.0);
+          float amplitude = this->get_vibrato_tremolo_wave_amplitude(
+              track.vibrato_offset, track.vibrato_waveform);
+          amplitude *= static_cast<float>(track.vibrato_amplitude) / 16.0;
+          effective_period *= pow(2, -amplitude / 12.0);
         }
 
         // Handle arpeggio effects, which can change a sample's period within
@@ -1051,6 +1073,8 @@ protected:
         //   hoffipolkka
         //   Kid
         //   Yooomo
+        // TODO: This is where tremolo effects would go. Unfortunately, I don't
+        // have any test cases (yet) so I can't do this properly.
         float track_volume_factor = static_cast<float>(track.volume) / 64.0;
         float ins_volume_factor = static_cast<float>(i.volume) / 64.0;
         const vector<float>* resampled_data = nullptr;
@@ -1191,9 +1215,10 @@ protected:
             }
           }
         }
-        // TODO: Should we advance this only sometimes? What would the right
+        // TODO: Should we advance these only sometimes? What would the right
         // condition be here?
         track.vibrato_offset += static_cast<float>(track.vibrato_cycles) / 64;
+        track.tremolo_offset += static_cast<float>(track.tremolo_cycles) / 64;
       }
       this->total_output_samples += tick_samples.size();
       on_tick_samples_ready(move(tick_samples));
