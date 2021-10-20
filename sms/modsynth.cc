@@ -1048,15 +1048,9 @@ protected:
                 2 * timing.samples_per_tick * timing.ticks_per_division;
 
             // An arpeggio effect causes six fluctuations in the order
-            // (note, note+x, note+y) x2. The spec doesn't say anything about how
-            // many times the pattern should repeat per division, and it seems the
-            // correct number is different for different MODs.
-            // See MODs:
-            //   loxley-patriot (x2 is correct; song is in 125/7)
-            //   tdk-chubby_chip_chip (x2 is correct; song is in 125/6)
-            //   ## stink-bomb ## (x1 is correct; song is in 125/5)
-            // Is it just floor(timing.ticks_per_division / 6)? That's what we
-            // implement for now.
+            // (note, note+x, note+y), a total of arpeggio_frequency times. The
+            // intervals are evenly spaced across the division, independent of
+            // tick boundaries.
             size_t denom = this->opts->arpeggio_frequency * 3;
             segments.emplace_back(make_pair(1 * interval_samples / denom, periods[1]));
             segments.emplace_back(make_pair(2 * interval_samples / denom, periods[2]));
