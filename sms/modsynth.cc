@@ -623,7 +623,19 @@ protected:
       if (((effect & 0xF00) != 0x300) && ((effect & 0xF00) != 0x500) && ((effect & 0xFF0) != 0xED0)) {
         uint16_t div_period = div.period();
         uint8_t div_ins_num = div.instrument_num();
-        if (div_period) {
+        // There are surprisingly many cases for when a note should start vs.
+        // not start, and different behavior for each. The correct behavior
+        // seems to be:
+        // 1. Period given, ins_num given: start a new note
+        // 2. Period given, ins_num missing: start a new note with old ins_num and old volume
+        // 3. Period missing, ins_num given and matches old ins_num: reset volume only
+        // 4. Period missing, ins_num given and does not match old ins_num: start a new note
+        // 5. Period and ins_num both missing: do nothing
+
+        // Cases (1), (2), and (4)
+        if (div_period || // Cases (1) and (2)
+            (div_ins_num && // Case (4)
+             (div_ins_num != track.instrument_num) && (track.period != 0))) {
           uint16_t note_period = div_period ? div_period : track.period;
           uint8_t note_ins_num = div_ins_num ? div_ins_num : track.instrument_num;
           // It seems like volume should NOT get reset unless the instrument
@@ -631,14 +643,16 @@ protected:
           // actually true?
           uint8_t note_volume = div_ins_num ? 64 : track.volume;
           track.start_note(note_ins_num, note_period, note_volume);
-        } else if ((div_ins_num == track.instrument_num) && (track.period != 0)) {
+
+        // Case (3)
+        } else if (!div_period &&
+                   (div_ins_num == track.instrument_num) &&
+                   (track.period != 0)) {
           // If ins_num is specified and matches the currently-playing
           // instrument, but period is not specified, then reset the volume
           // only. This isn't documented, but seems to be the correct behavior.
           track.volume = 64;
         }
-        // TODO: Should we do anything if ins_num is given but does NOT match
-        // track.instrument_num, and period is not given?
       }
 
       switch (effect & 0xF00) {
@@ -944,6 +958,7 @@ protected:
         }
         // TODO: Vibrato still doesn't sound quite right. See MODs:
         //   2badshep
+        //   casimir_end_theme
         if (track.vibrato_amplitude && track.vibrato_cycles) {
           float integer_part;
           float wave_progress = modff(track.vibrato_offset, &integer_part);
