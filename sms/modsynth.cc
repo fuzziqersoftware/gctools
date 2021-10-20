@@ -386,6 +386,7 @@ public:
     unordered_set<size_t> mute_tracks;
     unordered_set<size_t> solo_tracks;
     float tempo_bias;
+    size_t arpeggio_frequency; // 0 = use ticks instead
     uint64_t flags;
 
     Options()
@@ -395,6 +396,7 @@ public:
         mute_tracks(),
         solo_tracks(),
         tempo_bias(1.0),
+        arpeggio_frequency(0),
         flags(Flags::Default) { }
   };
 
@@ -963,20 +965,60 @@ protected:
         }
 
         // Handle arpeggio effects, which can change a sample's period within
-        // a tick. To handle this, we further divide each tick into "segments"
-        // where different periods can be used.
+        // a tick. To handle this, we further divide each division into
+        // "segments" where different periods can be used. Segments can cross
+        // tick boundaries, which makes the sample generation loop below
+        // unfortunately rather complicated.
         size_t division_output_offset = tick_num * tick_samples.size();
         // This is a list of (start_at_output_sample, instrument_period) for
         // the current tick
         vector<pair<size_t, uint16_t>> segments({{0, effective_period}});
         if (track.arpeggio_arg) {
-          // We multiply by 2 and 4 here since the output is stereo
-          segments.emplace_back(make_pair(
-              2 * timing.samples_per_tick * timing.ticks_per_division / 3,
-              track.period / pow(2, ((track.arpeggio_arg >> 4) & 0x0F) / 12.0)));
-          segments.emplace_back(make_pair(
-              4 * timing.samples_per_tick * timing.ticks_per_division / 3,
-              track.period / pow(2, (track.arpeggio_arg & 0x0F) / 12.0)));
+          uint16_t periods[3] = {
+            effective_period,
+            static_cast<uint16_t>(
+              effective_period / pow(2, ((track.arpeggio_arg >> 4) & 0x0F) / 12.0)),
+            static_cast<uint16_t>(
+              effective_period / pow(2, (track.arpeggio_arg & 0x0F) / 12.0)),
+          };
+
+          // The spec describes arpeggio effects as being "evenly spaced" within
+          // the division, but some trackers (e.g. PlayerPRO) do not implement
+          // this - instead, they simply iterate through the arpeggio periods
+          // for each tick, and if the number of ticks per division isn't
+          // divisible by 3, then some periods are held for longer. This
+          // actually sounds better for some MODs, so we implement both this
+          // behavior and true evenly-spaced arpeggio.
+          if (this->opts->arpeggio_frequency <= 0) {
+            for (size_t x = 1; x < timing.ticks_per_division; x++) {
+              segments.emplace_back(make_pair(x * num_tick_samples, periods[x % 3]));
+            }
+
+          } else {
+            // We multiply by 2 here since this is relative to the number of
+            // output samples generated, and the output is stereo.
+            size_t interval_samples =
+                2 * timing.samples_per_tick * timing.ticks_per_division;
+
+            // An arpeggio effect causes six fluctuations in the order
+            // (note, note+x, note+y) x2. The spec doesn't say anything about how
+            // many times the pattern should repeat per division, and it seems the
+            // correct number is different for different MODs.
+            // See MODs:
+            //   loxley-patriot (x2 is correct; song is in 125/7)
+            //   tdk-chubby_chip_chip (x2 is correct; song is in 125/6)
+            //   ## stink-bomb ## (x1 is correct; song is in 125/5)
+            // Is it just floor(timing.ticks_per_division / 6)? That's what we
+            // implement for now.
+            size_t denom = this->opts->arpeggio_frequency * 3;
+            segments.emplace_back(make_pair(1 * interval_samples / denom, periods[1]));
+            segments.emplace_back(make_pair(2 * interval_samples / denom, periods[2]));
+            for (size_t x = 1; x < this->opts->arpeggio_frequency; x++) {
+              segments.emplace_back(make_pair((3 * x + 0) * interval_samples / denom, periods[0]));
+              segments.emplace_back(make_pair((3 * x + 1) * interval_samples / denom, periods[1]));
+              segments.emplace_back(make_pair((3 * x + 2) * interval_samples / denom, periods[2]));
+            }
+          }
         }
 
         // Apply the appropriate portion of the instrument's sample data to the
@@ -1287,6 +1329,8 @@ Usage:\n\
       --tempo-bias=N: Speed up or slow down the sequence by this factor\n\
           (default 1.0). For example, 2.0 plays the sequence twice as fast,\n\
           and 0.5 plays the sequence at half speed.\n\
+      --arpeggio-repetitions-per-division=N: Use a fixed arpeggio frequency\n\
+          instead of aligning to tick boundaries.\n\
 \n\
   modsynth --play [options] input_filename\n\
     Plays the sequence through the default audio device.\n\
@@ -1344,6 +1388,9 @@ int main(int argc, char** argv) {
 
     } else if (!strncmp(argv[x], "--tempo-bias=", 13)) {
       opts->tempo_bias = atof(&argv[x][13]);
+
+    } else if (!strncmp(argv[x], "--arpeggio-frequency=", 21)) {
+      opts->arpeggio_frequency = atoi(&argv[x][21]);
 
     } else if (!strncmp(argv[x], "--skip-partitions=", 18)) {
       opts->skip_partitions = atoi(&argv[x][18]);
