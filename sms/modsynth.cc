@@ -922,6 +922,9 @@ protected:
         case 0xF00: { // set speed
           uint8_t v = effect & 0xFF;
           if (v <= 32) {
+            if (v == 0) {
+              v = 1;
+            }
             this->timing = Timing(
                 this->timing.sample_rate, this->timing.beats_per_minute, v);
           } else {
