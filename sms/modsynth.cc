@@ -133,10 +133,12 @@ shared_ptr<Module> load_mod(StringReader& r) {
 
   // We should have gotten to exactly the same offset that we read ahead to at
   // the beginning, unless there were not 31 instruments.
-  uint32_t inplace_extension_signature = r.get_u32r();
-  if (mod->extension_signature &&
-      mod->extension_signature != inplace_extension_signature) {
-    throw logic_error("read-ahead extension signature does not match inplace extension signature");
+  if (num_instruments == 31) {
+    uint32_t inplace_extension_signature = r.get_u32r();
+    if (mod->extension_signature &&
+        mod->extension_signature != inplace_extension_signature) {
+      throw logic_error("read-ahead extension signature does not match inplace extension signature");
+    }
   }
 
   // Compute the number of patterns based on the contents of the partition
@@ -164,7 +166,9 @@ shared_ptr<Module> load_mod(StringReader& r) {
   // Load the sample data for each instrument.
   for (auto& i : mod->instruments) {
     i.original_sample_data.resize(i.num_samples);
-    r.read_into(i.original_sample_data.data(), i.num_samples);
+    if (r.read_into(i.original_sample_data.data(), i.num_samples) != i.num_samples) {
+      throw runtime_error("mod is truncated during or before sample data");
+    }
     i.sample_data.resize(i.num_samples);
     for (size_t x = 0; x < i.num_samples; x++) {
       int8_t sample = i.original_sample_data[x];
