@@ -1185,6 +1185,7 @@ protected:
               ((resampled_offset >= loop_end_offset) || (resampled_offset >= resampled_data->size() - 1))) {
             resampled_offset = loop_start_offset;
           } else if (resampled_offset >= resampled_data->size()) {
+            track.input_sample_offset = i.sample_data.size();
             break;
           }
 
