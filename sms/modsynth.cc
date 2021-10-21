@@ -386,6 +386,7 @@ public:
   struct Options {
     size_t output_sample_rate;
     int resample_method;
+    float global_volume;
     size_t skip_partitions;
     unordered_set<size_t> mute_tracks;
     unordered_set<size_t> solo_tracks;
@@ -396,6 +397,7 @@ public:
     Options()
       : output_sample_rate(48000),
         resample_method(SRC_SINC_BEST_QUALITY),
+        global_volume(1.0),
         skip_partitions(0),
         mute_tracks(),
         solo_tracks(),
@@ -1160,7 +1162,7 @@ protected:
           // subsequent sample and fairly quickly reaches zero. This eliminates
           // the tick and doesn't leave any other audible effects.
           float sample_from_ins = resampled_data->at(static_cast<size_t>(resampled_offset)) *
-                track_volume_factor * ins_volume_factor;
+                track_volume_factor * ins_volume_factor * this->opts->global_volume;
           if (track.next_sample_may_be_discontinuous) {
             track.dc_offset -= sample_from_ins;
             track.last_sample = track.dc_offset;
@@ -1403,6 +1405,7 @@ Usage:\n\
   modsynth --render [options] input_filename\n\
     Generates a rasterized version of the sequence. Saves the result as\n\
     <input_filename>.wav. Options:\n\
+      --volume=N: Set global volume to N (0.0-1.0; default 1.0).\n\
       --skip-partitions=N: Start at this offset in the partition table (instead\n\
           of zero).\n\
       --sample-rate=N: Output audio at this sample rate (default 48000).\n\
@@ -1479,6 +1482,13 @@ int main(int argc, char** argv) {
 
     } else if (!strncmp(argv[x], "--tempo-bias=", 13)) {
       opts->tempo_bias = atof(&argv[x][13]);
+    } else if (!strncmp(argv[x], "--volume=", 9)) {
+      opts->global_volume = atof(&argv[x][9]);
+      if (opts->global_volume > 1.0) {
+        opts->global_volume = 1.0;
+      } else if (opts->global_volume < -1.0) {
+        opts->global_volume = -1.0;
+      }
 
     } else if (!strncmp(argv[x], "--arpeggio-frequency=", 21)) {
       opts->arpeggio_frequency = atoi(&argv[x][21]);
