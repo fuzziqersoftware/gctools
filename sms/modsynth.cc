@@ -169,7 +169,7 @@ shared_ptr<Module> load_mod(StringReader& r) {
     for (size_t x = 0; x < i.num_samples; x++) {
       int8_t sample = i.original_sample_data[x];
       i.sample_data[x] = (sample == -0x80)
-          ? -0.5
+          ? -0.5f
           : (static_cast<float>(sample) / 255.0f);
     }
   }
@@ -757,14 +757,23 @@ protected:
         MODs I've looked at. Further research is needed here.
         See MODs:
           @rzecho
+          noparking
 */
 
-        case 0x900: // Set sample offset
+        case 0x900: { // Set sample offset
           // The spec says the parameter is essentially <<8 but is measured in
           // words. This appears to be false - PlayerPRO shifts by 8 here (not
           // 9), and the MODs I've tried sound wrong when using 9.
           track.input_sample_offset = static_cast<int32_t>(effect & 0x0FF) << 8;
+          // If the instrument has a loop and the offset ie beyond the end of
+          // the loop, jump to the start of the loop instead.
+          const auto& i = this->mod->instruments.at(track.instrument_num - 1);
+          if ((i.loop_length_samples > 2) &&
+              (track.input_sample_offset >= i.loop_start_samples + i.loop_length_samples)) {
+            track.input_sample_offset = i.loop_start_samples;
+          }
           break;
+        }
 
         VolumeSlideEffect:
         case 0xA00: // Volume slide
