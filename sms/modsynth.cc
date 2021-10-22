@@ -144,9 +144,12 @@ shared_ptr<Module> load_mod(StringReader& r) {
   // Compute the number of patterns based on the contents of the partition
   // table. The number of patterns is the maximum value in the table (+1, since
   // pattern 0 is valid), and even patterns that do not appear in this table but
-  // are less than the maximum value will exist in the file.
+  // are less than the maximum value will exist in the file. Some rare MODs have
+  // unreferenced patterns in the unused space after the used partitions; we
+  // have to iterate the entire table (not just up to mod->partition_count) to
+  // account for those as well.
   size_t num_patterns = 0;
-  for (size_t x = 0; x < mod->partition_count; x++) {
+  for (size_t x = 0; x < 0x80; x++) {
     if (num_patterns <= mod->partition_table[x]) {
       num_patterns = mod->partition_table[x] + 1;
     }
