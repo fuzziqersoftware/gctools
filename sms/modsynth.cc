@@ -198,13 +198,12 @@ void disassemble_pattern_row(
     {0,    "---"},
   });
 
-  static const TerminalFormat track_colors[6] = {
+  static const TerminalFormat track_colors[5] = {
     TerminalFormat::FG_RED,
     TerminalFormat::FG_CYAN,
     TerminalFormat::FG_YELLOW,
     TerminalFormat::FG_GREEN,
     TerminalFormat::FG_MAGENTA,
-    TerminalFormat::FG_WHITE,
   };
   bool use_color = flags & Flags::TerminalColor;
 
@@ -236,7 +235,7 @@ void disassemble_pattern_row(
       fputs("  =", stream);
       if (use_color) {
         if (instrument_num || period) {
-          print_color_escape(stream, track_colors[z % 6], TerminalFormat::BOLD, TerminalFormat::END);
+          print_color_escape(stream, track_colors[z % 5], TerminalFormat::BOLD, TerminalFormat::END);
         } else {
           print_color_escape(stream, TerminalFormat::NORMAL, TerminalFormat::END);
         }
