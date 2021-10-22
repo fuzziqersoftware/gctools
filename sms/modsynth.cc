@@ -395,6 +395,7 @@ public:
     unordered_set<size_t> solo_tracks;
     float tempo_bias;
     size_t arpeggio_frequency; // 0 = use ticks instead
+    size_t vibrato_resolution;
     uint64_t flags;
 
     Options()
@@ -407,6 +408,7 @@ public:
         solo_tracks(),
         tempo_bias(1.0),
         arpeggio_frequency(0),
+        vibrato_resolution(1),
         flags(Flags::Default) { }
   };
 
@@ -1024,27 +1026,30 @@ protected:
         if (i.finetune) {
           effective_period *= pow(2, -static_cast<float>(i.finetune) / (12.0 * 8.0));
         }
-        // TODO: Vibrato still doesn't sound quite right. See MODs:
-        //   2badshep
-        //   barbapapa
-        //   casimir_end_theme
-        if (track.vibrato_amplitude && track.vibrato_cycles) {
-          float amplitude = this->get_vibrato_tremolo_wave_amplitude(
-              track.vibrato_offset, track.vibrato_waveform);
-          amplitude *= static_cast<float>(track.vibrato_amplitude) / 16.0;
-          effective_period *= pow(2, -amplitude / 12.0);
-        }
 
-        // Handle arpeggio effects, which can change a sample's period within
-        // a tick. To handle this, we further divide each division into
-        // "segments" where different periods can be used. Segments can cross
-        // tick boundaries, which makes the sample generation loop below
+        // Handle arpeggio and vibrato effects, which can change a sample's
+        // period within a tick. To handle this, we further divide each division
+        // into "segments" where different periods can be used. Segments can
+        // cross tick boundaries, which makes the sample generation loop below
         // unfortunately rather complicated.
         size_t division_output_offset = tick_num * tick_samples.size();
         // This is a list of (start_at_output_sample, instrument_period) for
         // the current tick
-        vector<pair<size_t, uint16_t>> segments({{0, effective_period}});
-        if (track.arpeggio_arg) {
+        vector<pair<size_t, uint16_t>> segments;
+        if (track.vibrato_amplitude && track.vibrato_cycles) {
+          if (track.arpeggio_arg) {
+            throw logic_error("cannot have both arpeggio and vibrato effects in the same division");
+          }
+          for (size_t x = 0; x < this->opts->vibrato_resolution; x++) {
+            float amplitude = this->get_vibrato_tremolo_wave_amplitude(
+                track.vibrato_offset + static_cast<float>(track.vibrato_cycles) / (64 * this->opts->vibrato_resolution), track.vibrato_waveform);
+            amplitude *= static_cast<float>(track.vibrato_amplitude) / 16.0;
+            segments.emplace_back(make_pair(
+                (num_tick_samples * x) / this->opts->vibrato_resolution,
+                effective_period * pow(2, -amplitude / 12.0)));
+          }
+
+        } else if (track.arpeggio_arg) {
           uint16_t periods[3] = {
             effective_period,
             static_cast<uint16_t>(
@@ -1061,7 +1066,7 @@ protected:
           // actually sounds better for some MODs, so we implement both this
           // behavior and true evenly-spaced arpeggio.
           if (this->opts->arpeggio_frequency <= 0) {
-            for (size_t x = 1; x < timing.ticks_per_division; x++) {
+            for (size_t x = 0; x < timing.ticks_per_division; x++) {
               segments.emplace_back(make_pair(x * num_tick_samples, periods[x % 3]));
             }
 
@@ -1076,14 +1081,17 @@ protected:
             // intervals are evenly spaced across the division, independent of
             // tick boundaries.
             size_t denom = this->opts->arpeggio_frequency * 3;
-            segments.emplace_back(make_pair(1 * interval_samples / denom, periods[1]));
-            segments.emplace_back(make_pair(2 * interval_samples / denom, periods[2]));
-            for (size_t x = 1; x < this->opts->arpeggio_frequency; x++) {
+            for (size_t x = 0; x < this->opts->arpeggio_frequency; x++) {
               segments.emplace_back(make_pair((3 * x + 0) * interval_samples / denom, periods[0]));
               segments.emplace_back(make_pair((3 * x + 1) * interval_samples / denom, periods[1]));
               segments.emplace_back(make_pair((3 * x + 2) * interval_samples / denom, periods[2]));
             }
           }
+
+        } else {
+          // If neither arpeggio nor vibrato happens in this tick, then the
+          // period is effectively constant.
+          segments.emplace_back(make_pair(0, effective_period));
         }
 
         // Apply the appropriate portion of the instrument's sample data to the
@@ -1435,6 +1443,8 @@ Usage:\n\
           and 0.5 plays the sequence at half speed.\n\
       --arpeggio-frequency=N: Use a fixed arpeggio frequency instead of\n\
           aligning to tick boundaries (default).\n\
+      --vibrato-resolution=N: Evaluate vibrato effects this many times each\n\
+          tick (default 1).\n\
       --write-stdout: Instead of saving to a file, write raw float32 data to\n\
           stdout, which can be piped to audiocat --play --format=stereo-f32.\n\
           Generally only useful for debugging problems with --render that don't\n\
@@ -1512,6 +1522,8 @@ int main(int argc, char** argv) {
 
     } else if (!strncmp(argv[x], "--arpeggio-frequency=", 21)) {
       opts->arpeggio_frequency = atoi(&argv[x][21]);
+    } else if (!strncmp(argv[x], "--vibrato-resolution=", 21)) {
+      opts->vibrato_resolution = atoi(&argv[x][21]);
 
     } else if (!strncmp(argv[x], "--skip-partitions=", 18)) {
       opts->skip_partitions = atoi(&argv[x][18]);
