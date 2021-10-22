@@ -389,6 +389,7 @@ public:
     size_t output_sample_rate;
     int resample_method;
     float global_volume;
+    float max_output_seconds;
     size_t skip_partitions;
     unordered_set<size_t> mute_tracks;
     unordered_set<size_t> solo_tracks;
@@ -400,6 +401,7 @@ public:
       : output_sample_rate(48000),
         resample_method(SRC_SINC_BEST_QUALITY),
         global_volume(1.0),
+        max_output_seconds(0.0),
         skip_partitions(0),
         mute_tracks(),
         solo_tracks(),
@@ -562,6 +564,7 @@ protected:
 
   shared_ptr<const Module> mod;
   shared_ptr<const Options> opts;
+  size_t max_output_samples;
   Timing timing;
   vector<TrackState> tracks;
   SampleCache<uint8_t> sample_cache;
@@ -583,6 +586,7 @@ public:
   MODSynthesizer(shared_ptr<const Module> mod, shared_ptr<const Options> opts)
     : mod(mod),
       opts(opts),
+      max_output_samples(0),
       timing(this->opts->output_sample_rate),
       tracks(this->mod->num_tracks),
       sample_cache(this->opts->resample_method),
@@ -1246,6 +1250,10 @@ protected:
       }
       this->total_output_samples += tick_samples.size();
       on_tick_samples_ready(move(tick_samples));
+
+      if (this->exceeded_time_limit()) {
+        break;
+      }
     }
 
     // Clear division-scoped effects on all tracks
@@ -1279,9 +1287,15 @@ protected:
     }
   }
 
+  bool exceeded_time_limit() const {
+    return this->max_output_samples &&
+        (this->total_output_samples > this->max_output_samples);
+  }
+
 public:
   void run() {
-    while (this->partition_index < this->mod->partition_count) {
+    this->max_output_samples = this->opts->output_sample_rate * this->opts->max_output_seconds * 2;
+    while (this->partition_index < this->mod->partition_count && !this->exceeded_time_limit()) {
       this->show_current_division();
       this->execute_current_division_commands();
       for (this->divisions_to_delay++;
@@ -1408,6 +1422,8 @@ Usage:\n\
     Generates a rasterized version of the sequence. Saves the result as\n\
     <input_filename>.wav. Options:\n\
       --volume=N: Set global volume to N (0.0-1.0; default 1.0).\n\
+      --time-limit=N: Stop generating audio after this many seconds have been\n\
+          generated. (Unlimited by default)\n\
       --skip-partitions=N: Start at this offset in the partition table (instead\n\
           of zero).\n\
       --sample-rate=N: Output audio at this sample rate (default 48000).\n\
@@ -1491,6 +1507,8 @@ int main(int argc, char** argv) {
       } else if (opts->global_volume < -1.0) {
         opts->global_volume = -1.0;
       }
+    } else if (!strncmp(argv[x], "--time-limit=", 13)) {
+      opts->max_output_seconds = atof(&argv[x][13]);
 
     } else if (!strncmp(argv[x], "--arpeggio-frequency=", 21)) {
       opts->arpeggio_frequency = atoi(&argv[x][21]);
