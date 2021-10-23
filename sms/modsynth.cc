@@ -1125,7 +1125,7 @@ protected:
             // The input samples to be played per second is:
             // track_input_samples_per_second = 7159090.5 / (2 * period)
             // To convert this to the number of output samples per input sample,
-            // all  we have to do is divide the output sample rate by it:
+            // all we have to do is divide the output sample rate by it:
             // out_samples_per_in_sample = sample_rate / (7159090.5 / (2 * period))
             // out_samples_per_in_sample = (sample_rate * 2 * period) / 7159090.5
             // This gives how many samples to generate for each input sample.
@@ -1169,7 +1169,7 @@ protected:
           // subsequent sample and fairly quickly reaches zero. This eliminates
           // the tick and doesn't leave any other audible effects.
           float sample_from_ins = resampled_data->at(static_cast<size_t>(resampled_offset)) *
-                track_volume_factor * ins_volume_factor * this->opts->global_volume;
+                track_volume_factor * ins_volume_factor;
           if (track.next_sample_may_be_discontinuous) {
             track.dc_offset -= sample_from_ins;
             track.last_sample = track.dc_offset;
@@ -1179,10 +1179,13 @@ protected:
           }
           track.decay_dc_offset(this->dc_offset_decay);
 
+          // Apply panning and produce the final sample.
+          float l_factor = (1.0 - static_cast<float>(track.panning) / 64.0);
+          float r_factor = (static_cast<float>(track.panning) / 64.0);
           tick_samples[tick_output_offset + 0] +=
-            track.last_sample * (1.0 - static_cast<float>(track.panning) / 64.0); // L
+            track.last_sample * l_factor * this->opts->global_volume;
           tick_samples[tick_output_offset + 1] +=
-            track.last_sample * (static_cast<float>(track.panning) / 64.0); // R
+            track.last_sample * r_factor * this->opts->global_volume;
 
           // TODO: The observational spec claims that the loop only begins after
           // the sample has been played to the end once. Is this true? It seems
