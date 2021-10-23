@@ -75,6 +75,20 @@ struct Module {
 
 
 shared_ptr<Module> load_mod(StringReader& r, uint64_t flags) {
+  // Check for other known file type signatures, but don't let them prevent
+  // attempting to load the file
+  if (r.read(3, false) == "MAD") {
+    fprintf(stderr, "Warning: this file may be a MAD file, not a MOD\n");
+  } else if (r.read(17, false) == "Extended Module: ") {
+    fprintf(stderr, "Warning: this file may be an XM file, not a MOD\n");
+  } else if (r.read(4, false) == "IMPM") {
+    fprintf(stderr, "Warning: this file may be an IT file, not a MOD\n");
+  } else if (r.read(3, false) == "MTM") {
+    fprintf(stderr, "Warning: this file may be an MTM file, not a MOD\n");
+  } else if (r.pread(0x2C, 4) == "SCRM") {
+    fprintf(stderr, "Warning: this file may be an S3M file, not a MOD\n");
+  }
+
   shared_ptr<Module> mod(new Module());
 
   // First, look ahead to see if this file uses any extensions. Annoyingly, the
