@@ -74,6 +74,14 @@ struct Module {
 
 
 
+int8_t sign_extend_nybble(int8_t x) {
+  if (x & 0x08) {
+    return x | 0xF0;
+  } else {
+    return x & 0x0F;
+  }
+}
+
 shared_ptr<Module> parse_mod(const string& data, uint64_t flags) {
   StringReader r(data.data(), data.size());
 
@@ -145,13 +153,7 @@ shared_ptr<Module> parse_mod(const string& data, uint64_t flags) {
     i.name = r.read(0x16);
     strip_trailing_zeroes(i.name);
     i.num_samples = static_cast<uint32_t>(r.get_u16r()) << 1;
-    i.finetune = r.get_u8();
-    // Sign-extend finetune from 4->8 bits
-    if (i.finetune & 0x08) {
-      i.finetune |= 0xF0;
-    } else {
-      i.finetune &= 0x0F;
-    }
+    i.finetune = sign_extend_nybble(r.get_u8());
     i.volume = r.get_u8();
     i.loop_start_samples = static_cast<uint32_t>(r.get_u16r()) << 1;
     i.loop_length_samples = static_cast<uint32_t>(r.get_u16r()) << 1;
@@ -506,6 +508,7 @@ protected:
     int32_t period;
     int32_t volume; // 0 - 64
     int32_t panning; // 0 (left) - 64 (right)
+    int8_t finetune_override; // -0x80 = use instrument finetune (default)
     double input_sample_offset; // relative to input samples, not any resampling thereof
     uint8_t vibrato_waveform;
     uint8_t tremolo_waveform;
@@ -543,6 +546,8 @@ protected:
         instrument_num(0),
         period(0),
         volume(64),
+        panning(32),
+        finetune_override(-0x80),
         input_sample_offset(0.0),
         vibrato_waveform(0),
         tremolo_waveform(0),
@@ -580,6 +585,7 @@ protected:
       this->instrument_num = instrument_num;
       this->period = period;
       this->volume = volume;
+      this->finetune_override = -0x80;
       this->input_sample_offset = 0.0;
       if (!(this->vibrato_waveform & 4)) {
         this->vibrato_offset = 0.0;
@@ -906,13 +912,9 @@ protected:
               track.vibrato_waveform = effect & 0x007;
               break;
 
-            // TODO: Implement this effect. See MODs:
-            //   We Need Infjnytee
-            // [14][5]: Set finetune value
-            // Where [14][5][x] means "sets the finetune value of the current
-            // sample to the signed nibble x". x has legal values of 0..15,
-            // corresponding to signed nibbles 0..7,-8..-1 (see start of text for
-            // more info on finetune values).
+            case 0x050: // Set finetune override
+              track.finetune_override = sign_extend_nybble(effect & 0x00F);
+              break;
 
             case 0x060: { // Loop pattern
               uint8_t times = effect & 0x00F;
@@ -996,7 +998,7 @@ protected:
           break;
         }
 
-        case 0xF00: { // set speed
+        case 0xF00: { // Set speed
           uint8_t v = effect & 0xFF;
           if (v <= 32) {
             if (v == 0) {
@@ -1086,8 +1088,9 @@ protected:
         }
 
         uint16_t effective_period = track.period;
-        if (i.finetune) {
-          effective_period *= pow(2, -static_cast<float>(i.finetune) / (12.0 * 8.0));
+        int8_t finetune = (track.finetune_override == -0x80) ? i.finetune : track.finetune_override;
+        if (finetune) {
+          effective_period *= pow(2, -static_cast<float>(finetune) / (12.0 * 8.0));
         }
 
         // Handle arpeggio and vibrato effects, which can change a sample's
