@@ -176,8 +176,8 @@ shared_ptr<Module> load_mod(StringReader& r) {
     for (size_t x = 0; x < i.num_samples; x++) {
       int8_t sample = i.original_sample_data[x];
       i.sample_data[x] = (sample == -0x80)
-          ? -0.5f
-          : (static_cast<float>(sample) / 255.0f);
+          ? -1.0f
+          : (static_cast<float>(sample) / 128.0f);
     }
   }
 
