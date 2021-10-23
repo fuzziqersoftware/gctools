@@ -211,15 +211,7 @@ void disassemble_pattern_row(
   bool use_color = flags & Flags::TerminalColor;
 
   const auto& p = mod->patterns.at(pattern_num);
-  fputs("  ", stream);
-  if (use_color) {
-    if (y == 0) {
-      print_color_escape(stream, TerminalFormat::FG_WHITE, TerminalFormat::BOLD, TerminalFormat::INVERSE, TerminalFormat::END);
-    } else {
-      print_color_escape(stream, TerminalFormat::FG_WHITE, TerminalFormat::END);
-    }
-  }
-  fprintf(stream, "%02hhu +%2hhu", pattern_num, y);
+  fprintf(stream, "  %02hhu +%2hhu", pattern_num, y);
   for (size_t z = 0; z < mod->num_tracks; z++) {
     const auto& div = p.divisions[y * mod->num_tracks + z];
     uint8_t instrument_num = div.instrument_num();
@@ -611,21 +603,30 @@ public:
   }
 
 protected:
-  void show_current_division() const {
-    // Show current state
+  void show_current_division(bool changed_partition) const {
     uint8_t pattern_index = this->mod->partition_table.at(this->partition_index);
-    fprintf(stderr, "  %02zu", this->partition_index);
+    fputs("  ", stderr);
+    if (changed_partition && (this->opts->flags & Flags::TerminalColor)) {
+      print_color_escape(stderr, TerminalFormat::FG_WHITE, TerminalFormat::BOLD, TerminalFormat::INVERSE, TerminalFormat::END);
+    }
+    if (this->partition_index < 10) {
+      fprintf(stderr, " %1zu ", this->partition_index);
+    } else {
+      fprintf(stderr, "%3zu", this->partition_index);
+    }
+    if (changed_partition && (this->opts->flags & Flags::TerminalColor)) {
+      print_color_escape(stderr, TerminalFormat::NORMAL, TerminalFormat::END);
+    }
     disassemble_pattern_row(
         stderr,
         this->mod,
         pattern_index,
         this->division_index,
         this->opts->flags);
+    float time = static_cast<float>(this->total_output_samples) /
+          (2 * this->opts->output_sample_rate);
     fprintf(stderr, "  =  %3zu/%-2zu @ %.7gs\n",
-        this->timing.beats_per_minute,
-        this->timing.ticks_per_division,
-        static_cast<float>(this->total_output_samples) /
-          (2 * this->opts->output_sample_rate));
+        this->timing.beats_per_minute, this->timing.ticks_per_division, time);
   }
 
   const Module::Pattern& current_pattern() const {
@@ -1302,16 +1303,19 @@ protected:
 
 public:
   void run() {
+    bool changed_partition = true;
     this->max_output_samples = this->opts->output_sample_rate * this->opts->max_output_seconds * 2;
     while (this->partition_index < this->mod->partition_count && !this->exceeded_time_limit()) {
-      this->show_current_division();
+      this->show_current_division(changed_partition);
       this->execute_current_division_commands();
       for (this->divisions_to_delay++;
            this->divisions_to_delay > 0;
            this->divisions_to_delay--) {
         this->render_current_division_audio();
       }
+      uint8_t old_partition_index = this->partition_index;
       this->advance_division();
+      changed_partition = (this->partition_index != old_partition_index);
     }
   }
 };
