@@ -694,9 +694,11 @@ protected:
           break;
 
         case 0x100: // Slide up
+          track.slide_target_period = 113;
           track.per_tick_period_increment = -(effect & 0x0FF);
           break;
         case 0x200: // Slide down
+          track.slide_target_period = 856;
           track.per_tick_period_increment = effect & 0x0FF;
           break;
         case 0x300: // Slide to note
