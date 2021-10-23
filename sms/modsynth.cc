@@ -723,11 +723,6 @@ protected:
         //    and old volume
         // 3. Period missing, ins_num given and matches old ins_num: reset volume
         //    only (this is already done above)
-        //    TODO: do we need to do something special for EDx effects here? (Does
-        //    EDx COMPLETELY delay the interpretation of the ins_num/period, or is
-        //    it OK to reset volume above even if there's an EDx? Presumably this
-        //    case would be an error anyway, since we wouldn't start a new note
-        //    even if there was no EDx...)
         // 4. Period missing, ins_num given and does not match old ins_num: start
         //    a new note, unless old ins_num is zero, in which case just set the
         //    track's ins_num for future notes
@@ -795,10 +790,8 @@ protected:
 
         case 0x500: // Volume slide during slide to note
           // If this division has a period, use it; otherwise use the last
-          // target period. (TODO: is this the correct behavior? The
-          // observational spec says to use the division's period, but I've so
-          // far only seen this used with no period.)
-          track.slide_target_period = div.period();
+          // target period.
+          track.slide_target_period = div_period;
           if (!track.slide_target_period) {
             track.slide_target_period = track.last_slide_target_period;
           }
@@ -811,8 +804,6 @@ protected:
           goto VolumeSlideEffect;
 
         case 0x700: // Tremolo
-          // TODO: delete this warning when tremolo is actually implemented
-          fprintf(stderr, "warning: untested effect (tremolo)\n");
           track.tremolo_amplitude = effect & 0x00F;
           if (!track.tremolo_amplitude) {
             track.tremolo_amplitude = track.last_tremolo_amplitude;
@@ -827,15 +818,15 @@ protected:
           }
           break;
 
-/* [8]: UNKNOWN
-        The observational spec says this effect is unused. I've seen a few MODs
-        that use it, but it's not clear for what. PlayerPRO uses it for precise
-        panning, but that doesn't seem to make sense with how it's used in the
-        MODs I've looked at. Further research is needed here.
-        See MODs:
-          @rzecho
-          noparking
-*/
+        // TODO: Figure out what effect 0x800 is and implement it.
+        // The observational spec says this effect is unused. I've seen a few
+        // MODs that use it, but it's not clear for what. PlayerPRO uses it to
+        // set panning (in the range 0-64), but that doesn't seem to make sense
+        // with how it's used in the MODs I've looked at. Further research is
+        // needed here.
+        // See MODs:
+        //   @rzecho
+        //   noparking
 
         case 0x900: { // Set sample offset
           // The spec says the parameter is essentially <<8 but is measured in
@@ -879,6 +870,7 @@ protected:
           }
           track.set_discontinuous_flag();
           break;
+
         case 0xD00: // Pattern break
           // This was probably just a typo in the original Protracker, but it's
           // now propagated everywhere... the high 4 bits are multiplied by 10,
@@ -886,6 +878,7 @@ protected:
           this->partition_break_target = this->partition_index + 1;
           this->pattern_break_target = (((effect & 0x0F0) >> 4) * 10) + (effect & 0x00F);
           break;
+
         case 0xE00: { // Sub-effects
           switch (effect & 0x0F0) {
             case 0x000: // Enable/disable hardware filter
@@ -900,12 +893,12 @@ protected:
               track.period += effect & 0x00F;
               break;
 
-/*
-[14][3]: Set glissando on/off
-     Where [14][3][x] means "set glissando ON if x is 1, OFF if x is 0".
-     Used in conjunction with [3] ('Slide to note'). If glissando is on,
-     then 'Slide to note' will slide in semitones, otherwise will
-     perform the default smooth slide. */
+            // TODO: Implement this effect. None of the MODs I've seen use it.
+            // [14][3]: Set glissando on/off
+            // Where [14][3][x] means "set glissando ON if x is 1, OFF if x is 0".
+            // Used in conjunction with [3] ('Slide to note'). If glissando is on,
+            // then 'Slide to note' will slide in semitones, otherwise will
+            // perform the default smooth slide.
 
             case 0x040: // Set vibrato waveform
               // Note: there are only 8 waveforms defined (at least in the MOD
@@ -913,12 +906,13 @@ protected:
               track.vibrato_waveform = effect & 0x007;
               break;
 
-/*
-[14][5]: Set finetune value
-     Where [14][5][x] means "sets the finetune value of the current
-     sample to the signed nibble x". x has legal values of 0..15,
-     corresponding to signed nibbles 0..7,-8..-1 (see start of text for
-     more info on finetune values). */
+            // TODO: Implement this effect. See MODs:
+            //   We Need Infjnytee
+            // [14][5]: Set finetune value
+            // Where [14][5][x] means "sets the finetune value of the current
+            // sample to the signed nibble x". x has legal values of 0..15,
+            // corresponding to signed nibbles 0..7,-8..-1 (see start of text for
+            // more info on finetune values).
 
             case 0x060: { // Loop pattern
               uint8_t times = effect & 0x00F;
@@ -988,13 +982,13 @@ protected:
               this->divisions_to_delay = effect & 0x00F;
               break;
 
-/*
-[14][15]: Invert loop
-     Where [14][15][x] means "if x is greater than 0, then play the
-     current sample's loop upside down at speed x". Each byte in the
-     sample's loop will have its sign changed (negated). It will only
-     work if the sample's loop (defined previously) is not too big. The
-     speed is based on an internal table. */
+            // TODO: Implement this effect. None of the MODs I've seen use it.
+            // [14][15]: Invert loop
+            // Where [14][15][x] means "if x is greater than 0, then play the
+            // current sample's loop upside down at speed x". Each byte in the
+            // sample's loop will have its sign changed (negated). It will only
+            // work if the sample's loop (defined previously) is not too big. The
+            // speed is based on an internal table.
 
             default:
               goto UnimplementedEffect;
@@ -1166,7 +1160,11 @@ protected:
         // Apply the appropriate portion of the instrument's sample data to the
         // tick output data.
         // TODO: This is where tremolo effects would go. Unfortunately, I don't
-        // have any test cases (yet) so I can't do this properly.
+        // have a reference implementation to know what it's supposed to sound
+        // like... PlayerPRO doesn't implement tremolo at all.
+        // See MODs:
+        //   noparking
+        //   gnomesonmymind
         float track_volume_factor = static_cast<float>(track.volume) / 64.0;
         float ins_volume_factor = static_cast<float>(i.volume) / 64.0;
         const vector<float>* resampled_data = nullptr;
@@ -1254,11 +1252,11 @@ protected:
           tick_samples[tick_output_offset + 1] +=
             track.last_sample * r_factor * this->opts->global_volume;
 
-          // TODO: The observational spec claims that the loop only begins after
-          // the sample has been played to the end once. Is this true? It seems
-          // like we should instead always jump back when we reach the end of
-          // the loop region, even the first time we reach it (which is what's
-          // implemented here).
+          // The observational spec claims that the loop only begins after the
+          // the sample has been played to the end once, but this seems false.
+          // It seems like we should instead always jump back when we reach the
+          // end of the loop region, even the first time we reach it (which is
+          // what's implemented here).
           resampled_offset++;
           // Since we use floats to represent the loop points, we actually could
           // miss it and think the sample ended when there's really a loop to be
