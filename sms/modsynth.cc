@@ -537,6 +537,10 @@ protected:
       if (!(this->tremolo_waveform & 4)) {
         this->tremolo_offset = 0.0;
       }
+      this->set_discontinuous_flag();
+    }
+
+    void set_discontinuous_flag() {
       this->dc_offset = this->last_sample;
       this->next_sample_may_be_discontinuous = true;
     }
@@ -811,6 +815,7 @@ protected:
           if (track.volume > 64) {
             track.volume = 64;
           }
+          track.set_discontinuous_flag();
           break;
         case 0xD00: // Pattern break
           // This was probably just a typo in the original Protracker, but it's
