@@ -702,42 +702,45 @@ protected:
       uint16_t div_period = div.period();
       uint8_t div_ins_num = div.instrument_num();
 
-      // If an instrument number is given, update the track's instrument and
-      // reset the track's volume. It appears this should happen even if the
-      // note is not played due to an effect 3xx or 5xx.
-      if (div_ins_num) {
-        track.volume = 64;
-      }
+      if ((effect & 0xFF0) != 0xED0) {
+        // If an instrument number is given, update the track's instrument and
+        // reset the track's volume. It appears this should happen even if the
+        // note is not played due to an effect 3xx or 5xx, but it probably should
+        // NOT happen if there's an effect EDx.
+        if (div_ins_num) {
+          track.volume = 64;
+        }
 
-      // There are surprisingly many cases for when a note should start vs. not
-      // start, and different behavior for each. It seems correct behavior is:
-      // 1. Period given, ins_num given: start a new note
-      // 2. Period given, ins_num missing: start a new note with old ins_num
-      //    and old volume
-      // 3. Period missing, ins_num given and matches old ins_num: reset volume
-      //    only (this is already done above)
-      //    TODO: do we need to do something special for EDx effects here? (Does
-      //    EDx COMPLETELY delay the interpretation of the ins_num/period, or is
-      //    it OK to reset volume above even if there's an EDx? Presumably this
-      //    case would be an error anyway, since we wouldn't start a new note
-      //    even if there was no EDx...)
-      // 4. Period missing, ins_num given and does not match old ins_num: start
-      //    a new note, unless old ins_num is zero, in which case just set the
-      //    track's ins_num for future notes
-      // 5. Period and ins_num both missing: do nothing
-      // Effects [3] and [5] are special cases and do not result in a new note
-      // being played, since they use the period as an additional parameter.
-      // Effect [14][13] is special in that it does not start the new note
-      // immediately, and the existing note, if any, should continue playing for
-      // at least another tick.
-      if (((effect & 0xF00) != 0x300) && ((effect & 0xF00) != 0x500) && ((effect & 0xFF0) != 0xED0) &&
-          (div_period || // Cases (1) and (2)
-           (div_ins_num && (div_ins_num != track.instrument_num)))) { // Case (4)
-        uint16_t note_period = div_period ? div_period : track.period;
-        uint8_t note_ins_num = div_ins_num ? div_ins_num : track.instrument_num;
-        // We already reset the track's volume above if ins_num is given. If
-        // ins_num is not given, we should use the previous note volume anyway.
-        track.start_note(note_ins_num, note_period, track.volume);
+        // There are surprisingly many cases for when a note should start vs. not
+        // start, and different behavior for each. It seems correct behavior is:
+        // 1. Period given, ins_num given: start a new note
+        // 2. Period given, ins_num missing: start a new note with old ins_num
+        //    and old volume
+        // 3. Period missing, ins_num given and matches old ins_num: reset volume
+        //    only (this is already done above)
+        //    TODO: do we need to do something special for EDx effects here? (Does
+        //    EDx COMPLETELY delay the interpretation of the ins_num/period, or is
+        //    it OK to reset volume above even if there's an EDx? Presumably this
+        //    case would be an error anyway, since we wouldn't start a new note
+        //    even if there was no EDx...)
+        // 4. Period missing, ins_num given and does not match old ins_num: start
+        //    a new note, unless old ins_num is zero, in which case just set the
+        //    track's ins_num for future notes
+        // 5. Period and ins_num both missing: do nothing
+        // Effects [3] and [5] are special cases and do not result in a new note
+        // being played, since they use the period as an additional parameter.
+        // Effect [14][13] is special in that it does not start the new note
+        // immediately, and the existing note, if any, should continue playing for
+        // at least another tick.
+        if (((effect & 0xF00) != 0x300) && ((effect & 0xF00) != 0x500) &&
+            (div_period || // Cases (1) and (2)
+             (div_ins_num && (div_ins_num != track.instrument_num)))) { // Case (4)
+          uint16_t note_period = div_period ? div_period : track.period;
+          uint8_t note_ins_num = div_ins_num ? div_ins_num : track.instrument_num;
+          // We already reset the track's volume above if ins_num is given. If
+          // ins_num is not given, we should use the previous note volume anyway.
+          track.start_note(note_ins_num, note_period, track.volume);
+        }
       }
 
       switch (effect & 0xF00) {
@@ -754,7 +757,7 @@ protected:
           track.per_tick_period_increment = effect & 0x0FF;
           break;
         case 0x300: // Slide to note
-          track.slide_target_period = div.period();
+          track.slide_target_period = div_period;
           if (track.slide_target_period == 0) {
             track.slide_target_period = track.last_slide_target_period;
           }
@@ -968,8 +971,8 @@ protected:
               break;
             case 0x0D0: // Delay sample
               track.sample_start_delay_ticks = effect & 0x00F;
-              track.delayed_sample_instrument_num = div.instrument_num();
-              track.delayed_sample_period = div.period();
+              track.delayed_sample_instrument_num = div_ins_num;
+              track.delayed_sample_period = div_period;
               break;
             case 0x0E0: // Delay pattern
               this->divisions_to_delay = effect & 0x00F;
@@ -1049,6 +1052,15 @@ protected:
           continue;
         }
 
+        if (track.sample_start_delay_ticks &&
+            (track.sample_start_delay_ticks == tick_num)) {
+          // Delay requested via effect EDx and we should start the sample now
+          track.start_note(track.delayed_sample_instrument_num, track.delayed_sample_period, 64);
+          track.sample_start_delay_ticks = 0;
+          track.delayed_sample_instrument_num = 0;
+          track.delayed_sample_period = 0;
+        }
+
         if (track.instrument_num == 0 || track.period == 0) {
           track.last_sample = 0;
           continue; // Track has not played any sound yet
@@ -1058,15 +1070,6 @@ protected:
         if (track.input_sample_offset >= i.sample_data.size()) {
           track.last_sample = 0;
           continue; // Previous sound is already done
-        }
-
-        if (track.sample_start_delay_ticks &&
-            (track.sample_start_delay_ticks == tick_num)) {
-          // Delay requested via effect EDx and we should start the sample now
-          track.start_note(track.delayed_sample_instrument_num, track.delayed_sample_period, 64);
-          track.sample_start_delay_ticks = 0;
-          track.delayed_sample_instrument_num = 0;
-          track.delayed_sample_period = 0;
         }
 
         if (track.sample_retrigger_interval_ticks &&
