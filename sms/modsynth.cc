@@ -626,6 +626,8 @@ protected:
   bool jump_to_pattern_loop_start;
   size_t total_output_samples;
   int32_t pattern_break_target;
+  int32_t partition_break_target;
+  vector<bool> partitions_executed;
   ssize_t divisions_to_delay;
 
   float dc_offset_decay;
@@ -647,6 +649,8 @@ public:
       jump_to_pattern_loop_start(false),
       total_output_samples(0),
       pattern_break_target(-1),
+      partition_break_target(-1),
+      partitions_executed(0x80, false),
       divisions_to_delay(0),
       dc_offset_decay(0.001) {
     // Initialize track state which depends on track index
@@ -692,6 +696,7 @@ protected:
 
   void execute_current_division_commands() {
     this->pattern_break_target = -1;
+    this->partition_break_target = -1;
     this->divisions_to_delay = 0;
     const auto& pattern = this->current_pattern();
     for (auto& track : this->tracks) {
@@ -856,12 +861,16 @@ protected:
           }
           break;
 
-/*
-[11]: Position Jump
-     Where [11][x][y] means "stop the pattern after this division, and
-     continue the song at song-position x*16+y". This shifts the
-     'pattern-cursor' in the pattern table (see above). Legal values for
-     x*16+y are from 0 to 127. */
+        case 0xB00: { // Position jump
+          // Don't allow a jump into a partition that has already executed, to
+          // prevent infinite loops.
+          uint8_t target_partition = effect & 0x07F;
+          if (!this->partitions_executed.at(target_partition)) {
+            this->partition_break_target = target_partition;
+            this->pattern_break_target = 0;
+          }
+          break;
+        }
 
         case 0xC00: // Set volume
           track.volume = effect & 0x0FF;
@@ -874,6 +883,7 @@ protected:
           // This was probably just a typo in the original Protracker, but it's
           // now propagated everywhere... the high 4 bits are multiplied by 10,
           // not 16.
+          this->partition_break_target = this->partition_index + 1;
           this->pattern_break_target = (((effect & 0x0F0) >> 4) * 10) + (effect & 0x00F);
           break;
         case 0xE00: { // Sub-effects
@@ -1321,20 +1331,17 @@ protected:
   }
 
   void advance_division() {
-    if (this->pattern_break_target >= 0) {
+    if (this->pattern_break_target >= 0 && this->partition_break_target >= 0) {
+      this->partition_index = this->partition_break_target;
       this->division_index = this->pattern_break_target;
+      this->partition_break_target = -1;
       this->pattern_break_target = -1;
-      this->partition_index++;
       this->pattern_loop_start_index = 0;
-      if (this->partition_index >= this->mod->partition_count) {
-        return;
-      }
-      if (this->division_index >= 64) {
-        throw runtime_error("pattern break opcode jumps past end of next pattern");
-      }
+
     } else if (this->jump_to_pattern_loop_start) {
       this->division_index = this->pattern_loop_start_index;
       this->jump_to_pattern_loop_start = false;
+
     } else {
       this->division_index++;
       if (this->division_index >= 64) {
@@ -1343,6 +1350,14 @@ protected:
         this->pattern_loop_start_index = 0;
       }
     }
+
+    if (this->partition_index >= this->mod->partition_count) {
+      return;
+    }
+    if (this->division_index >= 64) {
+      throw runtime_error("pattern break opcode jumps past end of next pattern");
+    }
+    this->partitions_executed.at(this->partition_index) = true;
   }
 
   bool exceeded_time_limit() const {
