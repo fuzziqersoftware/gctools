@@ -74,7 +74,9 @@ struct Module {
 
 
 
-shared_ptr<Module> load_mod(StringReader& r, uint64_t flags) {
+shared_ptr<Module> parse_mod(const string& data, uint64_t flags) {
+  StringReader r(data.data(), data.size());
+
   // Check for other known file type signatures, but don't let them prevent
   // attempting to load the file
   if (r.read(3, false) == "MAD") {
@@ -229,6 +231,10 @@ shared_ptr<Module> load_mod(StringReader& r, uint64_t flags) {
   }
 
   return mod;
+}
+
+shared_ptr<Module> load_mod(const string& filename, uint64_t flags) {
+  return parse_mod(load_file(filename), flags);
 }
 
 
@@ -1465,6 +1471,10 @@ Usage:\n\
       --show-sample-saveforms: Shows sample waveforms vertically. If color is\n\
           enabled, possibly-clipped samples are highlighted in red.\n\
 \n\
+  modsynth --disassemble-directory [options] directory_name\n\
+    Disassembles all files in the given directory. Options are the same as for\n\
+    --disassemble.\n\
+\n\
   modsynth --export-instruments input_filename\n\
     Exports the instruments from the module. Each instrument has at most one\n\
     sample. Each sample is saved as <input_filename>_<instrument_number>.wav.\n\
@@ -1521,6 +1531,7 @@ Options for all usage modes:\n\
 int main(int argc, char** argv) {
   enum class Behavior {
     Disassemble,
+    DisassembleDirectory,
     ExportInstruments,
     Render,
     Play,
@@ -1537,6 +1548,8 @@ int main(int argc, char** argv) {
   for (int x = 1; x < argc; x++) {
     if (!strcmp(argv[x], "--disassemble")) {
       behavior = Behavior::Disassemble;
+    } else if (!strcmp(argv[x], "--disassemble-directory")) {
+      behavior = Behavior::DisassembleDirectory;
     } else if (!strcmp(argv[x], "--export-instruments")) {
       behavior = Behavior::ExportInstruments;
     } else if (!strcmp(argv[x], "--render")) {
@@ -1622,10 +1635,8 @@ int main(int argc, char** argv) {
   }
 
   shared_ptr<Module> mod;
-  {
-    string input_data = load_file(input_filename);
-    StringReader r(input_data.data(), input_data.size());
-    mod = load_mod(r, opts->flags);
+  if (behavior != Behavior::DisassembleDirectory) {
+    mod = load_mod(input_filename, opts->flags);
   }
 
   switch (behavior) {
@@ -1634,6 +1645,30 @@ int main(int argc, char** argv) {
       // contained in the disassembly
       disassemble_mod(stdout, mod, opts->flags);
       break;
+    case Behavior::DisassembleDirectory: {
+      for (const auto& filename : list_directory(input_filename)) {
+        string path = string(input_filename) + "/" + filename;
+        fprintf(stdout, "===== %s\n", path.c_str());
+
+        shared_ptr<Module> mod;
+        try {
+          mod = load_mod(path, opts->flags);
+        } catch (const exception& e) {
+          fprintf(stdout, "Failed to load module: %s\n\n", e.what());
+          continue;
+        }
+
+        try {
+          disassemble_mod(stdout, mod, opts->flags);
+        } catch (const exception& e) {
+          fprintf(stdout, "Failed to disassemble module: %s\n\n", e.what());
+          continue;
+        }
+
+        fputc('\n', stdout);
+      }
+      break;
+    }
     case Behavior::ExportInstruments:
       export_mod_instruments(mod, opts->output_sample_rate, input_filename);
       break;
