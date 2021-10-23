@@ -91,10 +91,10 @@ shared_ptr<Module> load_mod(StringReader& r, uint64_t flags) {
     case 0x4D2E4B2E: // M.K.
     case 0x4D214B21: // M!K!
     case 0x464C5434: // FLT4
-      mod->num_tracks = 4;
-      break;
     case 0x464C5438: // FLT8
-      mod->num_tracks = 8;
+      // Note: the observational spec appears to be incorrect about the FLT8
+      // case - MODs with that signature appear to have only 4 channels.
+      mod->num_tracks = 4;
       break;
     default:
       if ((mod->extension_signature & 0xF0FFFFFF) == 0x3043484E) { // xCHN
