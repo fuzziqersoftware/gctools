@@ -1397,8 +1397,8 @@ void normalize_amplitude(vector<float>& data) {
     }
   }
 
-  fprintf(stderr, "normalizing by %lg\n", max_amplitude);
-  if (max_amplitude == 0.0) {
+  fprintf(stderr, "Normalizing volume by %lg\n", max_amplitude);
+  if (max_amplitude == 0.0f) {
     return;
   }
   for (float& sample : data) {
@@ -1428,7 +1428,7 @@ Usage:\n\
 \n\
   modsynth --render [options] input_filename\n\
     Generates a rasterized version of the sequence. Saves the result as\n\
-    <input_filename>.wav. Options:\n\
+    <input_filename>.wav. Options for both --play and --render:\n\
       --sample-rate=N: Output audio at this sample rate (default 48000).\n\
       --volume=N: Set global volume to N (-1.0-1.0; default 1.0). Negative\n\
           volumes simply invert the output waveform; it will sound the same as\n\
@@ -1451,6 +1451,10 @@ Usage:\n\
           default behavior, which is to align arpeggio boundaries to ticks.\n\
       --vibrato-resolution=N: Evaluate vibrato effects this many times each\n\
           tick (default 1).\n\
+    Options for --render only:\n\
+      --skip-normalize: By default, modsynth will normalize the output so the\n\
+          maximum sample amplitude is 1.0 or -1.0. This option skips that step,\n\
+          so the output may contain samples with higher amplitudes.\n\
       --write-stdout: Instead of saving to a file, write raw float32 data to\n\
           stdout, which can be piped to audiocat --play --format=stereo-f32.\n\
           Generally only useful for debugging problems with --render that don't\n\
@@ -1458,7 +1462,7 @@ Usage:\n\
 \n\
   modsynth --play [options] input_filename\n\
     Plays the sequence through the default audio device.\n\
-    All options to --render apply here too. Additional options:\n\
+    Most options to --render apply here too. Extra options for --play only:\n\
       --play-buffers=N: Generate this many ticks of audio ahead of the output\n\
           device (default 8). If audio is choppy, try increasing this value.\n\
 \n\
@@ -1482,6 +1486,8 @@ int main(int argc, char** argv) {
   size_t num_play_buffers = 8;
   bool use_default_color_flags = true;
   bool write_stdout = false;
+  bool use_default_global_volume = false;
+  bool normalize_after_render = true;
   shared_ptr<MODSynthesizer::Options> opts(new MODSynthesizer::Options());
   for (int x = 1; x < argc; x++) {
     if (!strcmp(argv[x], "--disassemble")) {
@@ -1519,6 +1525,7 @@ int main(int argc, char** argv) {
     } else if (!strncmp(argv[x], "--tempo-bias=", 13)) {
       opts->tempo_bias = atof(&argv[x][13]);
     } else if (!strncmp(argv[x], "--volume=", 9)) {
+      use_default_global_volume = false;
       opts->global_volume = atof(&argv[x][9]);
       if (opts->global_volume > 1.0) {
         opts->global_volume = 1.0;
@@ -1527,6 +1534,9 @@ int main(int argc, char** argv) {
       }
     } else if (!strncmp(argv[x], "--time-limit=", 13)) {
       opts->max_output_seconds = atof(&argv[x][13]);
+
+    } else if (!strcmp(argv[x], "--skip-normalize")) {
+      normalize_after_render = false;
 
     } else if (!strncmp(argv[x], "--arpeggio-frequency=", 21)) {
       opts->arpeggio_frequency = atoi(&argv[x][21]);
@@ -1560,6 +1570,9 @@ int main(int argc, char** argv) {
       isatty(fileno((behavior == Behavior::Disassemble) ? stdout : stderr))) {
     opts->flags |= Flags::TerminalColor;
   }
+  if (use_default_global_volume) {
+    opts->global_volume = (behavior == Behavior::Play) ? 0.5 : 1.0;
+  }
 
   shared_ptr<Module> mod;
   {
@@ -1588,7 +1601,10 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Synthesis:\n");
         exporter.run();
         fprintf(stderr, "Assembling result\n");
-        const auto& result = exporter.result();
+        auto result = exporter.result();
+        if (normalize_after_render) {
+          normalize_amplitude(result);
+        }
         fprintf(stderr, "... %s\n", output_filename.c_str());
         save_wav(output_filename.c_str(), result, opts->output_sample_rate, 2);
       }
