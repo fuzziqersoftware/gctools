@@ -642,50 +642,46 @@ protected:
       const auto& div = pattern.divisions.at(
           this->division_index * this->mod->num_tracks + track.index);
 
-      // If a new note is to be played, reset the instrument number and/or
-      // period, and the sample data offset (it will play from the beginning).
+      uint16_t effect = div.effect();
+      uint16_t div_period = div.period();
+      uint8_t div_ins_num = div.instrument_num();
+
+      // If an instrument number is given, update the track's instrument and
+      // reset the track's volume. It appears this should happen even if the
+      // note is not played due to an effect 3xx or 5xx.
+      if (div_ins_num) {
+        track.volume = 64;
+      }
+
+      // There are surprisingly many cases for when a note should start vs. not
+      // start, and different behavior for each. It seems correct behavior is:
+      // 1. Period given, ins_num given: start a new note
+      // 2. Period given, ins_num missing: start a new note with old ins_num
+      //    and old volume
+      // 3. Period missing, ins_num given and matches old ins_num: reset volume
+      //    only (this is already done above)
+      //    TODO: do we need to do something special for EDx effects here? (Does
+      //    EDx COMPLETELY delay the interpretation of the ins_num/period, or is
+      //    it OK to reset volume above even if there's an EDx? Presumably this
+      //    case would be an error anyway, since we wouldn't start a new note
+      //    even if there was no EDx...)
+      // 4. Period missing, ins_num given and does not match old ins_num: start
+      //    a new note, unless old ins_num is zero, in which case just set the
+      //    track's ins_num for future notes
+      // 5. Period and ins_num both missing: do nothing
       // Effects [3] and [5] are special cases and do not result in a new note
       // being played, since they use the period as an additional parameter.
       // Effect [14][13] is special in that it does not start the new note
       // immediately, and the existing note, if any, should continue playing for
       // at least another tick.
-      uint16_t effect = div.effect();
-      if (((effect & 0xF00) != 0x300) && ((effect & 0xF00) != 0x500) && ((effect & 0xFF0) != 0xED0)) {
-        uint16_t div_period = div.period();
-        uint8_t div_ins_num = div.instrument_num();
-        // There are surprisingly many cases for when a note should start vs.
-        // not start, and different behavior for each. The correct behavior
-        // seems to be:
-        // 1. Period given, ins_num given: start a new note
-        // 2. Period given, ins_num missing: start a new note with old ins_num
-        //    and old volume
-        // 3. Period missing, ins_num given and matches old ins_num: reset
-        //    volume only
-        // 4. Period missing, ins_num given and does not match old ins_num:
-        //    start a new note, unless old ins_num is zero, in which case just
-        //    set the track's ins_num for future notes
-        // 5. Period and ins_num both missing: do nothing
-
-        // Cases (1), (2), and (4)
-        if (div_period || // Cases (1) and (2)
-            (div_ins_num && (div_ins_num != track.instrument_num))) { // Case (4)
-          uint16_t note_period = div_period ? div_period : track.period;
-          uint8_t note_ins_num = div_ins_num ? div_ins_num : track.instrument_num;
-          // It seems like volume should NOT get reset unless the instrument
-          // number is explicitly specified in the same division. TODO: is this
-          // actually true?
-          uint8_t note_volume = div_ins_num ? 64 : track.volume;
-          track.start_note(note_ins_num, note_period, note_volume);
-
-        // Case (3)
-        } else if (!div_period &&
-                   (div_ins_num == track.instrument_num) &&
-                   (track.period != 0)) {
-          // If ins_num is specified and matches the currently-playing
-          // instrument, but period is not specified, then reset the volume
-          // only. This isn't documented, but seems to be the correct behavior.
-          track.volume = 64;
-        }
+      if (((effect & 0xF00) != 0x300) && ((effect & 0xF00) != 0x500) && ((effect & 0xFF0) != 0xED0) &&
+          (div_period || // Cases (1) and (2)
+           (div_ins_num && (div_ins_num != track.instrument_num)))) { // Case (4)
+        uint16_t note_period = div_period ? div_period : track.period;
+        uint8_t note_ins_num = div_ins_num ? div_ins_num : track.instrument_num;
+        // We already reset the track's volume above if ins_num is given. If
+        // ins_num is not given, we should use the previous note volume anyway.
+        track.start_note(note_ins_num, note_period, track.volume);
       }
 
       switch (effect & 0xF00) {
@@ -1098,13 +1094,7 @@ protected:
         }
 
         // Apply the appropriate portion of the instrument's sample data to the
-        // tick output data
-        // TODO: Using volume linearly here seems incorrect; seems it should be
-        // something superlinear (so amplitude at 0x20 > 0.5*amp at 0x40).
-        // See MODs:
-        //   hoffipolkka
-        //   Kid
-        //   Yooomo
+        // tick output data.
         // TODO: This is where tremolo effects would go. Unfortunately, I don't
         // have any test cases (yet) so I can't do this properly.
         float track_volume_factor = static_cast<float>(track.volume) / 64.0;
