@@ -20,7 +20,8 @@ enum Flags {
   TerminalColor       = 0x01,
   ShowSampleData      = 0x02,
   ShowSampleWaveforms = 0x04,
-  ShowLoadingDebug    = 0x08,
+  ShowUnusedPatterns  = 0x08,
+  ShowLoadingDebug    = 0x10,
   Default             = 0x00,
 };
 
@@ -370,7 +371,15 @@ void disassemble_mod(FILE* stream, shared_ptr<const Module> mod, uint64_t flags)
     }
   }
 
+  vector<bool> patterns_used(0x80, !!(flags & Flags::ShowUnusedPatterns));
+  for (size_t x = 0; x < mod->partition_count; x++) {
+    patterns_used.at(mod->partition_table.at(x)) = true;
+  }
+
   for (size_t x = 0; x < mod->patterns.size(); x++) {
+    if (!patterns_used.at(x)) {
+      continue;
+    }
     fputc('\n', stream);
     fprintf(stream, "Pattern %zu\n", x);
     for (size_t y = 0; y < 64; y++) {
@@ -966,7 +975,7 @@ protected:
                 track.volume = 64;
               }
               break;
-            case 0x0B0: // Fine volumne slide up
+            case 0x0B0: // Fine volume slide up
               track.volume -= effect & 0x00F;
               if (track.volume < 0) {
                 track.volume = 0;
@@ -1489,6 +1498,8 @@ Usage:\n\
       --show-sample-data: Shows raw sample data in a hex/ASCII view.\n\
       --show-sample-saveforms: Shows sample waveforms vertically. If color is\n\
           enabled, possibly-clipped samples are highlighted in red.\n\
+      --show-unused-patterns: Disassemble all patterns, even those that don\'t\n\
+          appear in the partition table.\n\
 \n\
   modsynth --disassemble-directory [options] directory_name\n\
     Disassembles all files in the given directory. Options are the same as for\n\
@@ -1591,6 +1602,8 @@ int main(int argc, char** argv) {
       opts->flags |= Flags::ShowSampleData;
     } else if (!strcmp(argv[x], "--show-sample-waveforms")) {
       opts->flags |= Flags::ShowSampleWaveforms;
+    } else if (!strcmp(argv[x], "--show-unused-patterns")) {
+      opts->flags |= Flags::ShowUnusedPatterns;
     } else if (!strcmp(argv[x], "--show-loading-debug")) {
       opts->flags |= Flags::ShowLoadingDebug;
 
@@ -1645,8 +1658,10 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  bool behavior_is_disassemble = ((behavior == Behavior::Disassemble) ||
+      (behavior == Behavior::DisassembleDirectory));
   if (use_default_color_flags &&
-      isatty(fileno((behavior == Behavior::Disassemble) ? stdout : stderr))) {
+      isatty(fileno(behavior_is_disassemble ? stdout : stderr))) {
     opts->flags |= Flags::TerminalColor;
   }
   if (use_default_global_volume) {
@@ -1665,26 +1680,22 @@ int main(int argc, char** argv) {
       disassemble_mod(stdout, mod, opts->flags);
       break;
     case Behavior::DisassembleDirectory: {
-      for (const auto& filename : list_directory(input_filename)) {
+      auto files = list_directory(input_filename);
+      size_t num_disassembled = 0;
+      for (const auto& filename : files) {
         string path = string(input_filename) + "/" + filename;
         fprintf(stdout, "===== %s\n", path.c_str());
 
         shared_ptr<Module> mod;
         try {
-          mod = load_mod(path, opts->flags);
+          disassemble_mod(stdout, load_mod(path, opts->flags), opts->flags);
+          fputc('\n', stdout);
         } catch (const exception& e) {
-          fprintf(stdout, "Failed to load module: %s\n\n", e.what());
-          continue;
+          fprintf(stdout, "Failed: %s\n\n", e.what());
         }
 
-        try {
-          disassemble_mod(stdout, mod, opts->flags);
-        } catch (const exception& e) {
-          fprintf(stdout, "Failed to disassemble module: %s\n\n", e.what());
-          continue;
-        }
-
-        fputc('\n', stdout);
+        num_disassembled++;
+        fprintf(stderr, "... (%zu/%zu) %s\n", num_disassembled, files.size(), path.c_str());
       }
       break;
     }
