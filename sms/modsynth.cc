@@ -20,11 +20,13 @@ enum Flags {
   TerminalColor       = 0x01,
   ShowSampleData      = 0x02,
   ShowSampleWaveforms = 0x04,
+  ShowLoadingDebug    = 0x08,
   Default             = 0x00,
 };
 
 struct Module {
   struct Instrument {
+    size_t index;
     string name;
     uint16_t num_samples;
     int8_t finetune; // Pitch shift (positive or negative) in increments of 1/8 semitone
@@ -72,7 +74,7 @@ struct Module {
 
 
 
-shared_ptr<Module> load_mod(StringReader& r) {
+shared_ptr<Module> load_mod(StringReader& r, uint64_t flags) {
   shared_ptr<Module> mod(new Module());
 
   // First, look ahead to see if this file uses any extensions. Annoyingly, the
@@ -106,12 +108,24 @@ shared_ptr<Module> load_mod(StringReader& r) {
       }
   }
 
+  if (flags & Flags::ShowLoadingDebug) {
+    fprintf(stderr, "Loader[%zX]: extension signature is %08X (%zu tracks, %zu instruments)\n",
+        r.where(), mod->extension_signature, mod->num_tracks, num_instruments);
+  }
+
   mod->name = r.read(0x14);
   strip_trailing_zeroes(mod->name);
+
+  if (flags & Flags::ShowLoadingDebug) {
+    string escaped_name = escape_quotes(mod->name);
+    fprintf(stderr, "Loader[%zX]: name is \"%s\"\n",
+        r.where(), escaped_name.c_str());
+  }
 
   mod->instruments.resize(num_instruments);
   for (size_t x = 0; x < num_instruments; x++) {
     auto& i = mod->instruments[x];
+    i.index = x;
     i.name = r.read(0x16);
     strip_trailing_zeroes(i.name);
     i.num_samples = static_cast<uint32_t>(r.get_u16r()) << 1;
@@ -125,11 +139,17 @@ shared_ptr<Module> load_mod(StringReader& r) {
     i.volume = r.get_u8();
     i.loop_start_samples = static_cast<uint32_t>(r.get_u16r()) << 1;
     i.loop_length_samples = static_cast<uint32_t>(r.get_u16r()) << 1;
+    if (flags & Flags::ShowLoadingDebug) {
+      fprintf(stderr, "Loader[%zX]: loaded instrument %zu\n", r.where(), x);
+    }
   }
 
   mod->partition_count = r.get_u8();
   r.get_u8(); // unused
   r.read_into(mod->partition_table.data(), mod->partition_table.size());
+  if (flags & Flags::ShowLoadingDebug) {
+    fprintf(stderr, "Loader[%zX]: loaded partition table\n", r.where());
+  }
 
   // We should have gotten to exactly the same offset that we read ahead to at
   // the beginning, unless there were not 31 instruments.
@@ -138,6 +158,9 @@ shared_ptr<Module> load_mod(StringReader& r) {
     if (mod->extension_signature &&
         mod->extension_signature != inplace_extension_signature) {
       throw logic_error("read-ahead extension signature does not match inplace extension signature");
+    }
+    if (flags & Flags::ShowLoadingDebug) {
+      fprintf(stderr, "Loader[%zX]: inplace extension signature\n", r.where());
     }
   }
 
@@ -154,6 +177,9 @@ shared_ptr<Module> load_mod(StringReader& r) {
       num_patterns = mod->partition_table[x] + 1;
     }
   }
+  if (flags & Flags::ShowLoadingDebug) {
+    fprintf(stderr, "Loader[%zX]: there are %zu patterns\n", r.where(), num_patterns);
+  }
 
   // Load the patterns.
   mod->patterns.resize(num_patterns);
@@ -163,6 +189,9 @@ shared_ptr<Module> load_mod(StringReader& r) {
     for (auto& div : pat.divisions) {
       div.wx = r.get_u16r();
       div.yz = r.get_u16r();
+    }
+    if (flags & Flags::ShowLoadingDebug) {
+      fprintf(stderr, "Loader[%zX]: loaded pattern %zu\n", r.where(), x);
     }
   }
 
@@ -178,6 +207,10 @@ shared_ptr<Module> load_mod(StringReader& r) {
       i.sample_data[x] = (sample == -0x80)
           ? -1.0f
           : (static_cast<float>(sample) / 128.0f);
+    }
+    if (flags & Flags::ShowLoadingDebug) {
+      fprintf(stderr, "Loader[%zX]: loaded samples for instrument %zu\n",
+          r.where(), i.index + 1);
     }
   }
 
@@ -261,13 +294,12 @@ void disassemble_pattern_row(
 void print_mod_text(FILE* stream, shared_ptr<const Module> mod) {
   fprintf(stream, "Name: %s\n", mod->name.c_str());
   fprintf(stream, "Instruments/Notes:\n");
-  for (size_t x = 0; x < mod->instruments.size(); x++) {
-    const auto& i = mod->instruments[x];
+  for (const auto& i : mod->instruments) {
     if (i.name.empty() && i.sample_data.empty()) {
       continue;
     }
     string escaped_name = escape_quotes(i.name);
-    fprintf(stream, "  [%02zu] %s\n", x + 1, escaped_name.c_str());
+    fprintf(stream, "  [%02zu] %s\n", i.index + 1, escaped_name.c_str());
   }
 }
 
@@ -278,11 +310,10 @@ void disassemble_mod(FILE* stream, shared_ptr<const Module> mod, uint64_t flags)
   fprintf(stream, "Partitions: %hhu\n", mod->partition_count);
   fprintf(stream, "Extension signature: %08X\n", mod->extension_signature);
 
-  for (size_t x = 0; x < mod->instruments.size(); x++) {
-    const auto& i = mod->instruments[x];
+  for (const auto& i : mod->instruments) {
     fputc('\n', stream);
     string escaped_name = escape_quotes(i.name);
-    fprintf(stream, "Instrument %zu: %s\n", x + 1, escaped_name.c_str());
+    fprintf(stream, "Instrument %zu: %s\n", i.index + 1, escaped_name.c_str());
     fprintf(stream, "  Fine-tune: %c%d/8 semitones\n",
         (i.finetune < 0) ? '-' : '+', (i.finetune < 0) ? -i.finetune : i.finetune);
     fprintf(stream, "  Volume: %hhu/64\n", i.volume);
@@ -308,7 +339,7 @@ void disassemble_mod(FILE* stream, shared_ptr<const Module> mod, uint64_t flags)
         if (((sample == -0x80) || (sample == 0x7F)) && (flags & Flags::TerminalColor)) {
           print_color_escape(stream, TerminalFormat::FG_RED, TerminalFormat::BOLD, TerminalFormat::END);
         }
-        fprintf(stream, "  ins %02zu +%04zX [%s]%s\n", x + 1, z, line_data.c_str(), suffix);
+        fprintf(stream, "  ins %02zu +%04zX [%s]%s\n", i.index + 1, z, line_data.c_str(), suffix);
         if (((sample == -0x80) || (sample == 0x7F)) && (flags & Flags::TerminalColor)) {
           print_color_escape(stream, TerminalFormat::NORMAL, TerminalFormat::END);
         }
@@ -342,16 +373,15 @@ void export_mod_instruments(
   // it seems like this is 0.5x the sample rate we need to make music sound
   // normal. Maybe the spec should have said 8287 words were sent to the channel
   // per second instead?
-  for (size_t x = 0; x < mod->instruments.size(); x++) {
-    const auto& i = mod->instruments[x];
+  for (const auto& i : mod->instruments) {
     if (i.sample_data.empty()) {
       fprintf(stderr, "... (%zu) \"%s\" -> (no sound data)\n",
-          x + 1,
+          i.index + 1,
           i.name.c_str());
     } else {
       string escaped_name = escape_quotes(i.name);
       fprintf(stderr, "... (%zu) \"%s\" -> %zu samples, +%hhdft, %02hhX vol, loop [%hux%hu]\n",
-          x + 1,
+          i.index + 1,
           escaped_name.c_str(),
           i.sample_data.size(),
           i.finetune,
@@ -359,7 +389,7 @@ void export_mod_instruments(
           i.loop_start_samples,
           i.loop_length_samples);
 
-      string output_filename_u8 = string_printf("%s_%zu.u8.wav", output_prefix, x + 1);
+      string output_filename_u8 = string_printf("%s_%zu.u8.wav", output_prefix, i.index + 1);
       vector<uint8_t> u8_sample_data;
       u8_sample_data.reserve(i.num_samples);
       for (int8_t sample : i.original_sample_data) {
@@ -367,7 +397,7 @@ void export_mod_instruments(
       }
       save_wav(output_filename_u8.c_str(), u8_sample_data, 16574, 1);
 
-      string output_filename_f32 = string_printf("%s_%zu.f32.wav", output_prefix, x + 1);
+      string output_filename_f32 = string_printf("%s_%zu.f32.wav", output_prefix, i.index + 1);
       save_wav(output_filename_f32.c_str(), i.sample_data, 16574, 1);
     }
   }
@@ -1470,6 +1500,7 @@ Options for all usage modes:\n\
   --color/--no-color: Enables or disables the generation of color escape codes\n\
       for visualizing pattern and instrument data. By default, color escapes\n\
       are generated only if the output is to a terminal.\n\
+  --show-loading-debug: Show debugging information when loading the file.\n\
 \n");
 }
 
@@ -1514,6 +1545,8 @@ int main(int argc, char** argv) {
       opts->flags |= Flags::ShowSampleData;
     } else if (!strcmp(argv[x], "--show-sample-waveforms")) {
       opts->flags |= Flags::ShowSampleWaveforms;
+    } else if (!strcmp(argv[x], "--show-loading-debug")) {
+      opts->flags |= Flags::ShowLoadingDebug;
 
     } else if (!strncmp(argv[x], "--solo-track=", 13)) {
       opts->solo_tracks.emplace(atoi(&argv[x][13]));
@@ -1578,7 +1611,7 @@ int main(int argc, char** argv) {
   {
     string input_data = load_file(input_filename);
     StringReader r(input_data.data(), input_data.size());
-    mod = load_mod(r);
+    mod = load_mod(r, opts->flags);
   }
 
   switch (behavior) {
