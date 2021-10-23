@@ -378,6 +378,7 @@ void export_mod_instruments(
 class MODSynthesizer {
 public:
   struct Options {
+    double amiga_hardware_frequency;
     size_t output_sample_rate;
     int resample_method;
     float global_volume;
@@ -391,7 +392,8 @@ public:
     uint64_t flags;
 
     Options()
-      : output_sample_rate(48000),
+      : amiga_hardware_frequency(7159090.5),
+        output_sample_rate(48000),
         resample_method(SRC_SINC_BEST_QUALITY),
         global_volume(1.0),
         max_output_seconds(0.0),
@@ -1118,19 +1120,16 @@ protected:
           }
           if (changed_segment) {
             const auto& segment = segments.at(segment_index);
-
             // Resample the instrument to the appropriate pitch
-            // TODO: For PAL Amiga, use 7093789.2 here instead. Should this be
-            // configurable?
             // The input samples to be played per second is:
-            // track_input_samples_per_second = 7159090.5 / (2 * period)
+            // track_input_samples_per_second = hardware_freq / (2 * period)
             // To convert this to the number of output samples per input sample,
             // all we have to do is divide the output sample rate by it:
-            // out_samples_per_in_sample = sample_rate / (7159090.5 / (2 * period))
-            // out_samples_per_in_sample = (sample_rate * 2 * period) / 7159090.5
+            // out_samples_per_in_sample = sample_rate / (hardware_freq / (2 * period))
+            // out_samples_per_in_sample = (sample_rate * 2 * period) / hardware_freq
             // This gives how many samples to generate for each input sample.
             src_ratio =
-                static_cast<double>(2 * this->timing.sample_rate * segment.second) / 7159090.5;
+                static_cast<double>(2 * this->timing.sample_rate * segment.second) / this->opts->amiga_hardware_frequency;
             resampled_data = &this->sample_cache.resample_add(
                 track.instrument_num, i.sample_data, 1, src_ratio);
             resampled_offset = track.input_sample_offset * src_ratio;
@@ -1227,7 +1226,6 @@ protected:
               track.per_tick_period_increment = 0;
               track.slide_target_period = 0;
             }
-            // TODO: implement limits here (they may be different across trackers)
             if (track.period <= 0) {
               track.period = 1;
             }
@@ -1241,8 +1239,6 @@ protected:
             }
           }
         }
-        // TODO: Should we advance these only sometimes? What would the right
-        // condition be here?
         track.vibrato_offset += static_cast<float>(track.vibrato_cycles) / 64;
         if (track.vibrato_offset >= 1) {
           track.vibrato_offset -= 1;
@@ -1414,7 +1410,7 @@ modsynth - a synthesizer for Protracker/Soundtracker modules\n\
 \n\
 Usage:\n\
   modsynth --disassemble [options] input_filename\n\
-    Prints a human-readable representation of the instruments and sequence\n\
+    Generates a human-readable representation of the instruments and sequence\n\
     program from the module. Options:\n\
       --show-sample-data: Shows raw sample data in a hex/ASCII view.\n\
       --show-sample-saveforms: Shows sample waveforms vertically. If color is\n\
@@ -1428,20 +1424,26 @@ Usage:\n\
   modsynth --render [options] input_filename\n\
     Generates a rasterized version of the sequence. Saves the result as\n\
     <input_filename>.wav. Options:\n\
-      --volume=N: Set global volume to N (0.0-1.0; default 1.0).\n\
-      --time-limit=N: Stop generating audio after this many seconds have been\n\
-          generated. (Unlimited by default)\n\
-      --skip-partitions=N: Start at this offset in the partition table (instead\n\
-          of zero).\n\
       --sample-rate=N: Output audio at this sample rate (default 48000).\n\
-      --solo-track=N: Mute all the tracks except this one. May be given\n\
-          multiple times.\n\
+      --volume=N: Set global volume to N (-1.0-1.0; default 1.0). Negative\n\
+          volumes simply invert the output waveform; it will sound the same as\n\
+          a positive volume but can be used for some advanced effects.\n\
+      --time-limit=N: Stop generating audio after this many seconds have been\n\
+          generated (unlimited by default).\n\
+      --skip-partitions=N: Start at this offset in the partition table instead\n\
+          of at the beginning.\n\
+      --solo-track=N: Mute all the tracks except this one. The first track is\n\
+          numbered 0; most MODs have tracks 0-3. May be given multiple times.\n\
       --mute-track=N: Mute this track. May be given multiple times.\n\
-      --tempo-bias=N: Speed up or slow down the sequence by this factor\n\
-          (default 1.0). For example, 2.0 plays the sequence twice as fast,\n\
-          and 0.5 plays the sequence at half speed.\n\
-      --arpeggio-frequency=N: Use a fixed arpeggio frequency instead of\n\
-          aligning to tick boundaries (default).\n\
+      --tempo-bias=N: Speed up or slow down the song by this factor without\n\
+          changing pitch (default 1.0). For example, 2.0 plays the song twice\n\
+          as fast; 0.5 plays the song at half speed.\n\
+      --pal-amiga: Use a slightly lower hardware frequency when computing note\n\
+          pitches, which matches Amiga machines sold in Europe. The default is\n\
+          to use the North American machines' frequency. (The difference is\n\
+          essentially imperceptible.)\n\
+      --arpeggio-frequency=N: Use a fixed arpeggio frequency instead of the\n\
+          default behavior, which is to align arpeggio boundaries to ticks.\n\
       --vibrato-resolution=N: Evaluate vibrato effects this many times each\n\
           tick (default 1).\n\
       --write-stdout: Instead of saving to a file, write raw float32 data to\n\
@@ -1453,7 +1455,7 @@ Usage:\n\
     Plays the sequence through the default audio device.\n\
     All options to --render apply here too. Additional options:\n\
       --play-buffers=N: Generate this many ticks of audio ahead of the output\n\
-          device (default 16). If audio is choppy, try increasing this value.\n\
+          device (default 8). If audio is choppy, try increasing this value.\n\
 \n\
 Options for all usage modes:\n\
   --color/--no-color: Enables or disables the generation of color escape codes\n\
@@ -1472,7 +1474,7 @@ int main(int argc, char** argv) {
 
   Behavior behavior = Behavior::Disassemble;
   const char* input_filename = nullptr;
-  size_t num_play_buffers = 16;
+  size_t num_play_buffers = 8;
   bool use_default_color_flags = true;
   bool write_stdout = false;
   shared_ptr<MODSynthesizer::Options> opts(new MODSynthesizer::Options());
@@ -1507,6 +1509,8 @@ int main(int argc, char** argv) {
     } else if (!strncmp(argv[x], "--mute-track=", 13)) {
       opts->mute_tracks.emplace(atoi(&argv[x][13]));
 
+    } else if (!strcmp(argv[x], "--pal-amiga")) {
+      opts->amiga_hardware_frequency = 7093789.2;
     } else if (!strncmp(argv[x], "--tempo-bias=", 13)) {
       opts->tempo_bias = atof(&argv[x][13]);
     } else if (!strncmp(argv[x], "--volume=", 9)) {
