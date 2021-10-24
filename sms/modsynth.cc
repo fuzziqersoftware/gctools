@@ -1184,16 +1184,22 @@ protected:
           segments.emplace_back(make_pair(0, effective_period));
         }
 
+        // Figure out the volume for this tick.
+        int8_t effective_volume = track.volume;
+        if (track.tremolo_amplitude && track.tremolo_cycles) {
+          effective_volume = this->get_vibrato_tremolo_wave_amplitude(
+              track.tremolo_offset + static_cast<float>(track.tremolo_cycles) / 64, track.tremolo_waveform) * track.tremolo_amplitude;
+          if (effective_volume < 0) {
+            effective_volume = 0;
+          } else if (effective_volume > 64) {
+            effective_volume = 64;
+          }
+        }
+        float track_volume_factor = static_cast<float>(effective_volume) / 64.0;
+        float ins_volume_factor = static_cast<float>(i.volume) / 64.0;
+
         // Apply the appropriate portion of the instrument's sample data to the
         // tick output data.
-        // TODO: This is where tremolo effects would go. Unfortunately, I don't
-        // have a reference implementation to know what it's supposed to sound
-        // like... PlayerPRO doesn't implement tremolo at all.
-        // See MODs:
-        //   noparking
-        //   gnomesonmymind
-        float track_volume_factor = static_cast<float>(track.volume) / 64.0;
-        float ins_volume_factor = static_cast<float>(i.volume) / 64.0;
         const vector<float>* resampled_data = nullptr;
         ssize_t segment_index = -1;
         double src_ratio = -1.0;
