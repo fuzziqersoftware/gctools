@@ -8,7 +8,7 @@
 #include <phosg-audio/File.hh>
 #include <phosg-audio/Stream.hh>
 #include <string>
-#include <unordered_map>
+#include <map>
 
 #include "SampleCache.hh"
 
@@ -252,20 +252,20 @@ shared_ptr<Module> load_mod(const string& filename, uint64_t flags) {
 
 
 
+static const map<uint16_t, const char*> note_name_for_period({
+  {1712, "C 0"}, {1616, "C#0"}, {1525, "D 0"}, {1440, "D#0"}, {1357, "E 0"}, {1281, "F 0"}, {1209, "F#0"}, {1141, "G 0"}, {1077, "G#0"}, {1017, "A 0"}, {961,  "A#0"}, {907,  "B 0"},
+  {856,  "C 1"}, {808,  "C#1"}, {762,  "D 1"}, {720,  "D#1"}, {678,  "E 1"}, {640,  "F 1"}, {604,  "F#1"}, {570,  "G 1"}, {538,  "G#1"}, {508,  "A 1"}, {480,  "A#1"}, {453,  "B 1"},
+  {428,  "C 2"}, {404,  "C#2"}, {381,  "D 2"}, {360,  "D#2"}, {339,  "E 2"}, {320,  "F 2"}, {302,  "F#2"}, {285,  "G 2"}, {269,  "G#2"}, {254,  "A 2"}, {240,  "A#2"}, {226,  "B 2"},
+  {214,  "C 3"}, {202,  "C#3"}, {190,  "D 3"}, {180,  "D#3"}, {170,  "E 3"}, {160,  "F 3"}, {151,  "F#3"}, {143,  "G 3"}, {135,  "G#3"}, {127,  "A 3"}, {120,  "A#3"}, {113,  "B 3"},
+  {107,  "C 4"}, {101,  "C#4"}, {95,   "D 4"}, {90,   "D#4"}, {85,   "E 4"}, {80,   "F 4"}, {76,   "F#4"}, {71,   "G 4"}, {67,   "G#4"}, {64,   "A 4"}, {60,   "A#4"}, {57,   "B 4"},
+});
+
 void disassemble_pattern_row(
     FILE* stream,
     shared_ptr<const Module> mod,
     uint8_t pattern_num,
     uint8_t y,
     uint64_t flags) {
-  static const unordered_map<uint16_t, const char*> note_name_for_period({
-    {1712, "C 0"}, {1616, "C#0"}, {1525, "D 0"}, {1440, "D#0"}, {1357, "E 0"}, {1281, "F 0"}, {1209, "F#0"}, {1141, "G 0"}, {1077, "G#0"}, {1017, "A 0"}, {961,  "A#0"}, {907,  "B 0"},
-    {856,  "C 1"}, {808,  "C#1"}, {762,  "D 1"}, {720,  "D#1"}, {678,  "E 1"}, {640,  "F 1"}, {604,  "F#1"}, {570,  "G 1"}, {538,  "G#1"}, {508,  "A 1"}, {480,  "A#1"}, {453,  "B 1"},
-    {428,  "C 2"}, {404,  "C#2"}, {381,  "D 2"}, {360,  "D#2"}, {339,  "E 2"}, {320,  "F 2"}, {302,  "F#2"}, {285,  "G 2"}, {269,  "G#2"}, {254,  "A 2"}, {240,  "A#2"}, {226,  "B 2"},
-    {214,  "C 3"}, {202,  "C#3"}, {190,  "D 3"}, {180,  "D#3"}, {170,  "E 3"}, {160,  "F 3"}, {151,  "F#3"}, {143,  "G 3"}, {135,  "G#3"}, {127,  "A 3"}, {120,  "A#3"}, {113,  "B 3"},
-    {107,  "C 4"}, {101,  "C#4"}, {95,   "D 4"}, {90,   "D#4"}, {85,   "E 4"}, {80,   "F 4"}, {76,   "F#4"}, {71,   "G 4"}, {67,   "G#4"}, {64,   "A 4"}, {60,   "A#4"}, {57,   "B 4"},
-    {0,    "---"},
-  });
 
   static const TerminalFormat track_colors[5] = {
     TerminalFormat::FG_RED,
@@ -307,10 +307,14 @@ void disassemble_pattern_row(
       } else {
         fprintf(stream, "  --");
       }
-      try {
-        fprintf(stream, " %s", note_name_for_period.at(period));
-      } catch (const out_of_range&) {
-        fprintf(stream, " %03hX", period);
+      if (period == 0) {
+        fputs(" ---", stream);
+      } else {
+        try {
+          fprintf(stream, " %s", note_name_for_period.at(period));
+        } catch (const out_of_range&) {
+          fprintf(stream, " %03hX", period);
+        }
       }
       if (effect) {
         fprintf(stream, " %03hX", effect);
@@ -536,6 +540,7 @@ protected:
     uint8_t tremolo_waveform;
     float vibrato_offset;
     float tremolo_offset;
+    bool enable_discrete_glissando;
 
     uint8_t arpeggio_arg;
     uint8_t sample_retrigger_interval_ticks;
@@ -576,6 +581,7 @@ protected:
         tremolo_waveform(0),
         vibrato_offset(0.0),
         tremolo_offset(0.0),
+        enable_discrete_glissando(false),
         last_slide_target_period(0),
         last_per_tick_period_increment(0),
         last_vibrato_amplitude(0),
@@ -921,15 +927,11 @@ protected:
               track.period += effect & 0x00F;
               break;
 
-            // TODO: Implement this effect. See MODs:
-            //   Futurity (part two)
-            //   mod.vir
-            //   Proofless
-            // [14][3]: Set glissando on/off
-            // Where [14][3][x] means "set glissando ON if x is 1, OFF if x is 0".
-            // Used in conjunction with [3] ('Slide to note'). If glissando is on,
-            // then 'Slide to note' will slide in semitones, otherwise will
-            // perform the default smooth slide.
+            case 0x030: // Set glissando on/off
+              track.enable_discrete_glissando = !!(effect & 0x00F);
+              fprintf(stderr, "track %zu: discrete glissando %s\n",
+                  track.index, track.enable_discrete_glissando ? "enabled" : "disabled");
+              break;
 
             case 0x040: // Set vibrato waveform
               // Note: there are only 8 waveforms defined (at least in the MOD
@@ -1062,6 +1064,29 @@ protected:
     }
   }
 
+  static uint16_t nearest_note_for_period(uint16_t period, bool snap_up) {
+    auto it = note_name_for_period.lower_bound(period);
+    if (it == note_name_for_period.end()) { // Period off the low end of the scale
+      fprintf(stderr, "[nearest_note_for_period] %hu %s -> LOW\n", period, snap_up ? "up" : "down");
+      return note_name_for_period.rbegin()->first; // Return lowest note
+    }
+    if (it == note_name_for_period.begin()) { // Period off the high end of the scale
+      fprintf(stderr, "[nearest_note_for_period] %hu %s -> HIGH\n", period, snap_up ? "up" : "down");
+      return it->first; // Return highest note
+    }
+    if (it->first == period) { // Period exactly matches a note
+      return period;
+    }
+
+    // Period is between notes; it.first is the note below it
+    if (snap_up) {
+      it--; // We want the note above instead
+    }
+    fprintf(stderr, "[nearest_note_for_period] %hu %s -> to %hu (%s)\n",
+        period, snap_up ? "up" : "down", it->first, it->second);
+    return it->first;
+  }
+
   void render_current_division_audio() {
     for (size_t tick_num = 0; tick_num < this->timing.ticks_per_division; tick_num++) {
       size_t num_tick_samples;
@@ -1114,7 +1139,10 @@ protected:
           track.volume = 0;
         }
 
-        uint16_t effective_period = track.period;
+        uint16_t effective_period = track.enable_discrete_glissando
+            ? this->nearest_note_for_period(track.period,
+                track.per_tick_period_increment < 0)
+            : track.period;
         int8_t finetune = (track.finetune_override == -0x80) ? i.finetune : track.finetune_override;
         if (finetune) {
           effective_period *= pow(2, -static_cast<float>(finetune) / (12.0 * 8.0));
@@ -1285,8 +1313,6 @@ protected:
           // with one inverted.
           float l_factor, r_factor;
           if (track.enable_surround_effect) {
-            // TODO: is half volume correct here, or should we use full volume
-            // on both ears?
             l_factor = (track.index & 1) ? -0.5 : 0.5;
             r_factor = (track.index & 1) ? 0.5 : -0.5;
           } else {
