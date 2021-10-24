@@ -5,6 +5,7 @@
 #include <deque>
 #include <phosg/Filesystem.hh>
 #include <phosg/Strings.hh>
+#include <phosg-audio/Convert.hh>
 #include <phosg-audio/File.hh>
 #include <phosg-audio/Stream.hh>
 #include <string>
@@ -230,13 +231,7 @@ shared_ptr<Module> parse_mod(const string& data, uint64_t flags) {
       fprintf(stderr, "Warning: sound data is missing for instrument %zu\n",
           i.index + 1);
     }
-    i.sample_data.resize(i.num_samples);
-    for (size_t x = 0; x < i.num_samples; x++) {
-      int8_t sample = i.original_sample_data[x];
-      i.sample_data[x] = (sample == -0x80)
-          ? -1.0f
-          : (static_cast<float>(sample) / 128.0f);
-    }
+    i.sample_data = convert_samples_s8_to_f32(i.original_sample_data);
     if (flags & Flags::ShowLoadingDebug) {
       fprintf(stderr, "Loader[%zX]: loaded samples for instrument %zu\n",
           r.where(), i.index + 1);

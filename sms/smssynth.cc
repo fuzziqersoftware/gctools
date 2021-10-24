@@ -10,6 +10,7 @@
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
 #include <phosg/Strings.hh>
+#include <phosg-audio/Convert.hh>
 #include <phosg-audio/File.hh>
 #include <phosg-audio/Stream.hh>
 #include <string>
@@ -2352,7 +2353,7 @@ int main(int argc, char** argv) {
       }
       auto step_samples = r->render_time_step(stream.queued_buffer_count(),
           stream.buffer_count());
-      vector<int16_t> al_samples = convert_samples_to_int(step_samples);
+      vector<int16_t> al_samples = convert_samples_f32_to_s16(step_samples);
       stream.add_samples(al_samples.data(), al_samples.size() / 2);
     }
     if (debug_flags & DebugFlag::ShowNotesOn) {
