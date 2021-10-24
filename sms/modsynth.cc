@@ -526,7 +526,8 @@ protected:
     int32_t instrument_num; // 1-based! 0 = no instrument
     int32_t period;
     int32_t volume; // 0 - 64
-    int32_t panning; // 0 (left) - 64 (right)
+    int32_t panning; // 0 (left) - 128 (right)
+    bool enable_surround_effect;
     int8_t finetune_override; // -0x80 = use instrument finetune (default)
     double input_sample_offset; // relative to input samples, not any resampling thereof
     uint8_t vibrato_waveform;
@@ -565,7 +566,8 @@ protected:
         instrument_num(0),
         period(0),
         volume(64),
-        panning(32),
+        panning(64),
+        enable_surround_effect(false),
         finetune_override(-0x80),
         input_sample_offset(0.0),
         vibrato_waveform(0),
@@ -683,7 +685,7 @@ public:
       this->tracks[x].index = x;
       // Tracks 1 and 2 (mod 4) are on the right; the others are on the left.
       // These assignments can be overridden by a [14][8][x] (0xE8x) effect.
-      this->tracks[x].panning = ((x & 3) == 1) || ((x & 3) == 2) ? 0x30 : 0x10;
+      this->tracks[x].panning = ((x & 3) == 1) || ((x & 3) == 2) ? 0x60 : 0x20;
     }
   }
 
@@ -843,15 +845,13 @@ protected:
           }
           break;
 
-        // TODO: Figure out what effect 0x800 is and implement it.
-        // The observational spec says this effect is unused. I've seen a few
-        // MODs that use it, but it's not clear for what. PlayerPRO uses it to
-        // set panning (in the range 0-64), but that doesn't seem to make sense
-        // with how it's used in the MODs I've looked at. Further research is
-        // needed here.
-        // See MODs:
-        //   @rzecho
-        //   noparking
+        case 0x800: // Panning
+          track.panning = effect & 0x0FF;
+          track.enable_surround_effect = (track.panning == 0xA4);
+          if (track.panning > 0x80) {
+            track.panning = 0x80;
+          }
+          break;
 
         case 0x900: { // Set sample offset
           // The spec says the parameter is essentially <<8 but is measured in
@@ -918,7 +918,10 @@ protected:
               track.period += effect & 0x00F;
               break;
 
-            // TODO: Implement this effect. None of the MODs I've seen use it.
+            // TODO: Implement this effect. See MODs:
+            //   Futurity (part two)
+            //   mod.vir
+            //   Proofless
             // [14][3]: Set glissando on/off
             // Where [14][3][x] means "set glissando ON if x is 1, OFF if x is 0".
             // Used in conjunction with [3] ('Slide to note'). If glissando is on,
@@ -956,7 +959,7 @@ protected:
               break;
 
             case 0x080: { // Set panning (PlayerPRO)
-              uint8_t panning = effect & 0x00F;
+              uint16_t panning = effect & 0x00F;
 
               // To deal with the "halves" of the range not being equal sizes,
               // we stretch out the right half a bit so [14][8][15] hits the
@@ -966,12 +969,12 @@ protected:
               } else {
                 panning *= 17;
               }
-              track.panning = (panning * 64) / 0xFF;
+              track.panning = (panning * 0x80) / 0xFF;
 
               if (track.panning < 0) {
                 track.panning = 0;
-              } else if (track.panning > 64) {
-                track.panning = 64;
+              } else if (track.panning > 0x80) {
+                track.panning = 0x80;
               }
               break;
             }
@@ -1003,7 +1006,9 @@ protected:
               this->divisions_to_delay = effect & 0x00F;
               break;
 
-            // TODO: Implement this effect. None of the MODs I've seen use it.
+            // TODO: Implement this effect. See MODs:
+            //   deepest space
+            //   Gummisnoppis
             // [14][15]: Invert loop
             // Where [14][15][x] means "if x is greater than 0, then play the
             // current sample's loop upside down at speed x". Each byte in the
@@ -1266,13 +1271,23 @@ protected:
           }
           track.decay_dc_offset(this->dc_offset_decay);
 
-          // Apply panning and produce the final sample.
-          float l_factor = (1.0 - static_cast<float>(track.panning) / 64.0);
-          float r_factor = (static_cast<float>(track.panning) / 64.0);
+          // Apply panning and produce the final sample. The surround effect
+          // (enabled with effect 8A4) plays the same sample in both ears, but
+          // with one inverted.
+          float l_factor, r_factor;
+          if (track.enable_surround_effect) {
+            // TODO: is half volume correct here, or should we use full volume
+            // on both ears?
+            l_factor = (track.index & 1) ? -0.5 : 0.5;
+            r_factor = (track.index & 1) ? 0.5 : -0.5;
+          } else {
+            l_factor = (1.0 - static_cast<float>(track.panning) / 128.0);
+            r_factor = (static_cast<float>(track.panning) / 128.0);
+          }
           tick_samples[tick_output_offset + 0] +=
-            track.last_sample * l_factor * this->opts->global_volume;
+              track.last_sample * l_factor * this->opts->global_volume;
           tick_samples[tick_output_offset + 1] +=
-            track.last_sample * r_factor * this->opts->global_volume;
+              track.last_sample * r_factor * this->opts->global_volume;
 
           // The observational spec claims that the loop only begins after the
           // the sample has been played to the end once, but this seems false.
