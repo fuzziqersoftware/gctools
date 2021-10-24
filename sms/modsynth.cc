@@ -1567,9 +1567,13 @@ Usage:\n\
     Generates a rasterized version of the sequence. Saves the result as\n\
     <input_filename>.wav. Options for both --play and --render:\n\
       --sample-rate=N: Output audio at this sample rate (default 48000).\n\
-      --volume=N: Set global volume to N (-1.0-1.0; default 1.0). Negative\n\
-          volumes simply invert the output waveform; it will sound the same as\n\
-          a positive volume but can be used for some advanced effects.\n\
+      --volume=N: Set global volume to N (-1.0-1.0). With --render this doesn\'t\n\
+          really matter unless --skip-normalize is also used, but with --play\n\
+          it overrides the default behavior of using (2.0 / num_tracks), which\n\
+          corrects for potentially very loud output for MODs with high track\n\
+          counts. Negative volumes simply invert the output waveform; it will\n\
+          sound the same as a positive volume but can be used for some advanced\n\
+          effects.\n\
       --time-limit=N: Stop generating audio after this many seconds have been\n\
           generated (unlimited by default).\n\
       --skip-partitions=N: Start at this offset in the partition table instead\n\
@@ -1728,8 +1732,20 @@ int main(int argc, char** argv) {
     mod = load_mod(input_filename, opts->flags);
   }
 
+  // Since we don't clip float32 samples and just play them directly, we could
+  // end up generating very loud output. With --render this is fine, since we
+  // normalize the output before saving it, but with --play we can't make a
+  // second pass back over the data... so we set the global volume appropriately
+  // based on the number of tracks, which essentially limits the output range to
+  // [-2.0, 2.0].
   if (use_default_global_volume) {
-    opts->global_volume = (behavior == Behavior::Play) ? (2 * mod->num_tracks / 2) : 1.0;
+    if (behavior == Behavior::Play) {
+      opts->global_volume = 2.0 / mod->num_tracks;
+      fprintf(stderr, "Setting global volume to %g to account for %zu tracks\n",
+          opts->global_volume, mod->num_tracks);
+    } else {
+      opts->global_volume = 1.0;
+    }
   }
 
   switch (behavior) {
