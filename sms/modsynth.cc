@@ -29,7 +29,7 @@ struct Module {
   struct Instrument {
     size_t index;
     string name;
-    uint16_t num_samples;
+    uint32_t num_samples;
     int8_t finetune; // Pitch shift (positive or negative) in increments of 1/8 semitone
     uint8_t volume; // 0-64
     uint16_t loop_start_samples;
@@ -82,6 +82,9 @@ int8_t sign_extend_nybble(int8_t x) {
     return x & 0x0F;
   }
 }
+
+// Forward declaration for debugging purposes
+void disassemble_mod(FILE* stream, shared_ptr<const Module> mod, uint64_t flags);
 
 shared_ptr<Module> parse_mod(const string& data, uint64_t flags) {
   StringReader r(data.data(), data.size());
@@ -159,7 +162,8 @@ shared_ptr<Module> parse_mod(const string& data, uint64_t flags) {
     i.loop_start_samples = static_cast<uint32_t>(r.get_u16r()) << 1;
     i.loop_length_samples = static_cast<uint32_t>(r.get_u16r()) << 1;
     if (flags & Flags::ShowLoadingDebug) {
-      fprintf(stderr, "Loader[%zX]: loaded instrument %zu\n", r.where(), x);
+      fprintf(stderr, "Loader[%zX]: loaded instrument %zu (0x%X samples to read)\n",
+          r.where(), x + 1, i.num_samples);
     }
   }
 
@@ -167,7 +171,8 @@ shared_ptr<Module> parse_mod(const string& data, uint64_t flags) {
   r.get_u8(); // unused
   r.read_into(mod->partition_table.data(), mod->partition_table.size());
   if (flags & Flags::ShowLoadingDebug) {
-    fprintf(stderr, "Loader[%zX]: loaded partition table\n", r.where());
+    fprintf(stderr, "Loader[%zX]: loaded partition table (%hhu/128 partitions)\n",
+        r.where(), mod->partition_count);
   }
 
   // We should have gotten to exactly the same offset that we read ahead to at
@@ -176,10 +181,14 @@ shared_ptr<Module> parse_mod(const string& data, uint64_t flags) {
     uint32_t inplace_extension_signature = r.get_u32r();
     if (mod->extension_signature &&
         mod->extension_signature != inplace_extension_signature) {
+      if (flags & Flags::ShowLoadingDebug) {
+        fprintf(stderr, "Loader[%zX]: Loaded so far:\n", r.where());
+        disassemble_mod(stderr, mod, flags);
+      }
       throw logic_error("read-ahead extension signature does not match inplace extension signature");
     }
     if (flags & Flags::ShowLoadingDebug) {
-      fprintf(stderr, "Loader[%zX]: inplace extension signature\n", r.where());
+      fprintf(stderr, "Loader[%zX]: inplace extension signature ok\n", r.where());
     }
   }
 
@@ -218,7 +227,8 @@ shared_ptr<Module> parse_mod(const string& data, uint64_t flags) {
   for (auto& i : mod->instruments) {
     i.original_sample_data.resize(i.num_samples);
     if (r.read_into(i.original_sample_data.data(), i.num_samples) != i.num_samples) {
-      throw runtime_error("mod is truncated during or before sample data");
+      fprintf(stderr, "Warning: sound data is missing for instrument %zu\n",
+          i.index + 1);
     }
     i.sample_data.resize(i.num_samples);
     for (size_t x = 0; x < i.num_samples; x++) {
