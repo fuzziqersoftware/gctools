@@ -455,6 +455,7 @@ public:
     float global_volume;
     float max_output_seconds;
     size_t skip_partitions;
+    bool allow_backward_position_jump;
     unordered_set<size_t> mute_tracks;
     unordered_set<size_t> solo_tracks;
     float tempo_bias;
@@ -469,6 +470,7 @@ public:
         global_volume(1.0),
         max_output_seconds(0.0),
         skip_partitions(0),
+        allow_backward_position_jump(false),
         mute_tracks(),
         solo_tracks(),
         tempo_bias(1.0),
@@ -881,7 +883,8 @@ protected:
           // Don't allow a jump into a partition that has already executed, to
           // prevent infinite loops.
           uint8_t target_partition = effect & 0x07F;
-          if (!this->partitions_executed.at(target_partition)) {
+          if (this->opts->allow_backward_position_jump ||
+              !this->partitions_executed.at(target_partition)) {
             this->partition_break_target = target_partition;
             this->pattern_break_target = 0;
           }
@@ -1552,6 +1555,9 @@ Usage:\n\
           generated (unlimited by default).\n\
       --skip-partitions=N: Start at this offset in the partition table instead\n\
           of at the beginning.\n\
+      --allow-backward-position-jump: Allow position jump effects (Bxx) to jump\n\
+          to parts of the song that have already been played. These generally\n\
+          result in infinite loops and are disallowed by default.\n\
       --solo-track=N: Mute all the tracks except this one. The first track is\n\
           numbered 0; most MODs have tracks 0-3. May be given multiple times.\n\
       --mute-track=N: Mute this track. May be given multiple times.\n\
@@ -1668,6 +1674,8 @@ int main(int argc, char** argv) {
 
     } else if (!strncmp(argv[x], "--skip-partitions=", 18)) {
       opts->skip_partitions = atoi(&argv[x][18]);
+    } else if (!strcmp(argv[x], "--allow-backward-position-jump")) {
+      opts->allow_backward_position_jump = true;
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
       num_play_buffers = atoi(&argv[x][15]);
     } else if (!strncmp(argv[x], "--sample-rate=", 14)) {
