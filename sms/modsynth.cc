@@ -1139,7 +1139,7 @@ protected:
           track.volume = 0;
         }
 
-        uint16_t effective_period = track.enable_discrete_glissando
+        float effective_period = track.enable_discrete_glissando
             ? this->nearest_note_for_period(track.period,
                 track.per_tick_period_increment < 0)
             : track.period;
@@ -1156,7 +1156,7 @@ protected:
         size_t division_output_offset = tick_num * tick_samples.size();
         // This is a list of (start_at_output_sample, instrument_period) for
         // the current tick
-        vector<pair<size_t, uint16_t>> segments;
+        vector<pair<size_t, float>> segments;
         if (track.vibrato_amplitude && track.vibrato_cycles) {
           if (track.arpeggio_arg) {
             throw logic_error("cannot have both arpeggio and vibrato effects in the same division");
@@ -1171,12 +1171,10 @@ protected:
           }
 
         } else if (track.arpeggio_arg) {
-          uint16_t periods[3] = {
+          float periods[3] = {
             effective_period,
-            static_cast<uint16_t>(
-              effective_period / pow(2, ((track.arpeggio_arg >> 4) & 0x0F) / 12.0)),
-            static_cast<uint16_t>(
-              effective_period / pow(2, (track.arpeggio_arg & 0x0F) / 12.0)),
+            effective_period / powf(2, ((track.arpeggio_arg >> 4) & 0x0F) / 12.0),
+            effective_period / powf(2, (track.arpeggio_arg & 0x0F) / 12.0),
           };
 
           // The spec describes arpeggio effects as being "evenly spaced" within
