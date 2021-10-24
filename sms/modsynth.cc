@@ -1727,13 +1727,14 @@ int main(int argc, char** argv) {
       isatty(fileno(behavior_is_disassemble ? stdout : stderr))) {
     opts->flags |= Flags::TerminalColor;
   }
-  if (use_default_global_volume) {
-    opts->global_volume = (behavior == Behavior::Play) ? 0.5 : 1.0;
-  }
 
   shared_ptr<Module> mod;
   if (behavior != Behavior::DisassembleDirectory) {
     mod = load_mod(input_filename, opts->flags);
+  }
+
+  if (use_default_global_volume) {
+    opts->global_volume = (behavior == Behavior::Play) ? (2 * mod->num_tracks / 2) : 1.0;
   }
 
   switch (behavior) {
