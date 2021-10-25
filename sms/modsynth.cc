@@ -560,6 +560,7 @@ protected:
     int16_t last_tremolo_cycles;
 
     float last_sample;
+    int8_t last_effective_volume;
     float dc_offset;
     bool next_sample_may_be_discontinuous;
 
@@ -584,6 +585,7 @@ protected:
         last_vibrato_cycles(0),
         last_tremolo_cycles(0),
         last_sample(0),
+        last_effective_volume(0),
         dc_offset(0),
         next_sample_may_be_discontinuous(false) {
       this->reset_division_scoped_effects();
@@ -1211,7 +1213,7 @@ protected:
         // Figure out the volume for this tick.
         int8_t effective_volume = track.volume;
         if (track.tremolo_amplitude && track.tremolo_cycles) {
-          effective_volume = this->get_vibrato_tremolo_wave_amplitude(
+          effective_volume += this->get_vibrato_tremolo_wave_amplitude(
               track.tremolo_offset + static_cast<float>(track.tremolo_cycles) / 64, track.tremolo_waveform) * track.tremolo_amplitude;
           if (effective_volume < 0) {
             effective_volume = 0;
@@ -1221,6 +1223,13 @@ protected:
         }
         float track_volume_factor = static_cast<float>(effective_volume) / 64.0;
         float ins_volume_factor = static_cast<float>(i.volume) / 64.0;
+
+        // If the volume changed, the waveform might become discontinuous, so
+        // enable tick cleanup.
+        if (track.last_effective_volume != effective_volume) {
+          track.set_discontinuous_flag();
+        }
+        track.last_effective_volume = effective_volume;
 
         // Apply the appropriate portion of the instrument's sample data to the
         // tick output data.
@@ -1293,8 +1302,8 @@ protected:
           float sample_from_ins = resampled_data->at(static_cast<size_t>(resampled_offset)) *
                 track_volume_factor * ins_volume_factor;
           if (track.next_sample_may_be_discontinuous) {
-            track.dc_offset -= sample_from_ins;
             track.last_sample = track.dc_offset;
+            track.dc_offset -= sample_from_ins;
             track.next_sample_may_be_discontinuous = false;
           } else {
             track.last_sample = sample_from_ins + track.dc_offset;
