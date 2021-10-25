@@ -1578,7 +1578,7 @@ Usage:\n\
       --sample-rate=N: Output audio at this sample rate (default 48000).\n\
       --volume=N: Set global volume to N (-1.0-1.0). With --render this doesn\'t\n\
           really matter unless --skip-normalize is also used, but with --play\n\
-          it overrides the default behavior of using (1.0 / num_tracks), which\n\
+          it overrides the default behavior of using (2.0 / num_tracks), which\n\
           corrects for potentially very loud output for MODs with high track\n\
           counts. Negative volumes simply invert the output waveform; it will\n\
           sound the same as a positive volume but can be used for some advanced\n\
@@ -1749,7 +1749,7 @@ int main(int argc, char** argv) {
   // [-1.0, 1.0].
   if (use_default_global_volume) {
     if (behavior == Behavior::Play) {
-      opts->global_volume = 1.0 / mod->num_tracks;
+      opts->global_volume = 2.0 / mod->num_tracks;
       fprintf(stderr, "Setting global volume to %g to account for %zu tracks\n",
           opts->global_volume, mod->num_tracks);
     } else {
