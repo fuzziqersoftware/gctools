@@ -1569,7 +1569,7 @@ Usage:\n\
       --sample-rate=N: Output audio at this sample rate (default 48000).\n\
       --volume=N: Set global volume to N (-1.0-1.0). With --render this doesn\'t\n\
           really matter unless --skip-normalize is also used, but with --play\n\
-          it overrides the default behavior of using (2.0 / num_tracks), which\n\
+          it overrides the default behavior of using (1.0 / num_tracks), which\n\
           corrects for potentially very loud output for MODs with high track\n\
           counts. Negative volumes simply invert the output waveform; it will\n\
           sound the same as a positive volume but can be used for some advanced\n\
@@ -1632,7 +1632,7 @@ int main(int argc, char** argv) {
   size_t num_play_buffers = 8;
   bool use_default_color_flags = true;
   bool write_stdout = false;
-  bool use_default_global_volume = false;
+  bool use_default_global_volume = true;
   bool normalize_after_render = true;
   shared_ptr<MODSynthesizer::Options> opts(new MODSynthesizer::Options());
   for (int x = 1; x < argc; x++) {
@@ -1737,10 +1737,10 @@ int main(int argc, char** argv) {
   // normalize the output before saving it, but with --play we can't make a
   // second pass back over the data... so we set the global volume appropriately
   // based on the number of tracks, which essentially limits the output range to
-  // [-2.0, 2.0].
+  // [-1.0, 1.0].
   if (use_default_global_volume) {
     if (behavior == Behavior::Play) {
-      opts->global_volume = 2.0 / mod->num_tracks;
+      opts->global_volume = 1.0 / mod->num_tracks;
       fprintf(stderr, "Setting global volume to %g to account for %zu tracks\n",
           opts->global_volume, mod->num_tracks);
     } else {
