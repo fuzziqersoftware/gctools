@@ -5,4 +5,4 @@
 #include <sys/types.h>
 
 
-int64_t yaz0_decompress_stream(FILE* in, FILE* out, int64_t stop_after_size);
+size_t yaz0_decompress_stream(FILE* in, FILE* out, size_t max_out_size = 0);

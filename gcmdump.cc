@@ -130,7 +130,7 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
     this_entry.file.file_size = bswap32(fst[x].file.file_size);
 
     if (this_entry.file.dir_flag) {
-      printf("> entry: %08X $ %02X %08X %08X %08X %s%s/\n", x,
+      fprintf(stderr, "> entry: %08X $ %02X %08X %08X %08X %s%s/\n", x,
              this_entry.file.dir_flag, this_entry.file.string_offset,
              this_entry.file.file_offset, this_entry.file.file_size, pwd,
              &string_table[this_entry.file.string_offset]);
@@ -146,7 +146,7 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
       x = this_entry.dir.next_offset - 1;
 
     } else {
-      printf("> entry: %08X $ %02X %08X %08X %08X %s%s\n", x,
+      fprintf(stderr, "> entry: %08X $ %02X %08X %08X %08X %s%s\n", x,
              this_entry.file.dir_flag, this_entry.file.string_offset,
              this_entry.file.file_offset, this_entry.file.file_size, pwd,
              &string_table[this_entry.file.string_offset]);
@@ -178,7 +178,7 @@ enum Format {
 int main(int argc, char* argv[]) {
 
   if (argc < 2) {
-    fprintf(stderr, "usage: %s [--gcm|--tgc] <filename> [files_to_extract]\n", argv[0]);
+    fprintf(stderr, "Usage: %s [--gcm|--tgc] <filename> [files_to_extract]\n", argv[0]);
     return -1;
   }
 
@@ -219,14 +219,14 @@ int main(int argc, char* argv[]) {
   uint32_t fst_offset, fst_size, dol_offset;
   int32_t base_offset;
   if (format == Format::GCM) {
-    printf("format: gcm (%s)\n", header.gcm.name);
+    fprintf(stderr, "format: gcm (%s)\n", header.gcm.name);
     fst_offset = bswap32(header.gcm.fst_offset);
     fst_size = bswap32(header.gcm.fst_size);
     base_offset = 0;
     dol_offset = bswap32(header.gcm.dol_offset);
 
   } else if (format == Format::TGC) {
-    printf("format: tgc\n");
+    fprintf(stderr, "format: tgc\n");
     fst_offset = bswap32(header.tgc.fst_offset);
     fst_size = bswap32(header.tgc.fst_size);
     base_offset = bswap32(header.tgc.file_area) - bswap32(header.tgc.file_offset_base);
@@ -259,7 +259,7 @@ int main(int argc, char* argv[]) {
   }
 
   int num_entries = bswap32(fst[0].root.num_entries);
-  printf("> root: %08X files\n", num_entries);
+  fprintf(stderr, "> root: %08X files\n", num_entries);
 
   char* string_table = (char*)fst + (sizeof(FSTEntry) * num_entries);
   parse_until(fd, fst, string_table, 1, num_entries, base_offset,

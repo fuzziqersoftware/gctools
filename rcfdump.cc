@@ -52,7 +52,7 @@ struct RCFIndexEntry {
 
 
 vector<string> parse_names_index(const string& data, size_t offset) {
-  // for some reason this isn't reverse-endian... weird
+  // For some reason this isn't reverse-endian... weird
   uint32_t num_names = *reinterpret_cast<const uint32_t*>(&data[offset]);
   offset += 8;
 
@@ -95,7 +95,7 @@ unordered_map<string, RCFIndexEntry> get_index(const string& data, size_t offset
 int main(int argc, char* argv[]) {
 
   if (argc != 2) {
-    fprintf(stderr, "usage: %s <filename>\n", argv[0]);
+    fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
     return -1;
   }
 

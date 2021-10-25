@@ -3,7 +3,7 @@ CXX=g++
 COMMON_OBJECTS=SampleCache.o
 AAF_OBJECTS=aaf.o afc.o instrument.o
 CFLAGS=-g -Wall -Werror
-CXXFLAGS=-std=c++14 -g -Wall -Werror -I/usr/local/include -I /opt/local/include
+CXXFLAGS=-std=c++20 -g -Wall -Werror -I/usr/local/include -I /opt/local/include
 LDFLAGS=-g -lphosg -L/usr/local/lib -L/opt/local/lib
 LIBS=-lphosg -lphosg-audio -lsamplerate
 

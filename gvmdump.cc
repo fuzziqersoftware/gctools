@@ -28,15 +28,15 @@ struct GVMFileEntry {
 } __attribute__((packed));
 
 struct GVMFileHeader {
-  uint32_t magic; // GVMH
-  uint32_t header_size; // add 8 to this value (doesn't include magic/size)
+  uint32_t magic; // 'GVMH'
+  uint32_t header_size; // Add 8 to this value (doesn't include magic/size)
   uint16_t unknown;
   uint16_t num_files;
   GVMFileEntry entries[0];
 
   void byteswap() {
     this->magic = bswap32(this->magic);
-    // note: header_size is apparently little-endian
+    // Note: header_size is apparently little-endian so we don't byteswap it
     this->num_files = bswap16(this->num_files);
     for (size_t x = 0; x < this->num_files; x++) {
       this->entries[x].byteswap();
@@ -46,7 +46,7 @@ struct GVMFileHeader {
 
 
 
-// note: most of these formats are named after those in puyotools but are
+// Note: most of these formats are named after those in puyotools but are
 // currently unimplemented here
 enum GVRColorTablePixelFormat {
   IntensityA8ColorTablePixelFormat = 0x00,
@@ -77,16 +77,16 @@ enum GVRDataFormat {
 
 struct GVRHeader {
   uint32_t magic;
-  uint32_t data_size; // add 8 (doesn't include magic and data_size itself)
+  uint32_t data_size; // Add 8 (doesn't include magic and data_size itself)
   uint16_t unknown;
-  uint8_t format_flags; // high 4 bits are pixel format, low 4 are data flags
+  uint8_t format_flags; // High 4 bits are pixel format, low 4 are data flags
   uint8_t data_format;
   uint16_t width;
   uint16_t height;
 
   void byteswap() {
     this->magic = bswap32(this->magic);
-    // note: data_size is apparently little-endian
+    // Note: data_size is apparently little-endian so we don't byteswap it
     this->width = bswap16(this->width);
     this->height = bswap16(this->height);
   }
@@ -109,7 +109,7 @@ Image decode_gvr(const string& data) {
 
   // TODO: deal with GBIX if needed
 
-  // TODO: deal with color table if needed. if present, the color table
+  // TODO: deal with color table if needed. If present, the color table
   // immediately follows the header and precedes the data
   if ((header.data_format == Indexed4DataFormat) || (header.data_format == Indexed8DataFormat)) {
     if (header.format_flags & HasInternalColorTable) {
@@ -120,9 +120,8 @@ Image decode_gvr(const string& data) {
     }
   }
 
-  // TODO: deal with mipmaps
   if (header.format_flags & HasMipmaps) {
-    fprintf(stderr, "note: image has mipmaps; ignoring them\n");
+    fprintf(stderr, "Note: image has mipmaps; ignoring them\n");
 
     /* TODO: deal with mipmaps properly
     if (header.width != header.height) {
@@ -144,7 +143,7 @@ Image decode_gvr(const string& data) {
     */
   }
 
-  // for DXT1, w/h must be multiples of 4
+  // For DXT1, w/h must be multiples of 4
   if ((header.data_format == DXT1DataFormat) && ((header.width & 3) || (header.height & 3))) {
     throw runtime_error("width/height must be multiples of 4 for dxt1 format");
   }
@@ -152,18 +151,18 @@ Image decode_gvr(const string& data) {
   Image result(header.width, header.height, true);
   switch (header.data_format) {
     case RGB5A3DataFormat: {
-      // 4x4 blocks of rgb555 or argb344
+      // 4x4 blocks of pixels
       for (size_t y = 0; y < header.height; y += 4) {
         for (size_t x = 0; x < header.width; x += 4) {
           for (size_t yy = 0; yy < 4; yy++) {
             for (size_t xx = 0; xx < 4; xx++) {
               uint16_t pixel = r.get_u16r();
-              if (pixel & 0x8000) { // rgb555
+              if (pixel & 0x8000) { // RGB555
                 result.write_pixel(x + xx, y + yy,
                     ((pixel >> 7) & 0xF8) | ((pixel >> 12) & 7),
                     ((pixel >> 2) & 0xF8) | ((pixel >> 7) & 7),
                     ((pixel << 3) & 0xF8) | ((pixel >> 2) & 7), 0xFF);
-              } else { // argb3444
+              } else { // ARGB3444
                 result.write_pixel(x + xx, y + yy,
                     ((pixel >> 4) & 0xF0) | ((pixel >> 8) & 0x0F),
                     ((pixel >> 0) & 0xF0) | ((pixel >> 4) & 0x0F),
@@ -183,8 +182,8 @@ Image decode_gvr(const string& data) {
           for (size_t yy = 0; yy < 8; yy += 4) {
             for (size_t xx = 0; xx < 8; xx += 4) {
               uint8_t color_table[4][4]; // 4 entries of [r, g, b, a] each
-              uint16_t color1 = r.get_u16r(); // rgb565
-              uint16_t color2 = r.get_u16r(); // rgb565
+              uint16_t color1 = r.get_u16r(); // RGB565
+              uint16_t color2 = r.get_u16r(); // RGB565
               color_table[0][0] = ((color1 >> 8) & 0xF8) | ((color1 >> 13) & 0x07);
               color_table[0][1] = ((color1 >> 3) & 0xFC) | ((color1 >> 9) & 0x03);
               color_table[0][2] = ((color1 << 3) & 0xF8) | ((color1 >> 2) & 0x07);
@@ -231,7 +230,8 @@ Image decode_gvr(const string& data) {
       break;
     }
     default:
-      throw logic_error(string_printf("unimplemented data format: %02hhX", header.data_format));
+      throw logic_error(string_printf(
+          "unimplemented data format: %02hhX", header.data_format));
   }
 
   return result;
@@ -241,7 +241,7 @@ Image decode_gvr(const string& data) {
 
 int main(int argc, char* argv[]) {
   if (argc != 2) {
-    fprintf(stderr, "usage: %s <filename>\n", argv[0]);
+    fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
     return 1;
   }
 
@@ -266,7 +266,8 @@ int main(int argc, char* argv[]) {
     }
 
   } else if (magic == 0x47564D48) { // GVMH
-    GVMFileHeader* gvm = reinterpret_cast<GVMFileHeader*>(const_cast<char*>(data.data()));
+    GVMFileHeader* gvm = reinterpret_cast<GVMFileHeader*>(const_cast<char*>(
+        data.data()));
     if (data.size() < sizeof(GVMFileHeader)) {
       fprintf(stderr, "gvm file is too small\n");
       return 2;
@@ -301,12 +302,14 @@ int main(int argc, char* argv[]) {
       try {
         Image decoded = decode_gvr(gvr_contents);
         decoded.save(filename + ".bmp", Image::ImageFormat::WindowsBitmap);
-        printf("> %04zu = %08zX:%08X => %s.bmp\n", x + 1, offset, gvr.data_size + 8, filename.c_str());
+        printf("> %04zu = %08zX:%08X => %s.bmp\n",
+            x + 1, offset, gvr.data_size + 8, filename.c_str());
       } catch (const exception& e) {
         fprintf(stderr, "failed to decode gvr: %s\n", e.what());
       }
 
-      printf("> %04zu = %08zX:%08X => %s\n", x + 1, offset, gvr.data_size + 8, filename.c_str());
+      printf("> %04zu = %08zX:%08X => %s\n",
+          x + 1, offset, gvr.data_size + 8, filename.c_str());
       save_file(filename, gvr_contents);
       offset += (gvr.data_size + 8);
     }

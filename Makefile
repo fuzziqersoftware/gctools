@@ -29,8 +29,8 @@ afsdump$(EXE_EXTENSION): afsdump.cc
 gcmdump$(EXE_EXTENSION): gcmdump.cc
 	g++ $(CXXFLAGS) -o $@ gcmdump.cc $(CXXLIBS)
 
-gsldump$(EXE_EXTENSION): gsldump.c
-	gcc $(CFLAGS) -o $@ gsldump.c
+gsldump$(EXE_EXTENSION): gsldump.cc
+	g++ $(CXXFLAGS) -o $@ gsldump.cc $(CXXLIBS)
 
 gvmdump$(EXE_EXTENSION): gvmdump.cc
 	g++ $(CXXFLAGS) -o $@ gvmdump.cc $(CXXLIBS)
@@ -38,8 +38,8 @@ gvmdump$(EXE_EXTENSION): gvmdump.cc
 rcfdump$(EXE_EXTENSION): rcfdump.cc
 	g++ $(CXXFLAGS) -o $@ rcfdump.cc $(CXXLIBS)
 
-pae2gvm$(EXE_EXTENSION): pae2gvm.c
-	gcc $(CFLAGS) -o $@ pae2gvm.c prs/prs.c prs/data_log.c
+pae2gvm$(EXE_EXTENSION): pae2gvm.cc
+	g++ $(CXXFLAGS) -o $@ pae2gvm.cc prs/PRS.cc prs/PRSDataLog.cc $(CXXLIBS)
 
 sms:
 	cd sms && make && cd ..

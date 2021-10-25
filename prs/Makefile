@@ -1,7 +1,8 @@
-CC=gcc
-OBJECTS=main.o data_log.o errors.o prs.o util.o yay0.o yaz0.o
-CFLAGS=-g -Wall
-LDFLAGS=-g
+CXX=g++
+CXXFLAGS=-g -Wall -Werror -I/opt/local/include -std=c++20
+CXXLIBS=-lphosg
+OBJECTS=main.o PRSDataLog.o PRS.o Yay0.o Yaz0.o
+LDFLAGS=-g -L/opt/local/lib
 
 ifeq ($(OS),Windows_NT)
 	CXXFLAGS +=  -DWINDOWS -D__USE_MINGW_ANSI_STDIO=1
@@ -20,10 +21,10 @@ else
 endif
 
 prs$(EXE_EXTENSION): $(OBJECTS)
-	gcc $(LDFLAGS) -o $@ $^
+	g++ $(LDFLAGS) -o $@ $^ -lphosg
 
 install: prs
-	cp prs /usr/bin/prs
+	cp prs /usr/local/bin/prs
 
 clean:
 	$(RM) *.o $(EXECUTABLES) *.dSYM
