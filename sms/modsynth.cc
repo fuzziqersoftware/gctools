@@ -466,7 +466,7 @@ public:
     Options()
       : amiga_hardware_frequency(7159090.5),
         output_sample_rate(48000),
-        resample_method(SRC_SINC_BEST_QUALITY),
+        resample_method(SRC_ZERO_ORDER_HOLD),
         global_volume(1.0),
         max_output_seconds(0.0),
         skip_partitions(0),
@@ -1588,6 +1588,10 @@ Usage:\n\
     Generates a rasterized version of the sequence. Saves the result as\n\
     <input_filename>.wav. Options for both --play and --render:\n\
       --sample-rate=N: Output audio at this sample rate (default 48000).\n\
+      --resample-method=METHOD: Use this method for resampling instruments.\n\
+          Values are sinc-best, sinc-medium, sinc-fast, hold, and linear. The\n\
+          default is hold, which most closely approximates what happens on old\n\
+          systems when they play these kinds of modules.\n\
       --volume=N: Set global volume to N (-1.0-1.0). With --render this doesn\'t\n\
           really matter unless --skip-normalize is also used, but with --play\n\
           it overrides the default behavior of using (2.0 / num_tracks), which\n\
@@ -1665,9 +1669,18 @@ int main(int argc, char** argv) {
       behavior = Behavior::ExportInstruments;
     } else if (!strcmp(argv[x], "--render")) {
       behavior = Behavior::Render;
-      opts->resample_method = SRC_SINC_BEST_QUALITY;
     } else if (!strcmp(argv[x], "--play")) {
       behavior = Behavior::Play;
+
+    } else if (!strcmp(argv[x], "--resample-method=sinc-best")) {
+      opts->resample_method = SRC_SINC_BEST_QUALITY;
+    } else if (!strcmp(argv[x], "--resample-method=sinc-medium")) {
+      opts->resample_method = SRC_SINC_MEDIUM_QUALITY;
+    } else if (!strcmp(argv[x], "--resample-method=sinc-fast")) {
+      opts->resample_method = SRC_SINC_FASTEST;
+    } else if (!strcmp(argv[x], "--resample-method=hold")) {
+      opts->resample_method = SRC_ZERO_ORDER_HOLD;
+    } else if (!strcmp(argv[x], "--resample-method=linear")) {
       opts->resample_method = SRC_LINEAR;
 
     } else if (!strcmp(argv[x], "--write-stdout")) {
