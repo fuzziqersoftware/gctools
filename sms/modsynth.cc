@@ -623,8 +623,15 @@ protected:
     }
 
     void set_discontinuous_flag() {
+      if (flags & Flags::ShowDCOffsetDebug) {
+        fprintf(stderr, "(dc_offset debug) track %zu set discontinuous from dc_offset %g",
+            this->index, this->dc_offset);
+      }
       this->dc_offset = this->last_sample;
       this->next_sample_may_be_discontinuous = true;
+      if (flags & Flags::ShowDCOffsetDebug) {
+        fprintf(stderr, " to %g\n", this->dc_offset);
+      }
     }
 
     void decay_dc_offset(float delta) {
@@ -1301,9 +1308,15 @@ protected:
           float sample_from_ins = resampled_data->at(static_cast<size_t>(resampled_offset)) *
                 track_volume_factor * ins_volume_factor;
           if (track.next_sample_may_be_discontinuous) {
+            if (flags & Flags::ShowDCOffsetDebug) {
+              fprintf(stderr, "track %zu dc_offset correction from %g to ", track.index, track.dc_offset);
+            }
             track.last_sample = track.dc_offset;
             track.dc_offset -= sample_from_ins;
             track.next_sample_may_be_discontinuous = false;
+            if (flags & Flags::ShowDCOffsetDebug) {
+              fprintf(stderr, "%g by instrument sample %g\n", track.dc_offset, sample_from_ins);
+            }
           } else {
             track.last_sample = sample_from_ins + track.dc_offset;
           }
