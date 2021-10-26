@@ -457,6 +457,7 @@ public:
     float max_output_seconds;
     size_t skip_partitions;
     bool allow_backward_position_jump;
+    bool correct_ticks_on_all_volume_changes;
     unordered_set<size_t> mute_tracks;
     unordered_set<size_t> solo_tracks;
     float tempo_bias;
@@ -471,6 +472,7 @@ public:
         max_output_seconds(0.0),
         skip_partitions(0),
         allow_backward_position_jump(false),
+        correct_ticks_on_all_volume_changes(false),
         mute_tracks(),
         solo_tracks(),
         tempo_bias(1.0),
@@ -1232,7 +1234,8 @@ protected:
 
         // If the volume changed, the waveform might become discontinuous, so
         // enable tick cleanup.
-        if (track.last_effective_volume != effective_volume) {
+        if (this->opts->correct_ticks_on_all_volume_changes &&
+            (track.last_effective_volume != effective_volume)) {
           track.set_discontinuous_flag();
         }
         track.last_effective_volume = effective_volume;
@@ -1606,6 +1609,9 @@ Usage:\n\
       --allow-backward-position-jump: Allow position jump effects (Bxx) to jump\n\
           to parts of the song that have already been played. These generally\n\
           result in infinite loops and are disallowed by default.\n\
+      --aggressive-tick-correction: Apply DC offsets on all volume changes, not\n\
+          just those that occur as a result of a Cxx effect. This makes some\n\
+          songs sound better but others sound worse.\n\
       --solo-track=N: Mute all the tracks except this one. The first track is\n\
           numbered 0; most MODs have tracks 0-3. May be given multiple times.\n\
       --mute-track=N: Mute this track. May be given multiple times.\n\
@@ -1735,6 +1741,8 @@ int main(int argc, char** argv) {
       opts->skip_partitions = atoi(&argv[x][18]);
     } else if (!strcmp(argv[x], "--allow-backward-position-jump")) {
       opts->allow_backward_position_jump = true;
+    } else if (!strcmp(argv[x], "--aggressive-tick-correction")) {
+      opts->correct_ticks_on_all_volume_changes = true;
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
       num_play_buffers = atoi(&argv[x][15]);
     } else if (!strncmp(argv[x], "--sample-rate=", 14)) {
