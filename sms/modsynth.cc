@@ -23,8 +23,11 @@ enum Flags {
   ShowSampleWaveforms = 0x04,
   ShowUnusedPatterns  = 0x08,
   ShowLoadingDebug    = 0x10,
+  ShowDCOffsetDebug   = 0x20,
   Default             = 0x00,
 };
+
+uint64_t flags = Flags::Default;
 
 struct Module {
   struct Instrument {
@@ -85,9 +88,9 @@ int8_t sign_extend_nybble(int8_t x) {
 }
 
 // Forward declaration for debugging purposes
-void disassemble_mod(FILE* stream, shared_ptr<const Module> mod, uint64_t flags);
+void disassemble_mod(FILE* stream, shared_ptr<const Module> mod);
 
-shared_ptr<Module> parse_mod(const string& data, uint64_t flags) {
+shared_ptr<Module> parse_mod(const string& data) {
   StringReader r(data.data(), data.size());
 
   // Check for other known file type signatures, but don't let them prevent
@@ -184,7 +187,7 @@ shared_ptr<Module> parse_mod(const string& data, uint64_t flags) {
         mod->extension_signature != inplace_extension_signature) {
       if (flags & Flags::ShowLoadingDebug) {
         fprintf(stderr, "Loader[%zX]: Loaded so far:\n", r.where());
-        disassemble_mod(stderr, mod, flags);
+        disassemble_mod(stderr, mod);
       }
       throw logic_error("read-ahead extension signature does not match inplace extension signature");
     }
@@ -241,8 +244,8 @@ shared_ptr<Module> parse_mod(const string& data, uint64_t flags) {
   return mod;
 }
 
-shared_ptr<Module> load_mod(const string& filename, uint64_t flags) {
-  return parse_mod(load_file(filename), flags);
+shared_ptr<Module> load_mod(const string& filename) {
+  return parse_mod(load_file(filename));
 }
 
 
@@ -259,8 +262,7 @@ void disassemble_pattern_row(
     FILE* stream,
     shared_ptr<const Module> mod,
     uint8_t pattern_num,
-    uint8_t y,
-    uint64_t flags) {
+    uint8_t y) {
 
   static const TerminalFormat track_colors[5] = {
     TerminalFormat::FG_RED,
@@ -335,7 +337,7 @@ void print_mod_text(FILE* stream, shared_ptr<const Module> mod) {
   }
 }
 
-void disassemble_mod(FILE* stream, shared_ptr<const Module> mod, uint64_t flags) {
+void disassemble_mod(FILE* stream, shared_ptr<const Module> mod) {
   fprintf(stream, "Name: %s\n", mod->name.c_str());
   fprintf(stream, "Tracks: %zu\n", mod->num_tracks);
   fprintf(stream, "Instruments: %zu\n", mod->instruments.size());
@@ -392,7 +394,7 @@ void disassemble_mod(FILE* stream, shared_ptr<const Module> mod, uint64_t flags)
     fputc('\n', stream);
     fprintf(stream, "Pattern %zu\n", x);
     for (size_t y = 0; y < 64; y++) {
-      disassemble_pattern_row(stream, mod, x, y, flags);
+      disassemble_pattern_row(stream, mod, x, y);
       fputc('\n', stream);
     }
   }
@@ -460,7 +462,6 @@ public:
     float tempo_bias;
     size_t arpeggio_frequency; // 0 = use ticks instead
     size_t vibrato_resolution;
-    uint64_t flags;
 
     Options()
       : amiga_hardware_frequency(7159090.5),
@@ -474,8 +475,7 @@ public:
         solo_tracks(),
         tempo_bias(1.0),
         arpeggio_frequency(0),
-        vibrato_resolution(1),
-        flags(Flags::Default) { }
+        vibrato_resolution(1) { }
   };
 
 
@@ -698,7 +698,7 @@ protected:
   void show_current_division(bool changed_partition) const {
     uint8_t pattern_index = this->mod->partition_table.at(this->partition_index);
     fputs("  ", stderr);
-    if (changed_partition && (this->opts->flags & Flags::TerminalColor)) {
+    if (changed_partition && (flags & Flags::TerminalColor)) {
       print_color_escape(stderr, TerminalFormat::FG_WHITE, TerminalFormat::BOLD, TerminalFormat::INVERSE, TerminalFormat::END);
     }
     if (this->partition_index < 10) {
@@ -706,15 +706,14 @@ protected:
     } else {
       fprintf(stderr, "%3zu", this->partition_index);
     }
-    if (changed_partition && (this->opts->flags & Flags::TerminalColor)) {
+    if (changed_partition && (flags & Flags::TerminalColor)) {
       print_color_escape(stderr, TerminalFormat::NORMAL, TerminalFormat::END);
     }
     disassemble_pattern_row(
         stderr,
         this->mod,
         pattern_index,
-        this->division_index,
-        this->opts->flags);
+        this->division_index);
     float time = static_cast<float>(this->total_output_samples) /
           (2 * this->opts->output_sample_rate);
     fprintf(stderr, "  =  %3zu/%-2zu @ %.7gs\n",
@@ -1662,19 +1661,21 @@ int main(int argc, char** argv) {
       write_stdout = true;
 
     } else if (!strcmp(argv[x], "--no-color")) {
-      opts->flags &= ~Flags::TerminalColor;
+      flags &= ~Flags::TerminalColor;
       use_default_color_flags = false;
     } else if (!strcmp(argv[x], "--color")) {
-      opts->flags |= Flags::TerminalColor;
+      flags |= Flags::TerminalColor;
       use_default_color_flags = false;
     } else if (!strcmp(argv[x], "--show-sample-data")) {
-      opts->flags |= Flags::ShowSampleData;
+      flags |= Flags::ShowSampleData;
     } else if (!strcmp(argv[x], "--show-sample-waveforms")) {
-      opts->flags |= Flags::ShowSampleWaveforms;
+      flags |= Flags::ShowSampleWaveforms;
     } else if (!strcmp(argv[x], "--show-unused-patterns")) {
-      opts->flags |= Flags::ShowUnusedPatterns;
+      flags |= Flags::ShowUnusedPatterns;
     } else if (!strcmp(argv[x], "--show-loading-debug")) {
-      opts->flags |= Flags::ShowLoadingDebug;
+      flags |= Flags::ShowLoadingDebug;
+    } else if (!strcmp(argv[x], "--show-dc-offset-debug")) {
+      flags |= Flags::ShowDCOffsetDebug;
 
     } else if (!strncmp(argv[x], "--solo-track=", 13)) {
       opts->solo_tracks.emplace(atoi(&argv[x][13]));
@@ -1733,12 +1734,12 @@ int main(int argc, char** argv) {
       (behavior == Behavior::DisassembleDirectory));
   if (use_default_color_flags &&
       isatty(fileno(behavior_is_disassemble ? stdout : stderr))) {
-    opts->flags |= Flags::TerminalColor;
+    flags |= Flags::TerminalColor;
   }
 
   shared_ptr<Module> mod;
   if (behavior != Behavior::DisassembleDirectory) {
-    mod = load_mod(input_filename, opts->flags);
+    mod = load_mod(input_filename);
   }
 
   // Since we don't clip float32 samples and just play them directly, we could
@@ -1761,7 +1762,7 @@ int main(int argc, char** argv) {
     case Behavior::Disassemble:
       // We don't call print_mod_text in this case because all the text is
       // contained in the disassembly
-      disassemble_mod(stdout, mod, opts->flags);
+      disassemble_mod(stdout, mod);
       break;
     case Behavior::DisassembleDirectory: {
       auto files = list_directory(input_filename);
@@ -1772,7 +1773,7 @@ int main(int argc, char** argv) {
 
         shared_ptr<Module> mod;
         try {
-          disassemble_mod(stdout, load_mod(path, opts->flags), opts->flags);
+          disassemble_mod(stdout, load_mod(path));
           fputc('\n', stdout);
         } catch (const exception& e) {
           fprintf(stdout, "Failed: %s\n\n", e.what());
