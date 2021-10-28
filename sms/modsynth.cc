@@ -453,6 +453,7 @@ public:
     double amiga_hardware_frequency;
     size_t output_sample_rate;
     int resample_method;
+    int8_t default_panning_split; // -0x40-0x40
     float global_volume;
     float max_output_seconds;
     size_t skip_partitions;
@@ -468,6 +469,7 @@ public:
       : amiga_hardware_frequency(7159090.5),
         output_sample_rate(48000),
         resample_method(SRC_ZERO_ORDER_HOLD),
+        default_panning_split(0x20),
         global_volume(1.0),
         max_output_seconds(0.0),
         skip_partitions(0),
@@ -699,7 +701,9 @@ public:
       this->tracks[x].index = x;
       // Tracks 1 and 2 (mod 4) are on the right; the others are on the left.
       // These assignments can be overridden by a [14][8][x] (0xE8x) effect.
-      this->tracks[x].panning = ((x & 3) == 1) || ((x & 3) == 2) ? 0x60 : 0x20;
+      this->tracks[x].panning = ((x & 3) == 1) || ((x & 3) == 2)
+          ? (0x40 + this->opts->default_panning_split)
+          : (0x40 - this->opts->default_panning_split);
     }
   }
 
@@ -1602,6 +1606,9 @@ Usage:\n\
           counts. Negative volumes simply invert the output waveform; it will\n\
           sound the same as a positive volume but can be used for some advanced\n\
           effects.\n\
+      --default-panning-split=N: Set default panning split to N. Ranges from\n\
+          -64 (tracks 0 and 3 on the right, 1 and 2 on the left) to +64 (the\n\
+          opposite). The default is +32.\n\
       --time-limit=N: Stop generating audio after this many seconds have been\n\
           generated (unlimited by default).\n\
       --skip-partitions=N: Start at this offset in the partition table instead\n\
@@ -1718,6 +1725,13 @@ int main(int argc, char** argv) {
       opts->amiga_hardware_frequency = 7093789.2;
     } else if (!strncmp(argv[x], "--tempo-bias=", 13)) {
       opts->tempo_bias = atof(&argv[x][13]);
+    } else if (!strncmp(argv[x], "--default-panning-split=", 24)) {
+      opts->default_panning_split = stoull(&argv[x][24], nullptr, 0);
+      if (opts->default_panning_split < -0x40) {
+        opts->default_panning_split = -0x40;
+      } else if (opts->default_panning_split > 0x40) {
+        opts->default_panning_split = 0x40;
+      }
     } else if (!strncmp(argv[x], "--volume=", 9)) {
       use_default_global_volume = false;
       opts->global_volume = atof(&argv[x][9]);
