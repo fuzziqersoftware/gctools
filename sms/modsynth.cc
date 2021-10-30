@@ -1554,12 +1554,12 @@ public:
     this->stream.check_buffers();
     if (this->sample_bits == 8) {
       auto converted_samples = convert_samples_f32_to_u8(samples);
-      this->stream.add_samples(converted_samples.data(), converted_samples.size());
+      this->stream.add_frames(converted_samples.data(), converted_samples.size() / 2);
     } else if (this->sample_bits == 16) {
       auto converted_samples = convert_samples_f32_to_s16(samples);
-      this->stream.add_samples(converted_samples.data(), converted_samples.size());
+      this->stream.add_frames(converted_samples.data(), converted_samples.size() / 2);
     } else if (this->sample_bits == 32) {
-      this->stream.add_samples(samples.data(), samples.size());
+      this->stream.add_frames(samples.data(), samples.size() / 2);
     } else {
       throw logic_error("unsupported sample bit width");
     }
