@@ -655,23 +655,70 @@ protected:
     }
   };
 
+  struct SongPosition {
+    size_t partition_count;
+    size_t partition_index;
+    ssize_t division_index;
+    ssize_t pattern_loop_start_index;
+    ssize_t pattern_loop_times_remaining;
+    bool jump_to_pattern_loop_start;
+    size_t total_output_samples;
+    int32_t pattern_break_target;
+    int32_t partition_break_target;
+    vector<bool> partitions_executed;
+    ssize_t divisions_to_delay;
+
+    SongPosition(size_t partition_count, size_t partition_index)
+      : partition_count(partition_count),
+        partition_index(partition_index),
+        division_index(0),
+        pattern_loop_start_index(0),
+        pattern_loop_times_remaining(-1),
+        jump_to_pattern_loop_start(false),
+        total_output_samples(0),
+        pattern_break_target(-1),
+        partition_break_target(-1),
+        partitions_executed(0x80, false),
+        divisions_to_delay(0) { }
+
+    void advance_division() {
+      if (this->pattern_break_target >= 0 && this->partition_break_target >= 0) {
+        this->partition_index = this->partition_break_target;
+        this->division_index = this->pattern_break_target;
+        this->partition_break_target = -1;
+        this->pattern_break_target = -1;
+        this->pattern_loop_start_index = 0;
+
+      } else if (this->jump_to_pattern_loop_start) {
+        this->division_index = this->pattern_loop_start_index;
+        this->jump_to_pattern_loop_start = false;
+
+      } else {
+        this->division_index++;
+        if (this->division_index >= 64) {
+          this->division_index = 0;
+          this->partition_index++;
+          this->pattern_loop_start_index = 0;
+        }
+      }
+
+      if (this->partition_index >= this->partition_count) {
+        return;
+      }
+      if (this->division_index >= 64) {
+        throw runtime_error("pattern break opcode jumps past end of next pattern");
+      }
+      this->partitions_executed.at(this->partition_index) = true;
+    }
+  };
+
   shared_ptr<const Module> mod;
   shared_ptr<const Options> opts;
   size_t max_output_samples;
   Timing timing;
+  SongPosition pos;
   vector<TrackState> tracks;
   SampleCache<uint8_t> sample_cache;
-
-  size_t partition_index;
-  ssize_t division_index;
-  ssize_t pattern_loop_start_index;
-  ssize_t pattern_loop_times_remaining;
-  bool jump_to_pattern_loop_start;
-  size_t total_output_samples;
-  int32_t pattern_break_target;
-  int32_t partition_break_target;
-  vector<bool> partitions_executed;
-  ssize_t divisions_to_delay;
 
   float dc_offset_decay;
 
@@ -683,18 +730,9 @@ public:
       opts(opts),
       max_output_samples(0),
       timing(this->opts->output_sample_rate),
+      pos(this->mod->partition_count, this->opts->skip_partitions),
       tracks(this->mod->num_tracks),
       sample_cache(this->opts->resample_method),
-      partition_index(this->opts->skip_partitions),
-      division_index(0),
-      pattern_loop_start_index(0),
-      pattern_loop_times_remaining(-1),
-      jump_to_pattern_loop_start(false),
-      total_output_samples(0),
-      pattern_break_target(-1),
-      partition_break_target(-1),
-      partitions_executed(0x80, false),
-      divisions_to_delay(0),
       dc_offset_decay(0.001) {
     // Initialize track state which depends on track index
     for (size_t x = 0; x < this->tracks.size(); x++) {
@@ -709,15 +747,15 @@ public:
 
 protected:
   void show_current_division(bool changed_partition) const {
-    uint8_t pattern_index = this->mod->partition_table.at(this->partition_index);
+    uint8_t pattern_index = this->mod->partition_table.at(this->pos.partition_index);
     fputs("  ", stderr);
     if (changed_partition && (flags & Flags::TerminalColor)) {
       print_color_escape(stderr, TerminalFormat::FG_WHITE, TerminalFormat::BOLD, TerminalFormat::INVERSE, TerminalFormat::END);
     }
-    if (this->partition_index < 10) {
-      fprintf(stderr, " %1zu ", this->partition_index);
+    if (this->pos.partition_index < 10) {
+      fprintf(stderr, " %1zu ", this->pos.partition_index);
     } else {
-      fprintf(stderr, "%3zu", this->partition_index);
+      fprintf(stderr, "%3zu", this->pos.partition_index);
     }
     if (changed_partition && (flags & Flags::TerminalColor)) {
       print_color_escape(stderr, TerminalFormat::NORMAL, TerminalFormat::END);
@@ -726,26 +764,26 @@ protected:
         stderr,
         this->mod,
         pattern_index,
-        this->division_index);
-    float time = static_cast<float>(this->total_output_samples) /
+        this->pos.division_index);
+    float time = static_cast<float>(this->pos.total_output_samples) /
           (2 * this->opts->output_sample_rate);
     fprintf(stderr, "  =  %3zu/%-2zu @ %.7gs\n",
         this->timing.beats_per_minute, this->timing.ticks_per_division, time);
   }
 
   const Module::Pattern& current_pattern() const {
-    uint8_t pattern_index = this->mod->partition_table.at(this->partition_index);
+    uint8_t pattern_index = this->mod->partition_table.at(this->pos.partition_index);
     return this->mod->patterns.at(pattern_index);
   }
 
   void execute_current_division_commands() {
-    this->pattern_break_target = -1;
-    this->partition_break_target = -1;
-    this->divisions_to_delay = 0;
+    this->pos.pattern_break_target = -1;
+    this->pos.partition_break_target = -1;
+    this->pos.divisions_to_delay = 0;
     const auto& pattern = this->current_pattern();
     for (auto& track : this->tracks) {
       const auto& div = pattern.divisions.at(
-          this->division_index * this->mod->num_tracks + track.index);
+          this->pos.division_index * this->mod->num_tracks + track.index);
 
       uint16_t effect = div.effect();
       uint16_t div_period = div.period();
@@ -899,9 +937,9 @@ protected:
           // prevent infinite loops.
           uint8_t target_partition = effect & 0x07F;
           if (this->opts->allow_backward_position_jump ||
-              !this->partitions_executed.at(target_partition)) {
-            this->partition_break_target = target_partition;
-            this->pattern_break_target = 0;
+              !this->pos.partitions_executed.at(target_partition)) {
+            this->pos.partition_break_target = target_partition;
+            this->pos.pattern_break_target = 0;
           }
           break;
         }
@@ -918,8 +956,8 @@ protected:
           // This was probably just a typo in the original Protracker, but it's
           // now propagated everywhere... the high 4 bits are multiplied by 10,
           // not 16.
-          this->partition_break_target = this->partition_index + 1;
-          this->pattern_break_target = (((effect & 0x0F0) >> 4) * 10) + (effect & 0x00F);
+          this->pos.partition_break_target = this->pos.partition_index + 1;
+          this->pos.pattern_break_target = (((effect & 0x0F0) >> 4) * 10) + (effect & 0x00F);
           break;
 
         case 0xE00: { // Sub-effects
@@ -955,15 +993,15 @@ protected:
             case 0x060: { // Loop pattern
               uint8_t times = effect & 0x00F;
               if (times == 0) {
-                this->pattern_loop_start_index = this->division_index;
-              } else if (pattern_loop_times_remaining == -1) {
-                this->pattern_loop_times_remaining = times - 1;
-                this->jump_to_pattern_loop_start = true;
-              } else if (pattern_loop_times_remaining > 0) {
-                this->pattern_loop_times_remaining--;
-                this->jump_to_pattern_loop_start = true;
+                this->pos.pattern_loop_start_index = this->pos.division_index;
+              } else if (this->pos.pattern_loop_times_remaining == -1) {
+                this->pos.pattern_loop_times_remaining = times - 1;
+                this->pos.jump_to_pattern_loop_start = true;
+              } else if (this->pos.pattern_loop_times_remaining > 0) {
+                this->pos.pattern_loop_times_remaining--;
+                this->pos.jump_to_pattern_loop_start = true;
               } else {
-                this->pattern_loop_times_remaining = -1;
+                this->pos.pattern_loop_times_remaining = -1;
               }
               break;
             }
@@ -1017,7 +1055,7 @@ protected:
               track.delayed_sample_period = div_period;
               break;
             case 0x0E0: // Delay pattern
-              this->divisions_to_delay = effect & 0x00F;
+              this->pos.divisions_to_delay = effect & 0x00F;
               break;
 
             // TODO: Implement this effect. See MODs:
@@ -1407,7 +1445,7 @@ protected:
           track.tremolo_offset -= 1;
         }
       }
-      this->total_output_samples += tick_samples.size();
+      this->pos.total_output_samples += tick_samples.size();
       on_tick_samples_ready(move(tick_samples));
 
       if (this->exceeded_time_limit()) {
@@ -1421,56 +1459,26 @@ protected:
     }
   }
 
-  void advance_division() {
-    if (this->pattern_break_target >= 0 && this->partition_break_target >= 0) {
-      this->partition_index = this->partition_break_target;
-      this->division_index = this->pattern_break_target;
-      this->partition_break_target = -1;
-      this->pattern_break_target = -1;
-      this->pattern_loop_start_index = 0;
-
-    } else if (this->jump_to_pattern_loop_start) {
-      this->division_index = this->pattern_loop_start_index;
-      this->jump_to_pattern_loop_start = false;
-
-    } else {
-      this->division_index++;
-      if (this->division_index >= 64) {
-        this->division_index = 0;
-        this->partition_index++;
-        this->pattern_loop_start_index = 0;
-      }
-    }
-
-    if (this->partition_index >= this->mod->partition_count) {
-      return;
-    }
-    if (this->division_index >= 64) {
-      throw runtime_error("pattern break opcode jumps past end of next pattern");
-    }
-    this->partitions_executed.at(this->partition_index) = true;
-  }
-
   bool exceeded_time_limit() const {
     return this->max_output_samples &&
-        (this->total_output_samples > this->max_output_samples);
+        (this->pos.total_output_samples > this->max_output_samples);
   }
 
 public:
   void run() {
     bool changed_partition = true;
     this->max_output_samples = this->opts->output_sample_rate * this->opts->max_output_seconds * 2;
-    while (this->partition_index < this->mod->partition_count && !this->exceeded_time_limit()) {
+    while (this->pos.partition_index < this->mod->partition_count && !this->exceeded_time_limit()) {
       this->show_current_division(changed_partition);
       this->execute_current_division_commands();
-      for (this->divisions_to_delay++;
-           this->divisions_to_delay > 0;
-           this->divisions_to_delay--) {
+      for (this->pos.divisions_to_delay++;
+           this->pos.divisions_to_delay > 0;
+           this->pos.divisions_to_delay--) {
         this->render_current_division_audio();
       }
-      uint8_t old_partition_index = this->partition_index;
-      this->advance_division();
-      changed_partition = (this->partition_index != old_partition_index);
+      uint8_t old_partition_index = this->pos.partition_index;
+      this->pos.advance_division();
+      changed_partition = (this->pos.partition_index != old_partition_index);
     }
   }
 };
@@ -1492,7 +1500,6 @@ public:
 };
 
 
-
 class MODExporter : public MODSynthesizer {
 protected:
   deque<vector<float>> tick_samples;
@@ -1508,7 +1515,7 @@ public:
 
   const vector<float>& result() {
     if (this->all_tick_samples.empty()) {
-      this->all_tick_samples.reserve(this->total_output_samples);
+      this->all_tick_samples.reserve(this->pos.total_output_samples);
       for (const auto& s : this->tick_samples) {
         this->all_tick_samples.insert(
             this->all_tick_samples.end(), s.begin(), s.end());
@@ -1517,7 +1524,6 @@ public:
     return this->all_tick_samples;
   }
 };
-
 
 
 class MODPlayer : public MODSynthesizer {
