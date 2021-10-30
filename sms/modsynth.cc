@@ -285,12 +285,12 @@ void disassemble_pattern_row(
       if (use_color) {
         print_color_escape(stream, TerminalFormat::NORMAL, TerminalFormat::END);
       }
-      fputs("  =            ", stream);
+      fputs("  |            ", stream);
     } else {
       if (use_color) {
         print_color_escape(stream, TerminalFormat::NORMAL, TerminalFormat::END);
       }
-      fputs("  =", stream);
+      fputs("  |", stream);
       if (use_color) {
         if (instrument_num || period) {
           print_color_escape(stream, track_colors[z % 5], TerminalFormat::BOLD, TerminalFormat::END);
@@ -746,20 +746,10 @@ public:
   }
 
 protected:
-  void show_current_division(bool changed_partition) const {
+  void show_current_division() const {
     uint8_t pattern_index = this->mod->partition_table.at(this->pos.partition_index);
-    fputs("  ", stderr);
-    if (changed_partition && (flags & Flags::TerminalColor)) {
-      print_color_escape(stderr, TerminalFormat::FG_WHITE, TerminalFormat::BOLD, TerminalFormat::INVERSE, TerminalFormat::END);
-    }
-    if (this->pos.partition_index < 10) {
-      fprintf(stderr, " %1zu ", this->pos.partition_index);
-    } else {
-      fprintf(stderr, "%3zu", this->pos.partition_index);
-    }
-    if (changed_partition && (flags & Flags::TerminalColor)) {
-      print_color_escape(stderr, TerminalFormat::NORMAL, TerminalFormat::END);
-    }
+    fprintf(stderr, "  %3zu", this->pos.partition_index);
+    fputs("  |", stderr);
     disassemble_pattern_row(
         stderr,
         this->mod,
@@ -767,7 +757,7 @@ protected:
         this->pos.division_index);
     float time = static_cast<float>(this->pos.total_output_samples) /
           (2 * this->opts->output_sample_rate);
-    fprintf(stderr, "  =  %3zu/%-2zu @ %.7gs\n",
+    fprintf(stderr, "  |  %3zu/%-2zu @ %.7gs\n",
         this->timing.beats_per_minute, this->timing.ticks_per_division, time);
   }
 
@@ -1466,11 +1456,16 @@ protected:
 
 public:
   void run() {
-    bool changed_partition = true;
+    bool changed_partition = false;
     this->max_output_samples = this->opts->output_sample_rate * this->opts->max_output_seconds * 2;
     while (this->pos.partition_index < this->mod->partition_count && !this->exceeded_time_limit()) {
-      this->show_current_division(changed_partition);
       this->execute_current_division_commands();
+      // Note: We print the partition after executing its commands so that the
+      // timing information will be consistent if any Fxx commands were run.
+      if (changed_partition) {
+        fputc('\n', stderr);
+      }
+      this->show_current_division();
       for (this->pos.divisions_to_delay++;
            this->pos.divisions_to_delay > 0;
            this->pos.divisions_to_delay--) {
