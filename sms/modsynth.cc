@@ -1528,20 +1528,46 @@ public:
 
 class MODPlayer : public MODSynthesizer {
 protected:
+  uint8_t sample_bits;
   AudioStream stream;
+
+  int get_al_format(uint8_t sample_bits) {
+    if (sample_bits == 8) {
+      return AL_FORMAT_STEREO8;
+    } else if (sample_bits == 16) {
+      return AL_FORMAT_STEREO16;
+    } else if (sample_bits == 32) {
+      return format_for_name("stereo-f32");
+    } else {
+      throw logic_error("unsupported sample bit width");
+    }
+  }
 
 public:
   MODPlayer(
       shared_ptr<const Module> mod,
       shared_ptr<const Options> opts,
+      uint8_t sample_bits,
       size_t num_play_buffers)
     : MODSynthesizer(mod, opts),
-      stream(this->opts->output_sample_rate, format_for_name("stereo-f32"),
+      sample_bits(sample_bits),
+      stream(this->opts->output_sample_rate,
+        this->get_al_format(this->sample_bits),
         num_play_buffers) { }
 
   virtual void on_tick_samples_ready(vector<float>&& samples) {
     this->stream.check_buffers();
-    this->stream.add_samples(samples.data(), samples.size());
+    if (this->sample_bits == 8) {
+      auto converted_samples = convert_samples_f32_to_u8(samples);
+      this->stream.add_samples(converted_samples.data(), converted_samples.size());
+    } else if (this->sample_bits == 16) {
+      auto converted_samples = convert_samples_f32_to_s16(samples);
+      this->stream.add_samples(converted_samples.data(), converted_samples.size());
+    } else if (this->sample_bits == 32) {
+      this->stream.add_samples(samples.data(), samples.size());
+    } else {
+      throw logic_error("unsupported sample bit width");
+    }
   }
 
   void drain() {
@@ -1601,6 +1627,9 @@ Usage:\n\
     Generates a rasterized version of the sequence. Saves the result as\n\
     <input_filename>.wav. Options for both --play and --render:\n\
       --sample-rate=N: Output audio at this sample rate (default 48000).\n\
+      --sample-bits=N: Specify the sample format. Valid values are 8 (unsigned\n\
+          8-bit PCM), 16 (signed little-endian 16-bit PCM), and 32\n\
+          (little-endian 32-bit float). The default is 32.\n\
       --resample-method=METHOD: Use this method for resampling instruments.\n\
           Values are sinc-best, sinc-medium, sinc-fast, hold, and linear. The\n\
           default is hold, which most closely approximates what happens on old\n\
@@ -1678,6 +1707,7 @@ int main(int argc, char** argv) {
   bool write_stdout = false;
   bool use_default_global_volume = true;
   bool normalize_after_render = true;
+  uint8_t sample_bits = 32;
   shared_ptr<MODSynthesizer::Options> opts(new MODSynthesizer::Options());
   for (int x = 1; x < argc; x++) {
     if (!strcmp(argv[x], "--disassemble")) {
@@ -1767,6 +1797,12 @@ int main(int argc, char** argv) {
       num_play_buffers = atoi(&argv[x][15]);
     } else if (!strncmp(argv[x], "--sample-rate=", 14)) {
       opts->output_sample_rate = atoi(&argv[x][14]);
+    } else if (!strcmp(argv[x], "--sample-bits=8")) {
+      sample_bits = 8;
+    } else if (!strcmp(argv[x], "--sample-bits=16")) {
+      sample_bits = 16;
+    } else if (!strcmp(argv[x], "--sample-bits=32")) {
+      sample_bits = 32;
 
     } else if (!input_filename) {
       input_filename = argv[x];
@@ -1856,15 +1892,29 @@ int main(int argc, char** argv) {
         if (normalize_after_render) {
           normalize_amplitude(result);
         }
-        fprintf(stderr, "... %s\n", output_filename.c_str());
-        save_wav(output_filename.c_str(), result, opts->output_sample_rate, 2);
+        if (sample_bits == 8) {
+          fprintf(stderr, "Converting to 8-bit unsigned PCM\n");
+          auto converted_result = convert_samples_f32_to_u8(result);
+          fprintf(stderr, "... %s\n", output_filename.c_str());
+          save_wav(output_filename.c_str(), converted_result, opts->output_sample_rate, 2);
+        } else if (sample_bits == 16) {
+          fprintf(stderr, "Converting to 16-bit signed PCM\n");
+          auto converted_result = convert_samples_f32_to_s16(result);
+          fprintf(stderr, "... %s\n", output_filename.c_str());
+          save_wav(output_filename.c_str(), converted_result, opts->output_sample_rate, 2);
+        } else if (sample_bits == 32) {
+          fprintf(stderr, "... %s\n", output_filename.c_str());
+          save_wav(output_filename.c_str(), result, opts->output_sample_rate, 2);
+        } else {
+          throw logic_error("unsupported sample bit width");
+        }
       }
       break;
     }
     case Behavior::Play: {
       print_mod_text(stderr, mod);
       init_al();
-      MODPlayer player(mod, opts, num_play_buffers);
+      MODPlayer player(mod, opts, sample_bits, num_play_buffers);
       fprintf(stderr, "Synthesis:\n");
       player.run();
       player.drain();
