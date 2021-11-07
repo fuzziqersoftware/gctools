@@ -2345,7 +2345,7 @@ int main(int argc, char** argv) {
 #ifndef WINDOWS
   } else if (play) {
     init_al();
-    AudioStream stream(sample_rate, AL_FORMAT_STEREO16, num_buffers);
+    AudioStream stream(sample_rate, format_for_name("stereo-f32"), num_buffers);
     for (;;) {
       stream.check_buffers();
       if (!r->can_render()) {
@@ -2353,8 +2353,7 @@ int main(int argc, char** argv) {
       }
       auto step_samples = r->render_time_step(stream.queued_buffer_count(),
           stream.buffer_count());
-      vector<int16_t> al_samples = convert_samples_f32_to_s16(step_samples);
-      stream.add_samples(al_samples.data(), al_samples.size() / 2);
+      stream.add_samples(step_samples.data(), step_samples.size());
     }
     if (debug_flags & DebugFlag::ShowNotesOn) {
       fprintf(stderr, "\nrendering complete; waiting for buffers to drain\n");
