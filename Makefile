@@ -8,7 +8,7 @@ ifeq ($(OS),Windows_NT)
 	EXE_EXTENSION=.exe
 else
 	ifeq ($(shell uname -s),Darwin)
-		CXXFLAGS +=  -DMACOSX -mmacosx-version-min=10.11
+		CXXFLAGS +=  -DMACOSX -mmacosx-version-min=10.15
 	else
 		CXXFLAGS +=  -DLINUX
 	endif

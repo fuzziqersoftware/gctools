@@ -2,7 +2,7 @@ CXX=g++
 CXXFLAGS=-g -Wall -Werror -I/opt/local/include -std=c++20
 CXXLIBS=-lphosg
 OBJECTS=main.o PRSDataLog.o PRS.o Yay0.o Yaz0.o
-LDFLAGS=-g -L/opt/local/lib
+LDFLAGS=-g -L/opt/local/lib -std=c++20
 
 ifeq ($(OS),Windows_NT)
 	CXXFLAGS +=  -DWINDOWS -D__USE_MINGW_ANSI_STDIO=1

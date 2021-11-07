@@ -2194,7 +2194,7 @@ int main(int argc, char** argv) {
   shared_ptr<JSONObject> env_json;
   string env_json_dir;
   if (!env_json_filename.empty()) {
-    env_json = JSONObject::load(env_json_filename);
+    env_json = JSONObject::parse(load_file(env_json_filename));
 
     size_t slash_pos = env_json_filename.rfind('/');
     if (slash_pos == string::npos) {
