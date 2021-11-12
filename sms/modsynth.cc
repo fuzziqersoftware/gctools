@@ -1592,6 +1592,19 @@ void normalize_amplitude(vector<float>& data) {
   }
 }
 
+void trim_ending_silence(vector<float>& data) {
+  size_t end_offset = data.size();
+  for (; end_offset > 1; end_offset -= 2) {
+    if (data[end_offset - 2] != 0.0 || data[end_offset - 1] != 0.0) {
+      break;
+    }
+  }
+  if (end_offset != data.size()) {
+    fprintf(stderr, "Trimming %zu samples of silence from end\n", data.size() - end_offset);
+    data.resize(end_offset);
+  }
+}
+
 
 
 void print_usage() {
@@ -1664,6 +1677,8 @@ Usage:\n\
       --vibrato-resolution=N: Evaluate vibrato effects this many times each\n\
           tick (default 1).\n\
     Options for --render only:\n\
+      --skip-trim-silence: By default, modsynth will delete contiguous silence\n\
+          at the end of the generated audio. This option skips that step.\n\
       --skip-normalize: By default, modsynth will normalize the output so the\n\
           maximum sample amplitude is 1.0 or -1.0. This option skips that step,\n\
           so the output may contain samples with higher amplitudes.\n\
@@ -1701,6 +1716,7 @@ int main(int argc, char** argv) {
   bool use_default_color_flags = true;
   bool write_stdout = false;
   bool use_default_global_volume = true;
+  bool trim_ending_silence_after_render = true;
   bool normalize_after_render = true;
   uint8_t sample_bits = 32;
   shared_ptr<MODSynthesizer::Options> opts(new MODSynthesizer::Options());
@@ -1774,6 +1790,8 @@ int main(int argc, char** argv) {
     } else if (!strncmp(argv[x], "--time-limit=", 13)) {
       opts->max_output_seconds = atof(&argv[x][13]);
 
+    } else if (!strcmp(argv[x], "--skip-trim-silence")) {
+      trim_ending_silence_after_render = false;
     } else if (!strcmp(argv[x], "--skip-normalize")) {
       normalize_after_render = false;
 
@@ -1884,6 +1902,9 @@ int main(int argc, char** argv) {
         exporter.run();
         fprintf(stderr, "Assembling result\n");
         auto result = exporter.result();
+        if (trim_ending_silence_after_render) {
+          trim_ending_silence(result);
+        }
         if (normalize_after_render) {
           normalize_amplitude(result);
         }
