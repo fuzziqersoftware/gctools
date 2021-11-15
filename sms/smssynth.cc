@@ -1315,7 +1315,7 @@ public:
 
     // render the text view
     if (debug_flags & DebugFlag::ShowNotesOn) {
-      double when = static_cast<double>(this->samples_rendered) / this->sample_rate;
+      uint64_t when_usecs = (this->samples_rendered * 1000000) / this->sample_rate;
 
       const string* buffers_color;
       if (buffer_count == 0) {
@@ -1330,28 +1330,27 @@ public:
 
       bool short_status = !(debug_flags & DebugFlag::ShowLongStatus);
       bool all_tracks_finished = this->next_event_to_track.empty();
-      char when_str[16];
-      snprintf(when_str, 16, "%-7g", when);
+      string when_str = format_duration(when_usecs);
 
       if ((debug_flags & DebugFlag::ColorField) || (short_status && (debug_flags & DebugFlag::ColorStatus))) {
-        fprintf(stderr, "\r%08" PRIX64 "%c %s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.8s%s @ %.7s + %s%zu/%zu%s%c",
+        fprintf(stderr, "\r%08" PRIX64 "%c %s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.8s%s @ %s + %s%zu/%zu%s%c",
             current_time, all_tracks_finished ? '-' : ':',
             field_magenta.c_str(), &notes_table[0], field_red.c_str(), &notes_table[12],
             field_yellow.c_str(), &notes_table[24], field_green.c_str(), &notes_table[36],
             field_cyan.c_str(), &notes_table[48], field_blue.c_str(), &notes_table[60],
             field_magenta.c_str(), &notes_table[72], field_red.c_str(), &notes_table[84],
             field_yellow.c_str(), &notes_table[96], field_green.c_str(), &notes_table[108],
-            field_cyan.c_str(), &notes_table[120], white.c_str(), when_str,
+            field_cyan.c_str(), &notes_table[120], white.c_str(), when_str.c_str(),
             buffers_color->c_str(), queued_buffer_count, buffer_count, white.c_str(),
             short_status ? ' ' : '\n');
       } else if (debug_flags & DebugFlag::ColorStatus) {
-        fprintf(stderr, "\r%08" PRIX64 "%c %s @ %.7s + %s%zu/%zu%s%c", current_time,
-            all_tracks_finished ? '-' : ':', notes_table, when_str,
+        fprintf(stderr, "\r%08" PRIX64 "%c %s @ %s + %s%zu/%zu%s%c", current_time,
+            all_tracks_finished ? '-' : ':', notes_table, when_str.c_str(),
             buffers_color->c_str(), queued_buffer_count, buffer_count,
             white.c_str(), short_status ? ' ' : '\n');
       } else {
-        fprintf(stderr, "\r%08" PRIX64 "%c %s @ %.7s + %zu/%zu%c", current_time,
-            all_tracks_finished ? '-' : ':', notes_table, when_str,
+        fprintf(stderr, "\r%08" PRIX64 "%c %s @ %s + %zu/%zu%c", current_time,
+            all_tracks_finished ? '-' : ':', notes_table, when_str.c_str(),
             queued_buffer_count, buffer_count, short_status ? ' ' : '\n');
       }
 

@@ -755,10 +755,12 @@ protected:
         this->mod,
         pattern_index,
         this->pos.division_index);
-    float time = static_cast<float>(this->pos.total_output_samples) /
-          (2 * this->opts->output_sample_rate);
-    fprintf(stderr, "  |  %3zu/%-2zu @ %.7gs\n",
-        this->timing.beats_per_minute, this->timing.ticks_per_division, time);
+    uint64_t time_usecs = (this->pos.total_output_samples * 1000000) /
+        (2 * this->opts->output_sample_rate);
+    string time_str = format_duration(time_usecs);
+    fprintf(stderr, "  |  %3zu/%-2zu @ %ss\n",
+        this->timing.beats_per_minute, this->timing.ticks_per_division,
+        time_str.c_str());
   }
 
   const Module::Pattern& current_pattern() const {
