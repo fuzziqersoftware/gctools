@@ -319,6 +319,10 @@ struct barc_header {
   char archive_filename[0x10];
   barc_entry entries[0];
 
+  size_t bytes_sw() const {
+    return sizeof(*this) + bswap32(this->entry_count) * sizeof(this->entries[0]);
+  }
+
   void byteswap() {
     this->entry_count = bswap32(this->entry_count);
     for (size_t x = 0; x < this->entry_count; x++) {
@@ -329,10 +333,16 @@ struct barc_header {
 
 unordered_map<string, SequenceProgram> barc_decode(void* vdata, size_t size,
     const char* base_directory) {
+  if (size < sizeof(barc_header)) {
+    throw invalid_argument("BARC data too small for header");
+  }
 
   barc_header* barc = reinterpret_cast<barc_header*>(vdata);
   if (barc->magic != 0x43524142) {
     throw invalid_argument("BARC file not at expected offset");
+  }
+  if (size < barc->bytes_sw()) {
+    throw invalid_argument("BARC data too small for header");
   }
   barc->byteswap();
 
@@ -649,7 +659,9 @@ struct bx_table_entry {
   }
 };
 
-SoundEnvironment bx_decode(void* vdata, size_t size, const char* base_directory) {
+SoundEnvironment bx_decode(void* vdata, size_t, const char* base_directory) {
+  // TODO: Be less lazy and implement bounds checks here.
+
   uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
   bx_header* header = reinterpret_cast<bx_header*>(vdata);
   header->byteswap();

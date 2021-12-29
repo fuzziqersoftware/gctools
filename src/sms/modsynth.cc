@@ -1,5 +1,6 @@
 #include <inttypes.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <array>
 #include <deque>
@@ -409,7 +410,7 @@ void disassemble_mod(FILE* stream, shared_ptr<const Module> mod) {
 
 
 void export_mod_instruments(
-    shared_ptr<const Module> mod, size_t output_sample_rate, const char* output_prefix) {
+    shared_ptr<const Module> mod, const char* output_prefix) {
   // Andrew's observational spec notes that about 8287 bytes of data are sent to
   // the channel per second when a normal sample is played at C2. Empirically,
   // it seems like this is 0.5x the sample rate we need to make music sound
@@ -1174,7 +1175,7 @@ protected:
           track.input_sample_offset = 0;
         }
         if ((track.cut_sample_after_ticks >= 0) &&
-            (tick_num == track.cut_sample_after_ticks)) {
+            (tick_num == static_cast<size_t>(track.cut_sample_after_ticks))) {
           track.volume = 0;
         }
 
@@ -1890,7 +1891,7 @@ int main(int argc, char** argv) {
       break;
     }
     case Behavior::ExportInstruments:
-      export_mod_instruments(mod, opts->output_sample_rate, input_filename);
+      export_mod_instruments(mod, input_filename);
       break;
     case Behavior::Render: {
       print_mod_text(stderr, mod);

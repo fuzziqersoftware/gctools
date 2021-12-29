@@ -12,5 +12,5 @@ struct PRSDataLog {
   PRSDataLog();
   void add(uint8_t ch);
   void add(const void* data, size_t size);
-  void fill(FILE* f, size_t max_read);
+  size_t fill(FILE* f, size_t max_read);
 };

@@ -27,7 +27,7 @@ void PRSDataLog::add(const void* data, size_t size) {
   }
 }
 
-void PRSDataLog::fill(FILE* f, size_t max_read) {
+size_t PRSDataLog::fill(FILE* f, size_t max_read) {
   if (this->offset > 0x6000) {
     this->offset -= 0x2000;
     this->size -= 0x2000;
@@ -42,5 +42,7 @@ void PRSDataLog::fill(FILE* f, size_t max_read) {
       this->size += fread(
           this->data.data() + (0x8000 - bytes_to_read), 1, bytes_to_read, f);
     }
+    return bytes_to_read;
   }
+  return 0;
 }

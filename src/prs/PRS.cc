@@ -104,13 +104,15 @@ struct PRSCompressionOutput {
   }
 };
 
-int64_t prs_compress_stream(FILE* src, FILE* dst, int64_t size) {
+int64_t prs_compress_stream(FILE* src, FILE* dst, size_t size) {
   PRSDataLog reverse_log;
   PRSDataLog forward_log;
   PRSCompressionOutput pc(dst);
 
-  while (size > 0 || size == -1) {
-    forward_log.fill(src, size);
+  size_t bytes_read = 0;
+  while (!size || (bytes_read < size)) {
+    size_t bytes_remaining = size ? (size - bytes_read) : 0x8000;
+    bytes_read += forward_log.fill(src, bytes_remaining);
     if (forward_log.offset == forward_log.size) {
       break; // No more data to compress
     }
@@ -174,7 +176,7 @@ int64_t prs_compress_stream(FILE* src, FILE* dst, int64_t size) {
 
 
 
-int64_t prs_decompress_stream(FILE* in, FILE* out, int64_t stop_after_size) {
+int64_t prs_decompress_stream(FILE* in, FILE* out, size_t stop_after_size) {
   PRSDataLog log;
 
   int32_t r3, r5;

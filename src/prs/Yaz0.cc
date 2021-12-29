@@ -38,7 +38,7 @@ size_t yaz0_decompress_stream(FILE* in, FILE* out, size_t max_out_size) {
 
   PRSDataLog log;
 
-  uint32_t bytes_written = 0;
+  size_t bytes_written = 0;
   uint8_t control_bits_remaining = 0;
   uint8_t control_byte;
 
@@ -64,7 +64,7 @@ size_t yaz0_decompress_stream(FILE* in, FILE* out, size_t max_out_size) {
         n = ((nr & 0xF000) >> 12) + 2;
       }
 
-      if (r > bytes_written) {
+      if (r > static_cast<ssize_t>(bytes_written)) {
         throw runtime_error("backreference beyond beginning of output");
       }
       if (max_out_size && (bytes_written + n > total_size) && (max_out_size == total_size)) {

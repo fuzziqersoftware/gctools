@@ -142,7 +142,7 @@ uint64_t read_variable_int(StringReader& r) {
 
 void disassemble_set_perf(
     size_t opcode_offset,
-    uint8_t opcode,
+    uint8_t, // opcode
     uint8_t type,
     uint8_t data_type,
     int16_t value,
@@ -884,7 +884,7 @@ public:
       shared_ptr<Channel> channel) : Voice(sample_rate, note, vel, true, channel) { }
   virtual ~SilentVoice() = default;
 
-  virtual vector<float> render(size_t count, float freq_mult) {
+  virtual vector<float> render(size_t count, float) {
     this->advance_note_off_factor();
     return vector<float>(count * 2, 0.0f);
   }
@@ -897,7 +897,7 @@ public:
       offset(0) { }
   virtual ~SineVoice() = default;
 
-  virtual vector<float> render(size_t count, float freq_mult) {
+  virtual vector<float> render(size_t count, float) {
     // TODO: implement pitch bend and freq_mult somehow
     vector<float> data(count * 2, 0.0f);
 

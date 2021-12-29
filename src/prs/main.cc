@@ -48,7 +48,7 @@ int main(int argc, char* argv[]) {
   size_t start_offset = 0;
   size_t raw_bytes = 0;
   Format format = Format::PRS;
-  for (size_t x = 1; x < argc; x++) {
+  for (int x = 1; x < argc; x++) {
     if (!strcmp(argv[x], "-h") || !strcmp(argv[x], "--help")) {
       print_help();
       return 0;
