@@ -64,7 +64,7 @@ uint64_t debug_flags = DebugFlag::Default;
 
 bool is_binary(const char* s, size_t size) {
   for (size_t x = 0; x < size; x++) {
-    if ((s[x] < 0x20) || (s[x] > 0x7F)) {
+    if ((s[x] < 0x20) || (s[x] > 0x7E)) {
       return true;
     }
   }
