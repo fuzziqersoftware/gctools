@@ -11,13 +11,22 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
 
     steps:
     - uses: actions/checkout@v2
 
-    - name: Install apt libraries
+    - name: Install libraries (Linux)
+      if: ${{ matrix.os == 'ubuntu-latest' }}
       run: sudo apt-get install -y libopenal-dev libsamplerate-dev
+
+    - name: Install libraries (macOS)
+      if: ${{ matrix.os == 'macos-latest' }}
+      run: brew install libsamplerate
 
     - name: Install phosg
       run: |
