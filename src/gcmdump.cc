@@ -60,12 +60,10 @@ union ImageHeader {
 };
 
 struct DOLHeader {
-  uint32_t text_offset[7];
-  uint32_t data_offset[11];
-  uint32_t text_address[7];
-  uint32_t data_address[11];
-  uint32_t text_size[7];
-  uint32_t data_size[11];
+  // Sections 0-6 are text; the rest (7-17) are data
+  uint32_t section_offset[18];
+  uint32_t section_address[18];
+  uint32_t section_size[18];
   uint32_t bss_address;
   uint32_t bss_size;
   uint32_t entry_point;
@@ -104,8 +102,8 @@ uint32_t dol_file_size(const DOLHeader* dol) {
   static const int num_sections = 18;
   uint32_t x, max_offset = 0;
   for (x = 0; x < num_sections; x++) {
-    uint32_t section_end_offset = bswap32(dol->text_offset[x]) +
-        bswap32(dol->text_size[x]);
+    uint32_t section_end_offset = bswap32(dol->section_offset[x]) +
+        bswap32(dol->section_size[x]);
     if (section_end_offset > max_offset) {
       max_offset = section_end_offset;
     }
@@ -118,10 +116,9 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
     const unordered_set<string>& target_filenames) {
 
   int x;
-  char pwd[0x100];
-  getcwd(pwd, 0x100);
-  strcat(pwd, "/");
-  int pwd_end = strlen(pwd);
+  string pwd = getcwd();
+  pwd += '/';
+  size_t pwd_end = pwd.size();
   for (x = start; x < end; x++) {
     FSTEntry this_entry;
     this_entry.file.dir_flag = fst[x].file.dir_flag;
@@ -132,23 +129,29 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
     if (this_entry.file.dir_flag) {
       fprintf(stderr, "> entry: %08X $ %02X %08X %08X %08X %s%s/\n", x,
              this_entry.file.dir_flag, this_entry.file.string_offset,
-             this_entry.file.file_offset, this_entry.file.file_size, pwd,
+             this_entry.file.file_offset, this_entry.file.file_size, pwd.c_str(),
              &string_table[this_entry.file.string_offset]);
 
-      strcpy(&pwd[pwd_end], &string_table[this_entry.file.string_offset]);
-      mkdir(pwd, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
-      chdir(pwd);
+      pwd += &string_table[this_entry.file.string_offset];
+      if (mkdir(pwd.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
+        throw runtime_error("cannot create directory " + pwd);
+      }
+      if (chdir(pwd.c_str())) {
+        throw runtime_error("cannot enter directory " + pwd);
+      }
       parse_until(fd, fst, string_table, x + 1, this_entry.dir.next_offset,
           base_offset, target_filenames);
-      pwd[pwd_end] = 0;
-      chdir(pwd);
+      pwd.resize(pwd_end);
+      if (chdir(pwd.c_str())) {
+        throw runtime_error("cannot return to directory " + pwd);
+      }
 
       x = this_entry.dir.next_offset - 1;
 
     } else {
       fprintf(stderr, "> entry: %08X $ %02X %08X %08X %08X %s%s\n", x,
              this_entry.file.dir_flag, this_entry.file.string_offset,
-             this_entry.file.file_offset, this_entry.file.file_size, pwd,
+             this_entry.file.file_offset, this_entry.file.file_size, pwd.c_str(),
              &string_table[this_entry.file.string_offset]);
 
       if (target_filenames.empty() ||
@@ -204,7 +207,7 @@ int main(int argc, char* argv[]) {
   scoped_fd fd(filename, O_RDONLY);
 
   ImageHeader header;
-  read(fd, &header, sizeof(ImageHeader));
+  readx(fd, &header, sizeof(ImageHeader));
   if (format == Format::Unknown) {
     if (header.gcm.gc_magic == 0x3D9F33C2) {
       format = Format::GCM;
