@@ -19,13 +19,13 @@ using namespace std;
 
 
 enum Flags {
-  TerminalColor       = 0x01,
-  ShowSampleData      = 0x02,
-  ShowSampleWaveforms = 0x04,
-  ShowUnusedPatterns  = 0x08,
-  ShowLoadingDebug    = 0x10,
-  ShowDCOffsetDebug   = 0x20,
-  Default             = 0x00,
+  TerminalColor          = 0x01,
+  ShowSampleData         = 0x02,
+  ShowSampleWaveforms    = 0x04,
+  ShowUnusedPatterns     = 0x08,
+  ShowLoadingDebug       = 0x10,
+  ShowDCOffsetDebug      = 0x20,
+  Default                = 0x00,
 };
 
 uint64_t flags = Flags::Default;
@@ -460,6 +460,7 @@ public:
     size_t skip_partitions;
     bool allow_backward_position_jump;
     bool correct_ticks_on_all_volume_changes;
+    bool nonlinear_volume_scaling;
     unordered_set<size_t> mute_tracks;
     unordered_set<size_t> solo_tracks;
     float tempo_bias;
@@ -476,6 +477,7 @@ public:
         skip_partitions(0),
         allow_backward_position_jump(false),
         correct_ticks_on_all_volume_changes(false),
+        nonlinear_volume_scaling(false),
         mute_tracks(),
         solo_tracks(),
         tempo_bias(1.0),
@@ -1336,6 +1338,10 @@ protected:
             break;
           }
 
+          float overall_volume_factor = this->opts->nonlinear_volume_scaling
+              ? sqrt(track_volume_factor * ins_volume_factor)
+              : (track_volume_factor * ins_volume_factor);
+
           // When a new sample is played on a track and it interrupts another
           // already-playing sample, the waveform can become discontinuous,
           // which causes an audible ticking sound. To avoid this, we store a
@@ -1344,7 +1350,7 @@ protected:
           // subsequent sample and fairly quickly reaches zero. This eliminates
           // the tick and doesn't leave any other audible effects.
           float sample_from_ins = resampled_data->at(static_cast<size_t>(resampled_offset)) *
-                track_volume_factor * ins_volume_factor;
+                overall_volume_factor;
           if (track.next_sample_may_be_discontinuous) {
             if (flags & Flags::ShowDCOffsetDebug) {
               fprintf(stderr, "track %zu dc_offset correction from %g to ", track.index, track.dc_offset);
@@ -1809,6 +1815,8 @@ int main(int argc, char** argv) {
       opts->allow_backward_position_jump = true;
     } else if (!strcmp(argv[x], "--aggressive-tick-correction")) {
       opts->correct_ticks_on_all_volume_changes = true;
+    } else if (!strcmp(argv[x], "--nonlinear-volume")) {
+      opts->nonlinear_volume_scaling = true;
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
       num_play_buffers = atoi(&argv[x][15]);
     } else if (!strncmp(argv[x], "--sample-rate=", 14)) {
