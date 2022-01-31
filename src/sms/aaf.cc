@@ -537,7 +537,9 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
         break;
 
       default:
-        throw invalid_argument(string_printf("unknown chunk type %.4s (%08X)", &chunk_type, chunk_type));
+        throw invalid_argument(string_printf(
+            "unknown chunk type %.4s (%08X)",
+            reinterpret_cast<char*>(&chunk_type), chunk_type));
     }
   }
 
@@ -627,7 +629,9 @@ SoundEnvironment baa_decode(void* vdata, size_t size, const char* base_directory
 
       default:
         chunk_type = bswap32(chunk_type);
-        throw invalid_argument(string_printf("unknown chunk type %.4s (%08X)", &chunk_type, chunk_type));
+        throw invalid_argument(string_printf(
+            "unknown chunk type %.4s (%08X)",
+            reinterpret_cast<char*>(&chunk_type), chunk_type));
     }
   }
 

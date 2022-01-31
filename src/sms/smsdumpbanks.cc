@@ -26,13 +26,13 @@ string name_for_note(uint8_t note) {
   }
   const char* names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A",
       "A#", "B"};
-  return string_printf("%s%hhu", names[note % 12], note / 12);
+  return string_printf("%s%hhu", names[note % 12], static_cast<uint8_t>(note / 12));
 }
 
 
 
 string base_filename_for_sound(const Sound& s) {
-  return string_printf("sample-%s-%" PRIX64 "-%08" PRIX32 "-%08" PRIX32
+  return string_printf("sample-%s-%" PRIX32 "-%08" PRIX64 "-%08" PRIX32
       "-%08" PRIX32, s.source_filename.c_str(), s.source_offset,
       s.sound_id, s.aw_file_index, s.wave_table_index);
 }
