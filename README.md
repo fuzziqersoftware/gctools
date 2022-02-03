@@ -40,18 +40,18 @@ gctools is a set of tools for reading and translating video game files. These to
 **pae2gvm** - extracts the embedded GVM from a PAE file. The decompressed PAE data is saved as <filename>.dec; the output GVM is saved as <filename>.gvm.
 - Example: `pae2gvm file.pae`
 
-**prs/prs** - decompresses data in PRS, Yay0, and Yaz0 formats, or compresses data in PRS format.
+**prs** - decompresses data in PRS, Yay0, and Yaz0 formats, or compresses data in PRS format.
 - Example (decompress PRS): `prs -d < file.prs > file.bin`
 - Example (compress PRS): `prs < file.bin > file.prs`
 - Example (decompress Yay0): `prs --yay0 -d < file.yay0 > file.bin`
 - Example (decompress Yaz0): `prs --yaz0 -d < file.yaz0 > file.bin`
 
-**sms/smsdumpbanks** - extracts the contents of instrument and waveform banks in AAF, BX, or BAA format. Games using this format include Luigi's Mansion, Pikmin, and Super Mario Sunshine. Produces text files describing the instruments, uncompressed .wav files containing the sounds, and .bms files containing the music sequences. Before running this program, do the steps in the "Getting auxiliary files" section below.
+**smsdumpbanks** - extracts the contents of instrument and waveform banks in AAF, BX, or BAA format. Games using this format include Luigi's Mansion, Pikmin, and Super Mario Sunshine. Produces text files describing the instruments, uncompressed .wav files containing the sounds, and .bms files containing the music sequences. Before running this program, do the steps in the "Getting auxiliary files" section below.
 - Example: `mkdir sms_decoded_data && smsdumpbanks sms_extracted_data/AudioRes sms_decoded_data`
 
-**sms/smssynth** - synthesizes and debugs music sequences in BMS or MIDI format. There are many ways to use smssynth; see the next section.
+**smssynth** - synthesizes and debugs music sequences in BMS or MIDI format. There are many ways to use smssynth; see the next section.
 
-**sms/modsynth** - synthesizes and debugs music sequences in Protracker/Soundtracker MOD format. Run it with no arguments for usage information.
+**modsynth** - synthesizes and debugs music sequences in Protracker/Soundtracker MOD format. Run it with no arguments for usage information.
 
 ### Using smssynth
 
