@@ -455,6 +455,7 @@ public:
     size_t output_sample_rate;
     int resample_method;
     int8_t default_panning_split; // -0x40-0x40
+    bool default_enable_surround;
     float global_volume;
     float max_output_seconds;
     size_t skip_partitions;
@@ -472,6 +473,7 @@ public:
         output_sample_rate(48000),
         resample_method(SRC_ZERO_ORDER_HOLD),
         default_panning_split(0x20),
+        default_enable_surround(false),
         global_volume(1.0),
         max_output_seconds(0.0),
         skip_partitions(0),
@@ -740,11 +742,15 @@ public:
     // Initialize track state which depends on track index
     for (size_t x = 0; x < this->tracks.size(); x++) {
       this->tracks[x].index = x;
-      // Tracks 1 and 2 (mod 4) are on the right; the others are on the left.
-      // These assignments can be overridden by a [14][8][x] (0xE8x) effect.
-      this->tracks[x].panning = ((x & 3) == 1) || ((x & 3) == 2)
-          ? (0x40 + this->opts->default_panning_split)
-          : (0x40 - this->opts->default_panning_split);
+      if (this->opts->default_enable_surround) {
+        this->tracks[x].enable_surround_effect = true;
+      } else {
+        // Tracks 1 and 2 (mod 4) are on the right; the others are on the left.
+        // These assignments can be overridden by a [14][8][x] (0xE8x) effect.
+        this->tracks[x].panning = ((x & 3) == 1) || ((x & 3) == 2)
+            ? (0x40 + this->opts->default_panning_split)
+            : (0x40 - this->opts->default_panning_split);
+      }
     }
   }
 
@@ -1781,6 +1787,8 @@ int main(int argc, char** argv) {
       opts->amiga_hardware_frequency = 7093789.2;
     } else if (!strncmp(argv[x], "--tempo-bias=", 13)) {
       opts->tempo_bias = atof(&argv[x][13]);
+    } else if (!strcmp(argv[x], "--default-panning-split=surround")) {
+      opts->default_enable_surround = true;
     } else if (!strncmp(argv[x], "--default-panning-split=", 24)) {
       opts->default_panning_split = stoull(&argv[x][24], nullptr, 0);
       if (opts->default_panning_split < -0x40) {
