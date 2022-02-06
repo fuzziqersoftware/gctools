@@ -266,8 +266,7 @@ int main(int argc, char* argv[]) {
     }
 
   } else if (magic == 0x47564D48) { // GVMH
-    GVMFileHeader* gvm = reinterpret_cast<GVMFileHeader*>(const_cast<char*>(
-        data.data()));
+    GVMFileHeader* gvm = reinterpret_cast<GVMFileHeader*>(data.data());
     if (data.size() < sizeof(GVMFileHeader)) {
       fprintf(stderr, "gvm file is too small\n");
       return 2;

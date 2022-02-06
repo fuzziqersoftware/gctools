@@ -716,10 +716,10 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
     string filename = string_printf("%s/Banks/pikibank.bx", base_directory);
     if (isfile(filename)) {
       string data = load_file(filename);
-      auto env = bx_decode(const_cast<char*>(data.data()), data.size(), base_directory);
+      auto env = bx_decode(data.data(), data.size(), base_directory);
 
       data = load_file(string_printf("%s/Seqs/sequence.barc", base_directory));
-      env.sequence_programs = barc_decode(const_cast<char*>(data.data()), data.size(), base_directory);
+      env.sequence_programs = barc_decode(data.data(), data.size(), base_directory);
 
       return env;
     }
@@ -737,8 +737,7 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
       } catch (const cannot_open_file&) {
         continue;
       }
-      return aaf_decode(const_cast<char*>(data.data()), data.size(),
-          base_directory);
+      return aaf_decode(data.data(), data.size(), base_directory);
     }
   }
 
@@ -755,8 +754,7 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
       } catch (const cannot_open_file&) {
         continue;
       }
-      return baa_decode(const_cast<char*>(data.data()), data.size(),
-            base_directory);
+      return baa_decode(data.data(), data.size(), base_directory);
     }
   }
 
