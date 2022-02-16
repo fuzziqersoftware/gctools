@@ -116,7 +116,7 @@ Luigi's Mansion should work without any modifications. Just point `--audiores-di
 You'll have to copy msound.aaf into the AudioRes directory manually to use the Super Mario Sunshine tools. To do so:
 - Get nintendo.szs from the disc image (use gcmdump or some other tool).
 - Yaz0-decompress it (you can do this with `prs -d --yaz0 < nintendo.szs > nintendo.szs.rarc`).
-- Extract the contents of the archive (you can do this with rarcdump).
+- Extract the contents of the archive (you can do this with rarcdump, which is part of [szstools](http://amnoid.de/gc/)).
 - Copy msound.aaf into the AudioRes directory.
 
 #### Getting sequence.barc from Pikmin
