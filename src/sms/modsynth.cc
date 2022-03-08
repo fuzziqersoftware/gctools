@@ -452,6 +452,7 @@ class MODSynthesizer {
 public:
   struct Options {
     double amiga_hardware_frequency;
+    size_t synth_sample_rate;
     size_t output_sample_rate;
     int resample_method;
     int8_t default_panning_split; // -0x40-0x40
@@ -470,6 +471,7 @@ public:
 
     Options()
       : amiga_hardware_frequency(7159090.5),
+        synth_sample_rate(48000),
         output_sample_rate(48000),
         resample_method(SRC_ZERO_ORDER_HOLD),
         default_panning_split(0x20),
@@ -734,7 +736,7 @@ public:
     : mod(mod),
       opts(opts),
       max_output_samples(0),
-      timing(this->opts->output_sample_rate),
+      timing(this->opts->synth_sample_rate),
       pos(this->mod->partition_count, this->opts->skip_partitions),
       tracks(this->mod->num_tracks),
       sample_cache(this->opts->resample_method),
@@ -1828,7 +1830,10 @@ int main(int argc, char** argv) {
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
       num_play_buffers = atoi(&argv[x][15]);
     } else if (!strncmp(argv[x], "--sample-rate=", 14)) {
-      opts->output_sample_rate = atoi(&argv[x][14]);
+      opts->synth_sample_rate = atoi(&argv[x][14]);
+      opts->output_sample_rate = opts->synth_sample_rate;
+    } else if (!strncmp(argv[x], "--synth-sample-rate=", 20)) {
+      opts->synth_sample_rate = atoi(&argv[x][20]);
     } else if (!strcmp(argv[x], "--sample-bits=8")) {
       sample_bits = 8;
     } else if (!strcmp(argv[x], "--sample-bits=16")) {
