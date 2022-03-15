@@ -11,9 +11,9 @@ using namespace std;
 
 struct Yay0Header {
   char magic[4]; // 'Yay0'
-  uint32_t uncompressed_size;
-  uint32_t count_offset;
-  uint32_t data_offset;
+  be_uint32_t uncompressed_size;
+  be_uint32_t count_offset;
+  be_uint32_t data_offset;
 } __attribute__ ((packed));
 
 
@@ -25,7 +25,7 @@ string yay0_decompress(const void* in_data, size_t in_size, size_t max_out_size)
     throw runtime_error("input is not Yay0-compressed");
   }
 
-  uint32_t total_size = bswap32(header.uncompressed_size);
+  uint32_t total_size = header.uncompressed_size;
   if (total_size == 0) {
     return 0;
   }
@@ -36,15 +36,12 @@ string yay0_decompress(const void* in_data, size_t in_size, size_t max_out_size)
   string ret;
   ret.reserve(total_size);
 
-  uint32_t count_offset = bswap32(header.count_offset);
-  uint32_t data_offset = bswap32(header.data_offset);
-
   StringReader control_stream_r = r;
   control_stream_r.go(sizeof(Yay0Header));
   StringReader count_stream_r = r;
-  count_stream_r.go(count_offset);
+  count_stream_r.go(header.count_offset);
   StringReader data_stream_r = r;
-  data_stream_r.go(data_offset);
+  data_stream_r.go(header.data_offset);
 
   uint8_t control_bits_remaining = 0;
   uint8_t control_byte;

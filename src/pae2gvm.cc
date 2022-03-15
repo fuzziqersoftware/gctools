@@ -13,10 +13,10 @@
 using namespace std;
 
 struct PAEHeader {
-  int32_t unknown1;
-  int32_t decompressed_size;
-  int32_t unknown2[5];
-  int32_t gvmoffset;
+  be_int32_t unknown1;
+  be_int32_t decompressed_size;
+  be_int32_t unknown2[5];
+  be_int32_t gvm_offset;
 } __attribute__((packed));
 
 int main(int argc, char* argv[]) {
@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) {
   prs_decompress_stream(pae.get(), dec.get(), 0);
   pae.reset(); // Calls fclose()
 
-  fseek(dec.get(), bswap32(header.gvmoffset) + sizeof(PAEHeader), SEEK_SET);
+  fseek(dec.get(), header.gvm_offset + sizeof(PAEHeader), SEEK_SET);
   save_file(
       string_printf("%s.gvm", input_filename),
       read_all(dec.get()));

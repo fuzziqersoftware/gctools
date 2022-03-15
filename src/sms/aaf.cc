@@ -30,162 +30,108 @@ struct wave_table_entry {
   uint8_t type;
   uint8_t base_note;
   uint8_t unknown2;
-  uint32_t flags2;
-  uint32_t offset;
-  uint32_t size;
-  uint32_t loop_flag; // 0xFFFFFFFF means has a loop
-  uint32_t loop_start;
-  uint32_t loop_end;
-  uint32_t unknown3[4];
+  be_uint32_t flags2;
+  be_uint32_t offset;
+  be_uint32_t size;
+  be_uint32_t loop_flag; // 0xFFFFFFFF means has a loop
+  be_uint32_t loop_start;
+  be_uint32_t loop_end;
+  be_uint32_t unknown3[4];
 
-  uint32_t sample_rate() {
+  uint32_t sample_rate() const {
     return (this->flags2 >> 9) & 0x0000FFFF;
-  }
-
-  void byteswap() {
-    this->flags2 = bswap32(this->flags2);
-    this->offset = bswap32(this->offset);
-    this->size = bswap32(this->size);
-    this->loop_flag = bswap32(this->loop_flag);
-    this->loop_start = bswap32(this->loop_start);
-    this->loop_end = bswap32(this->loop_end);
   }
 };
 
 struct aw_file_entry {
   char filename[112];
-  uint32_t wav_count;
-  uint32_t wav_entry_offsets[0];
-
-  void byteswap() {
-    this->wav_count = bswap32(this->wav_count);
-    for (size_t x = 0; x < this->wav_count; x++) {
-      this->wav_entry_offsets[x] = bswap32(this->wav_entry_offsets[x]);
-    }
-  }
+  be_uint32_t wav_count;
+  be_uint32_t wav_entry_offsets[0];
 };
 
 struct winf_header {
-  uint32_t magic; // 'WINF'
-  uint32_t aw_file_count;
-  uint32_t aw_file_entry_offsets[0];
-
-  void byteswap() {
-    this->aw_file_count = bswap32(this->aw_file_count);
-    for (size_t x = 0; x < this->aw_file_count; x++) {
-      this->aw_file_entry_offsets[x] = bswap32(this->aw_file_entry_offsets[x]);
-    }
-  }
+  be_uint32_t magic; // 'WINF'
+  be_uint32_t aw_file_count;
+  be_uint32_t aw_file_entry_offsets[0];
 };
 
 struct cdf_record {
-  uint16_t aw_file_index;
-  uint16_t sound_id;
-  uint32_t unknown1[13];
-
-  void byteswap() {
-    this->aw_file_index = bswap16(this->aw_file_index);
-    this->sound_id = bswap16(this->sound_id);
-  }
+  be_uint16_t aw_file_index;
+  be_uint16_t sound_id;
+  be_uint32_t unknown1[13];
 };
 
 struct cdf_header {
-  uint32_t magic; // 'C-DF'
-  uint32_t record_count;
-  uint32_t record_offsets[0];
-
-  void byteswap() {
-    this->record_count = bswap32(this->record_count);
-    for (size_t x = 0; x < this->record_count; x++) {
-      this->record_offsets[x] = bswap32(this->record_offsets[x]);
-    }
-  }
+  be_uint32_t magic; // 'C-DF'
+  be_uint32_t record_count;
+  be_uint32_t record_offsets[0];
 };
 
 struct scne_header {
-  uint32_t magic; // 'SCNE'
-  uint32_t unknown1[2];
-  uint32_t cdf_offset;
-
-  void byteswap() {
-    this->cdf_offset = bswap32(this->cdf_offset);
-  }
+  be_uint32_t magic; // 'SCNE'
+  be_uint32_t unknown1[2];
+  be_uint32_t cdf_offset;
 };
 
 struct wbct_header {
-  uint32_t magic; // 'WBCT'
-  uint32_t unknown1;
-  uint32_t scne_count;
-  uint32_t scne_offsets[0];
-
-  void byteswap() {
-    this->scne_count = bswap32(this->scne_count);
-    for (size_t x = 0; x < this->scne_count; x++) {
-      this->scne_offsets[x] = bswap32(this->scne_offsets[x]);
-    }
-  }
+  be_uint32_t magic; // 'WBCT'
+  be_uint32_t unknown1;
+  be_uint32_t scne_count;
+  be_uint32_t scne_offsets[0];
 };
 
 struct wsys_header {
-  uint32_t magic; // 'WSYS'
-  uint32_t size;
-  uint32_t wsys_id;
-  uint32_t unknown1;
-  uint32_t winf_offset;
-  uint32_t wbct_offset;
-
-  void byteswap() {
-    this->size = bswap32(this->size);
-    this->wsys_id = bswap32(this->wsys_id);
-    this->winf_offset = bswap32(this->winf_offset);
-    this->wbct_offset = bswap32(this->wbct_offset);
-  }
+  be_uint32_t magic; // 'WSYS'
+  be_uint32_t size;
+  be_uint32_t wsys_id;
+  be_uint32_t unknown1;
+  be_uint32_t winf_offset;
+  be_uint32_t wbct_offset;
 };
 
 
 
-pair<uint32_t, vector<Sound>> wsys_decode(void* vdata,
+pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
     const char* base_directory) {
-  uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
+  const uint8_t* data = reinterpret_cast<const uint8_t*>(vdata);
 
-  wsys_header* wsys = reinterpret_cast<wsys_header*>(data);
-  if (wsys->magic != 0x53595357) {
+  const wsys_header* wsys = reinterpret_cast<const wsys_header*>(data);
+  if (wsys->magic != 0x57535953) {
     throw invalid_argument("WSYS file not at expected offset");
   }
-  wsys->byteswap();
 
-  winf_header* winf = reinterpret_cast<winf_header*>(data + wsys->winf_offset);
-  if (winf->magic != 0x464E4957) {
+  const winf_header* winf = reinterpret_cast<const winf_header*>(
+      data + wsys->winf_offset);
+  if (winf->magic != 0x57494E46) {
     throw invalid_argument("WINF file not at expected offset");
   }
-  winf->byteswap();
 
   // get all sample IDs before processing aw files
   // this map is {(aw_file_index, wave_table_entry_index): sound_id}
   map<pair<size_t, size_t>, size_t> sound_ids;
 
-  wbct_header* wbct = reinterpret_cast<wbct_header*>(data + wsys->wbct_offset);
-  if (wbct->magic != 0x54434257) {
+  const wbct_header* wbct = reinterpret_cast<const wbct_header*>(
+      data + wsys->wbct_offset);
+  if (wbct->magic != 0x57424354) {
     throw invalid_argument("WBCT file not at expected offset");
   }
-  wbct->byteswap();
 
   for (size_t x = 0; x < wbct->scne_count; x++) {
-    scne_header* scne = reinterpret_cast<scne_header*>(data + wbct->scne_offsets[x]);
-    if (scne->magic != 0x454E4353) {
+    const scne_header* scne = reinterpret_cast<const scne_header*>(
+        data + wbct->scne_offsets[x]);
+    if (scne->magic != 0x53434E45) {
       throw invalid_argument("SCNE file not at expected offset");
     }
-    scne->byteswap();
 
-    cdf_header* cdf = reinterpret_cast<cdf_header*>(data + scne->cdf_offset);
-    if (cdf->magic != 0x46442D43) {
+    const cdf_header* cdf = reinterpret_cast<const cdf_header*>(
+        data + scne->cdf_offset);
+    if (cdf->magic != 0x432D4446) {
       throw invalid_argument("C-DF file not at expected offset");
     }
-    cdf->byteswap();
 
     for (size_t y = 0; y < cdf->record_count; y++) {
-      cdf_record* record = reinterpret_cast<cdf_record*>(data + cdf->record_offsets[y]);
-      record->byteswap();
+      const cdf_record* record = reinterpret_cast<const cdf_record*>(
+          data + cdf->record_offsets[y]);
       sound_ids.emplace(make_pair(record->aw_file_index, y), record->sound_id);
     }
   }
@@ -193,9 +139,8 @@ pair<uint32_t, vector<Sound>> wsys_decode(void* vdata,
   // now process aw files
   vector<Sound> ret;
   for (size_t x = 0; x < winf->aw_file_count; x++) {
-    aw_file_entry* entry = reinterpret_cast<aw_file_entry*>(
+    const aw_file_entry* entry = reinterpret_cast<const aw_file_entry*>(
         data + winf->aw_file_entry_offsets[x]);
-    entry->byteswap();
 
     // pikmin has a case where the aw filename is blank and the entry count is
     // zero. wtf? just handle it manually I guess
@@ -223,15 +168,8 @@ pair<uint32_t, vector<Sound>> wsys_decode(void* vdata,
     }
 
     for (size_t y = 0; y < entry->wav_count; y++) {
-      wave_table_entry* wav_entry = reinterpret_cast<wave_table_entry*>(
+      const wave_table_entry* wav_entry = reinterpret_cast<const wave_table_entry*>(
           data + entry->wav_entry_offsets[y]);
-
-      // TODO: remove debugging code here
-      // string data = format_data_string(string(reinterpret_cast<char*>(wav_entry), sizeof(*wav_entry)));
-      // fprintf(stderr, "WAVE %04zX -> %s -> %s:%" PRIX32 " @ %" PRIu32 " or %" PRIu32 "\n", y, data.c_str(), entry->filename, bswap32(wav_entry->offset),
-      //     (bswap32(wav_entry->flags2) >> 9) & 0x00007FFF, (bswap32(wav_entry->flags2) >> 9) & 0x0000FFFF);
-
-      wav_entry->byteswap();
 
       uint16_t sound_id = sound_ids.at(make_pair(x, y));
 
@@ -278,10 +216,10 @@ pair<uint32_t, vector<Sound>> wsys_decode(void* vdata,
 
         size_t num_samples = wav_entry->size / 2; // 16-bit samples
         ret_snd.decoded_samples.reserve(num_samples);
-        const int16_t* samples = reinterpret_cast<const int16_t*>(
+        const be_int16_t* samples = reinterpret_cast<const be_int16_t*>(
             aw_file_contents.data() + wav_entry->offset);
         for (size_t z = 0; z < num_samples; z++) {
-          int16_t sample = bswap16(samples[z]);
+          int16_t sample = samples[z];
           float decoded = (sample == -0x8000) ? -1.0 : (static_cast<float>(sample) / 32767.0f);
           ret_snd.decoded_samples.emplace_back(decoded);
         }
@@ -300,51 +238,38 @@ pair<uint32_t, vector<Sound>> wsys_decode(void* vdata,
 
 struct barc_entry {
   char name[14];
-  uint16_t unknown1;
-  uint32_t unknown2[2];
-  uint32_t offset;
-  uint32_t size;
-
-  void byteswap() {
-    this->offset = bswap32(this->offset);
-    this->size = bswap32(this->size);
-  }
+  be_uint16_t unknown1;
+  be_uint32_t unknown2[2];
+  be_uint32_t offset;
+  be_uint32_t size;
 };
 
 struct barc_header {
-  uint32_t magic; // 'BARC'
-  uint32_t unknown1; // '----'
-  uint32_t unknown2;
-  uint32_t entry_count;
+  be_uint32_t magic; // 'BARC'
+  be_uint32_t unknown1; // '----'
+  be_uint32_t unknown2;
+  be_uint32_t entry_count;
   char archive_filename[0x10];
   barc_entry entries[0];
 
-  size_t bytes_sw() const {
-    return sizeof(*this) + bswap32(this->entry_count) * sizeof(this->entries[0]);
-  }
-
-  void byteswap() {
-    this->entry_count = bswap32(this->entry_count);
-    for (size_t x = 0; x < this->entry_count; x++) {
-      this->entries[x].byteswap();
-    }
+  size_t bytes() const {
+    return sizeof(*this) + this->entry_count * sizeof(this->entries[0]);
   }
 };
 
-unordered_map<string, SequenceProgram> barc_decode(void* vdata, size_t size,
-    const char* base_directory) {
+unordered_map<string, SequenceProgram> barc_decode(const void* vdata,
+    size_t size, const char* base_directory) {
   if (size < sizeof(barc_header)) {
     throw invalid_argument("BARC data too small for header");
   }
 
-  barc_header* barc = reinterpret_cast<barc_header*>(vdata);
-  if (barc->magic != 0x43524142) {
+  const barc_header* barc = reinterpret_cast<const barc_header*>(vdata);
+  if (barc->magic != 0x42415243) {
     throw invalid_argument("BARC file not at expected offset");
   }
-  if (size < barc->bytes_sw()) {
+  if (size < barc->bytes()) {
     throw invalid_argument("BARC data too small for header");
   }
-  barc->byteswap();
 
   string sequence_archive_filename = string_printf("%s/Seqs/%s", base_directory,
       barc->archive_filename);
@@ -476,22 +401,22 @@ void SoundEnvironment::merge_from(SoundEnvironment&& other) {
 
 
 
-SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory) {
-  uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
+SoundEnvironment aaf_decode(const void* vdata, size_t size, const char* base_directory) {
+  const uint8_t* data = reinterpret_cast<const uint8_t*>(vdata);
   size_t offset = 0;
 
   SoundEnvironment ret;
   while (offset < size) {
     uint32_t chunk_offset, chunk_size, chunk_id;
-    uint32_t chunk_type = bswap32(*reinterpret_cast<const uint32_t*>(data + offset));
+    uint32_t chunk_type = *reinterpret_cast<const be_uint32_t*>(data + offset);
 
     switch (chunk_type) {
       case 1:
       case 5:
       case 6:
       case 7:
-        chunk_offset = bswap32(*reinterpret_cast<const uint32_t*>(data + offset + 4));
-        chunk_size = bswap32(*reinterpret_cast<const uint32_t*>(data + offset + 8));
+        chunk_offset = *reinterpret_cast<const be_uint32_t*>(data + offset + 4);
+        chunk_size = *reinterpret_cast<const be_uint32_t*>(data + offset + 8);
         // unused int32 after size apparently?
         offset += 0x10;
         break;
@@ -500,14 +425,14 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
       case 3:
         offset += 0x04;
         while (offset < size) {
-          chunk_offset = bswap32(*reinterpret_cast<const uint32_t*>(data + offset));
+          chunk_offset = *reinterpret_cast<const be_uint32_t*>(data + offset);
           if (chunk_offset == 0) {
             offset += 0x04;
             break;
           }
 
-          chunk_size = bswap32(*reinterpret_cast<const uint32_t*>(data + offset + 4));
-          chunk_id = bswap32(*reinterpret_cast<const uint32_t*>(data + offset + 8));
+          chunk_size = *reinterpret_cast<const be_uint32_t*>(data + offset + 4);
+          chunk_id = *reinterpret_cast<const be_uint32_t*>(data + offset + 8);
           if (chunk_type == 2) {
             auto ibnk = ibnk_decode(data + chunk_offset);
             // this is the index of the related wsys block
@@ -526,8 +451,8 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
         break;
 
       case 4:
-        chunk_offset = bswap32(*reinterpret_cast<const uint32_t*>(data + offset + 4));
-        chunk_size = bswap32(*reinterpret_cast<const uint32_t*>(data + offset + 8));
+        chunk_offset = *reinterpret_cast<const be_uint32_t*>(data + offset + 4);
+        chunk_size = *reinterpret_cast<const be_uint32_t*>(data + offset + 8);
         ret.sequence_programs = barc_decode(data + chunk_offset, chunk_size, base_directory);
         offset += 0x10;
         break;
@@ -547,9 +472,9 @@ SoundEnvironment aaf_decode(void* vdata, size_t size, const char* base_directory
   return ret;
 }
 
-SoundEnvironment baa_decode(void* vdata, size_t size, const char* base_directory) {
-  uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
-  uint32_t* data_fields = reinterpret_cast<uint32_t*>(vdata);
+SoundEnvironment baa_decode(const void* vdata, size_t size, const char* base_directory) {
+  const uint8_t* data = reinterpret_cast<const uint8_t*>(vdata);
+  const be_uint32_t* data_fields = reinterpret_cast<const be_uint32_t*>(vdata);
   size_t field_offset = 1;
 
   if (size < 8) {
@@ -562,7 +487,7 @@ SoundEnvironment baa_decode(void* vdata, size_t size, const char* base_directory
   SoundEnvironment ret;
   bool complete = false;
   while (!complete && (field_offset < size)) {
-    uint32_t chunk_type = bswap32(data_fields[field_offset++]);
+    uint32_t chunk_type = data_fields[field_offset++];
     switch (chunk_type) {
 
       case 0x62736674: // 'bsft'
@@ -577,8 +502,8 @@ SoundEnvironment baa_decode(void* vdata, size_t size, const char* base_directory
         break;
 
       case 0x77732020: { // 'ws  '
-        uint32_t wsys_id = bswap32(data_fields[field_offset++]);
-        uint32_t offset = bswap32(data_fields[field_offset++]);
+        uint32_t wsys_id = data_fields[field_offset++];
+        uint32_t offset = data_fields[field_offset++];
         field_offset++; // unclear what this field is
 
         // TODO: should we trust wsys_id here or use the same logic as for aaf?
@@ -592,8 +517,8 @@ SoundEnvironment baa_decode(void* vdata, size_t size, const char* base_directory
       }
 
       case 0x626E6B20: { // 'bnk '
-        uint32_t chunk_id = bswap32(data_fields[field_offset++]);
-        uint32_t offset = bswap32(data_fields[field_offset++]);
+        uint32_t chunk_id = data_fields[field_offset++];
+        uint32_t offset = data_fields[field_offset++];
         // unlike 'ws  ' above, there isn't an extra unused field here
         auto ibnk = ibnk_decode(data + offset);
         ibnk.chunk_id = chunk_id;
@@ -603,18 +528,18 @@ SoundEnvironment baa_decode(void* vdata, size_t size, const char* base_directory
 
       case 0x626D7320: { // 'bms '
         // TODO: figure out if this mask is correct
-        uint32_t id = bswap32(data_fields[field_offset++]) & 0x0000FFFF;
-        uint32_t offset = bswap32(data_fields[field_offset++]);
-        uint32_t end_offset = bswap32(data_fields[field_offset++]);
+        uint32_t id = data_fields[field_offset++] & 0x0000FFFF;
+        uint32_t offset = data_fields[field_offset++];
+        uint32_t end_offset = data_fields[field_offset++];
         ret.sequence_programs.emplace(piecewise_construct,
             forward_as_tuple(string_printf("seq%" PRIu32, id)),
-            forward_as_tuple(id, string(reinterpret_cast<char*>(data + offset), end_offset - offset)));
+            forward_as_tuple(id, string(reinterpret_cast<const char*>(data + offset), end_offset - offset)));
         break;
       }
 
       case 0x62616163: { // 'baac'
-        uint32_t offset = bswap32(data_fields[field_offset++]);
-        uint32_t end_offset = bswap32(data_fields[field_offset++]);
+        uint32_t offset = data_fields[field_offset++];
+        uint32_t end_offset = data_fields[field_offset++];
         if (end_offset - offset < 0x18) {
           throw invalid_argument("embedded baa is too small for header");
         }
@@ -628,10 +553,10 @@ SoundEnvironment baa_decode(void* vdata, size_t size, const char* base_directory
         break;
 
       default:
-        chunk_type = bswap32(chunk_type);
+        be_uint32_t chunk_type_be = chunk_type;
         throw invalid_argument(string_printf(
             "unknown chunk type %.4s (%08X)",
-            reinterpret_cast<char*>(&chunk_type), chunk_type));
+            reinterpret_cast<char*>(&chunk_type_be), chunk_type));
     }
   }
 
@@ -640,40 +565,28 @@ SoundEnvironment baa_decode(void* vdata, size_t size, const char* base_directory
 }
 
 struct bx_header {
-  uint32_t wsys_table_offset;
-  uint32_t wsys_count;
-  uint32_t ibnk_table_offset;
-  uint32_t ibnk_count;
-
-  void byteswap() {
-    this->wsys_table_offset = bswap32(this->wsys_table_offset);
-    this->wsys_count = bswap32(this->wsys_count);
-    this->ibnk_table_offset = bswap32(this->ibnk_table_offset);
-    this->ibnk_count = bswap32(this->ibnk_count);
-  }
+  be_uint32_t wsys_table_offset;
+  be_uint32_t wsys_count;
+  be_uint32_t ibnk_table_offset;
+  be_uint32_t ibnk_count;
 };
 
 struct bx_table_entry {
-  uint32_t offset;
-  uint32_t size;
-
-  void byteswap() {
-    this->offset = bswap32(this->offset);
-    this->size = bswap32(this->size);
-  }
+  be_uint32_t offset;
+  be_uint32_t size;
 };
 
-SoundEnvironment bx_decode(void* vdata, size_t, const char* base_directory) {
+SoundEnvironment bx_decode(const void* vdata, size_t,
+    const char* base_directory) {
   // TODO: Be less lazy and implement bounds checks here.
 
-  uint8_t* data = reinterpret_cast<uint8_t*>(vdata);
-  bx_header* header = reinterpret_cast<bx_header*>(vdata);
-  header->byteswap();
+  const uint8_t* data = reinterpret_cast<const uint8_t*>(vdata);
+  const bx_header* header = reinterpret_cast<const bx_header*>(vdata);
 
   SoundEnvironment ret;
-  bx_table_entry* entry = reinterpret_cast<bx_table_entry*>(data + header->wsys_table_offset);
+  const bx_table_entry* entry = reinterpret_cast<const bx_table_entry*>(
+      data + header->wsys_table_offset);
   for (size_t x = 0; x < header->wsys_count; x++) {
-    entry->byteswap();
     if (entry->size == 0) {
       ret.sample_banks.emplace(ret.sample_banks.size(), vector<Sound>());
     } else {
@@ -687,9 +600,9 @@ SoundEnvironment bx_decode(void* vdata, size_t, const char* base_directory) {
     entry++;
   }
 
-  entry = reinterpret_cast<bx_table_entry*>(data + header->ibnk_table_offset);
+  entry = reinterpret_cast<const bx_table_entry*>(
+      data + header->ibnk_table_offset);
   for (size_t x = 0; x < header->ibnk_count; x++) {
-    entry->byteswap();
     if (entry->size != 0) {
       auto ibnk = ibnk_decode(data + entry->offset);
       ibnk.chunk_id = x;

@@ -14,9 +14,9 @@ using namespace std;
 
 struct GSLEntry {
   char name[0x20];
-  int32_t unknown;
-  uint32_t size;
-  int32_t unknown2[2];
+  be_int32_t unknown;
+  be_uint32_t size;
+  be_int32_t unknown2[2];
 } __attribute__((packed));
 
 int main(int argc, char* argv[]) {
@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
       continue;
     }
 
-    size_t size = bswap32(entry.size);
+    size_t size = entry.size;
     printf("> %s (0x%zX bytes)\n", entry.name, size);
 
     // File data is aligned on 2KB boundaries

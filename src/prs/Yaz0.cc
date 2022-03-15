@@ -15,7 +15,7 @@ using namespace std;
 
 struct Yaz0Header {
   char magic[4]; // Yaz0
-  uint32_t uncompressed_size; // total size of uncompressed data
+  be_uint32_t uncompressed_size; // total size of uncompressed data
   char padding[8];
 } __attribute__ ((packed));
 
@@ -28,7 +28,7 @@ size_t yaz0_decompress_stream(FILE* in, FILE* out, size_t max_out_size) {
     throw runtime_error("input is not Yaz0-compressed");
   }
 
-  uint32_t total_size = bswap32(header.uncompressed_size);
+  uint32_t total_size = header.uncompressed_size;
   if (total_size == 0) {
     return 0;
   }

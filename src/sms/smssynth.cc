@@ -82,20 +82,15 @@ uint8_t lower_c_note_for_note(uint8_t note) {
 
 
 struct MIDIChunkHeader {
-  uint32_t magic;
-  uint32_t size;
-
-  void byteswap() {
-    this->magic = bswap32(this->magic);
-    this->size = bswap32(this->size);
-  }
+  be_uint32_t magic;
+  be_uint32_t size;
 } __attribute__((packed));
 
 struct MIDIHeaderChunk {
   MIDIChunkHeader header; // magic=MThd, size=6
-  uint16_t format; // 0, 1, or 2. see below
-  uint16_t track_count;
-  uint16_t division; // see below
+  be_uint16_t format; // 0, 1, or 2. see below
+  be_uint16_t track_count;
+  be_uint16_t division; // see below
 
   // format=0: file contains a single track
   // format=1: file contains simultaneous tracks (start them all at once)
@@ -104,22 +99,11 @@ struct MIDIHeaderChunk {
   // if the MSB of division is 1, then the remaining 15 bits are the number of
   // ticks per quarter note. if the MSB is 0, then the next 7 bits are
   // frames/second (as a negative number), and the last 8 are ticks per frame
-
-  void byteswap() {
-    this->header.byteswap();
-    this->format = bswap16(this->format);
-    this->track_count = bswap16(this->track_count);
-    this->division = bswap16(this->division);
-  }
 } __attribute__((packed));
 
 struct MIDITrackChunk {
   MIDIChunkHeader header;
   uint8_t data[0];
-
-  void byteswap() {
-    this->header.byteswap();
-  }
 } __attribute__((packed));
 
 
@@ -573,7 +557,6 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
 void disassemble_midi(StringReader& r) {
   // read the header, check it, and disassemble it
   MIDIHeaderChunk header = r.get<MIDIHeaderChunk>();
-  header.byteswap();
   if (header.header.magic != 0x4D546864) { // 'MThd'
     throw runtime_error("header identifier is incorrect");
   }
@@ -583,8 +566,8 @@ void disassemble_midi(StringReader& r) {
   if (header.format > 2) {
     throw runtime_error("MIDI format is unknown");
   }
-  printf("# MIDI format %hu, %hu tracks, division %04X\n", header.format,
-      header.track_count, header.division);
+  printf("# MIDI format %hu, %hu tracks, division %04X\n", header.format.load(),
+      header.track_count.load(), header.division.load());
 
   // if the header is larger, skip the extra bytes
   if (header.header.size > 6) {
@@ -595,7 +578,6 @@ void disassemble_midi(StringReader& r) {
   for (size_t track_id = 0; track_id < header.track_count; track_id++) {
     size_t header_offset = r.where();
     MIDITrackChunk ch = r.get<MIDITrackChunk>();
-    ch.byteswap();
     if (ch.header.magic != 0x4D54726B) {
       throw runtime_error("track header not present");
     }
@@ -1838,7 +1820,6 @@ public:
 
     // read the header and create all the tracks
     MIDIHeaderChunk header = r.get<MIDIHeaderChunk>();
-    header.byteswap();
     if (header.header.magic != 0x4D546864) { // 'MThd'
       throw runtime_error("header identifier is incorrect");
     }
@@ -1857,7 +1838,6 @@ public:
     // create all the tracks
     for (size_t track_id = 0; track_id < header.track_count; track_id++) {
       MIDITrackChunk ch = r.get<MIDITrackChunk>();
-      ch.byteswap();
       if (ch.header.magic != 0x4D54726B) {
         throw runtime_error("track header not present");
       }

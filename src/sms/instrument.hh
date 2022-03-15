@@ -82,4 +82,4 @@ struct InstrumentBank {
   explicit InstrumentBank(uint32_t id);
 };
 
-InstrumentBank ibnk_decode(void* vdata);
+InstrumentBank ibnk_decode(const void* vdata);

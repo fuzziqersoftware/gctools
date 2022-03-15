@@ -18,40 +18,40 @@ using namespace std;
 #pragma pack(1)
 
 struct GCMHeader {
-  uint32_t game_id;
-  uint16_t company_id;
+  be_uint32_t game_id;
+  be_uint16_t company_id;
   uint8_t disk_id;
   uint8_t version;
   uint8_t audio_streaming;
   uint8_t stream_buffer_size;
   uint8_t unused1[0x0E];
-  uint32_t wii_magic;
-  uint32_t gc_magic;
+  be_uint32_t wii_magic;
+  be_uint32_t gc_magic;
   char name[0x03E0];
-  uint32_t debug_offset;
-  uint32_t debug_addr;
+  be_uint32_t debug_offset;
+  be_uint32_t debug_addr;
   uint8_t unused2[0x18];
-  uint32_t dol_offset;
-  uint32_t fst_offset;
-  uint32_t fst_size;
-  uint32_t fst_max_size;
+  be_uint32_t dol_offset;
+  be_uint32_t fst_offset;
+  be_uint32_t fst_size;
+  be_uint32_t fst_max_size;
 };
 
 struct TGCHeader {
-  uint32_t magic;
-  uint32_t unknown1;
-  uint32_t header_size;
-  uint32_t unknown2;
-  uint32_t fst_offset;
-  uint32_t fst_size;
-  uint32_t fst_max_size;
-  uint32_t dol_offset;
-  uint32_t dol_size;
-  uint32_t file_area;
-  uint32_t unknown3; // 10
-  uint32_t banner_offset;
-  uint32_t banner_size;
-  uint32_t file_offset_base;
+  be_uint32_t magic;
+  be_uint32_t unknown1;
+  be_uint32_t header_size;
+  be_uint32_t unknown2;
+  be_uint32_t fst_offset;
+  be_uint32_t fst_size;
+  be_uint32_t fst_max_size;
+  be_uint32_t dol_offset;
+  be_uint32_t dol_size;
+  be_uint32_t file_area;
+  be_uint32_t unknown3; // 10
+  be_uint32_t banner_offset;
+  be_uint32_t banner_size;
+  be_uint32_t file_offset_base;
 };
 
 union ImageHeader {
@@ -61,40 +61,44 @@ union ImageHeader {
 
 struct DOLHeader {
   // Sections 0-6 are text; the rest (7-17) are data
-  uint32_t section_offset[18];
-  uint32_t section_address[18];
-  uint32_t section_size[18];
-  uint32_t bss_address;
-  uint32_t bss_size;
-  uint32_t entry_point;
-  uint32_t unused[7];
+  be_uint32_t section_offset[18];
+  be_uint32_t section_address[18];
+  be_uint32_t section_size[18];
+  be_uint32_t bss_address;
+  be_uint32_t bss_size;
+  be_uint32_t entry_point;
+  be_uint32_t unused[7];
 };
 
 struct FSTRootEntry {
-  uint8_t dir_flag;
-  uint32_t string_offset:24;
-  uint32_t parent_offset;
-  uint32_t num_entries;
+  be_uint32_t dir_flag_string_offset;
+  be_uint32_t parent_offset;
+  be_uint32_t num_entries;
 };
 
 struct FSTDirEntry {
-  uint8_t dir_flag;
-  uint32_t string_offset:24;
-  uint32_t parent_offset;
-  uint32_t next_offset;
+  be_uint32_t dir_flag_string_offset;
+  be_uint32_t parent_offset;
+  be_uint32_t next_offset;
 };
 
 struct FSTFileEntry {
-  uint8_t dir_flag;
-  uint32_t string_offset:24;
-  uint32_t file_offset;
-  uint32_t file_size;
+  be_uint32_t dir_flag_string_offset;
+  be_uint32_t file_offset;
+  be_uint32_t file_size;
 };
 
 union FSTEntry {
   FSTRootEntry root;
   FSTDirEntry dir;
   FSTFileEntry file;
+
+  bool is_dir() const {
+    return this->file.dir_flag_string_offset & 0xFF000000;
+  }
+  uint32_t string_offset() const {
+    return this->file.dir_flag_string_offset & 0x00FFFFFF;
+  }
 };
 
 
@@ -102,8 +106,7 @@ uint32_t dol_file_size(const DOLHeader* dol) {
   static const int num_sections = 18;
   uint32_t x, max_offset = 0;
   for (x = 0; x < num_sections; x++) {
-    uint32_t section_end_offset = bswap32(dol->section_offset[x]) +
-        bswap32(dol->section_size[x]);
+    uint32_t section_end_offset = dol->section_offset[x] + dol->section_size[x];
     if (section_end_offset > max_offset) {
       max_offset = section_end_offset;
     }
@@ -120,52 +123,47 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
   pwd += '/';
   size_t pwd_end = pwd.size();
   for (x = start; x < end; x++) {
-    FSTEntry this_entry;
-    this_entry.file.dir_flag = fst[x].file.dir_flag;
-    this_entry.file.string_offset = bswap32(fst[x].file.string_offset) >> 8;
-    this_entry.file.file_offset = bswap32(fst[x].file.file_offset);
-    this_entry.file.file_size = bswap32(fst[x].file.file_size);
+    if (fst[x].is_dir()) {
+      fprintf(stderr, "> entry: %08X $ %08X %08X %08X %s%s/\n", x,
+             fst[x].file.dir_flag_string_offset.load(),
+             fst[x].file.file_offset.load(),
+             fst[x].file.file_size.load(), pwd.c_str(),
+             &string_table[fst[x].string_offset()]);
 
-    if (this_entry.file.dir_flag) {
-      fprintf(stderr, "> entry: %08X $ %02X %08X %08X %08X %s%s/\n", x,
-             this_entry.file.dir_flag, this_entry.file.string_offset,
-             this_entry.file.file_offset, this_entry.file.file_size, pwd.c_str(),
-             &string_table[this_entry.file.string_offset]);
-
-      pwd += &string_table[this_entry.file.string_offset];
+      pwd += &string_table[fst[x].file.dir_flag_string_offset & 0x00FFFFFF];
       if (mkdir(pwd.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
         throw runtime_error("cannot create directory " + pwd);
       }
       if (chdir(pwd.c_str())) {
         throw runtime_error("cannot enter directory " + pwd);
       }
-      parse_until(fd, fst, string_table, x + 1, this_entry.dir.next_offset,
+      parse_until(fd, fst, string_table, x + 1, fst[x].dir.next_offset,
           base_offset, target_filenames);
       pwd.resize(pwd_end);
       if (chdir(pwd.c_str())) {
         throw runtime_error("cannot return to directory " + pwd);
       }
 
-      x = this_entry.dir.next_offset - 1;
+      x = fst[x].dir.next_offset - 1;
 
     } else {
-      fprintf(stderr, "> entry: %08X $ %02X %08X %08X %08X %s%s\n", x,
-             this_entry.file.dir_flag, this_entry.file.string_offset,
-             this_entry.file.file_offset, this_entry.file.file_size, pwd.c_str(),
-             &string_table[this_entry.file.string_offset]);
+      fprintf(stderr, "> entry: %08X $ %08X %08X %08X %s%s\n", x,
+             fst[x].file.dir_flag_string_offset.load(),
+             fst[x].file.file_offset.load(), fst[x].file.file_size.load(),
+             pwd.c_str(), &string_table[fst[x].string_offset()]);
 
       if (target_filenames.empty() ||
-          target_filenames.count(&string_table[this_entry.file.string_offset])) {
+          target_filenames.count(&string_table[fst[x].string_offset()])) {
         // some games have non-ascii chars in filenames; get rid of them
-        string filename(&string_table[this_entry.file.string_offset]);
+        string filename(&string_table[fst[x].string_offset()]);
         for (auto& ch : filename) {
           if (ch < 0x20 || ch > 0x7E) {
             ch = '_';
           }
         }
 
-        save_file(filename, preadx(fd, this_entry.file.file_size,
-            this_entry.file.file_offset + base_offset));
+        save_file(filename, preadx(fd, fst[x].file.file_size,
+            fst[x].file.file_offset + base_offset));
       }
     }
   }
@@ -209,9 +207,9 @@ int main(int argc, char* argv[]) {
   ImageHeader header;
   readx(fd, &header, sizeof(ImageHeader));
   if (format == Format::Unknown) {
-    if (header.gcm.gc_magic == 0x3D9F33C2) {
+    if (header.gcm.gc_magic == 0xC2339F3D) {
       format = Format::GCM;
-    } else if (header.tgc.magic == 0xA2380FAE) {
+    } else if (header.tgc.magic == 0xAE0F38A2) {
       format = Format::TGC;
     } else {
       fprintf(stderr, "can\'t determine archive type of %s\n", filename);
@@ -223,17 +221,17 @@ int main(int argc, char* argv[]) {
   int32_t base_offset;
   if (format == Format::GCM) {
     fprintf(stderr, "format: gcm (%s)\n", header.gcm.name);
-    fst_offset = bswap32(header.gcm.fst_offset);
-    fst_size = bswap32(header.gcm.fst_size);
+    fst_offset = header.gcm.fst_offset;
+    fst_size = header.gcm.fst_size;
     base_offset = 0;
-    dol_offset = bswap32(header.gcm.dol_offset);
+    dol_offset = header.gcm.dol_offset;
 
   } else if (format == Format::TGC) {
     fprintf(stderr, "format: tgc\n");
-    fst_offset = bswap32(header.tgc.fst_offset);
-    fst_size = bswap32(header.tgc.fst_size);
-    base_offset = bswap32(header.tgc.file_area) - bswap32(header.tgc.file_offset_base);
-    dol_offset = bswap32(header.tgc.dol_offset);
+    fst_offset = header.tgc.fst_offset;
+    fst_size = header.tgc.fst_size;
+    base_offset = header.tgc.file_area - header.tgc.file_offset_base;
+    dol_offset = header.tgc.dol_offset;
 
   } else {
     fprintf(stderr, "can\'t determine format; use one of --tgc or --gcm\n");
@@ -261,7 +259,7 @@ int main(int argc, char* argv[]) {
     save_file("fst.bin", fst_data);
   }
 
-  int num_entries = bswap32(fst[0].root.num_entries);
+  int num_entries = fst[0].root.num_entries;
   fprintf(stderr, "> root: %08X files\n", num_entries);
 
   char* string_table = (char*)fst + (sizeof(FSTEntry) * num_entries);

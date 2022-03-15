@@ -18,30 +18,19 @@ using namespace std;
 
 
 struct GVMFileEntry {
-  uint16_t file_num;
+  be_uint16_t file_num;
   char name[28];
-  uint32_t unknown[2];
-
-  void byteswap() {
-    this->file_num = bswap16(this->file_num);
-  }
+  be_uint32_t unknown[2];
 } __attribute__((packed));
 
 struct GVMFileHeader {
-  uint32_t magic; // 'GVMH'
-  uint32_t header_size; // Add 8 to this value (doesn't include magic/size)
-  uint16_t unknown;
-  uint16_t num_files;
+  be_uint32_t magic; // 'GVMH'
+  // Note: Add 8 to this value (it doesn't include magic and size). Also, yes,
+  // it really is little-endian.
+  le_uint32_t header_size;
+  be_uint16_t unknown;
+  be_uint16_t num_files;
   GVMFileEntry entries[0];
-
-  void byteswap() {
-    this->magic = bswap32(this->magic);
-    // Note: header_size is apparently little-endian so we don't byteswap it
-    this->num_files = bswap16(this->num_files);
-    for (size_t x = 0; x < this->num_files; x++) {
-      this->entries[x].byteswap();
-    }
-  }
 } __attribute__((packed));
 
 
@@ -76,20 +65,15 @@ enum GVRDataFormat {
 };
 
 struct GVRHeader {
-  uint32_t magic;
-  uint32_t data_size; // Add 8 (doesn't include magic and data_size itself)
-  uint16_t unknown;
+  be_uint32_t magic;
+  // See command in GVMFileHeader about header_size - data_size behaves the same
+  // way here.
+  le_uint32_t data_size;
+  be_uint16_t unknown;
   uint8_t format_flags; // High 4 bits are pixel format, low 4 are data flags
   uint8_t data_format;
-  uint16_t width;
-  uint16_t height;
-
-  void byteswap() {
-    this->magic = bswap32(this->magic);
-    // Note: data_size is apparently little-endian so we don't byteswap it
-    this->width = bswap16(this->width);
-    this->height = bswap16(this->height);
-  }
+  be_uint16_t width;
+  be_uint16_t height;
 } __attribute__((packed));
 
 Image decode_gvr(const string& data) {
@@ -99,7 +83,6 @@ Image decode_gvr(const string& data) {
 
   StringReader r(data.data(), data.size());
   GVRHeader header = r.get<GVRHeader>();
-  header.byteswap();
   if (header.magic != 0x47565254) {
     throw runtime_error("GVRT signature is missing");
   }
@@ -251,7 +234,7 @@ int main(int argc, char* argv[]) {
     return 2;
   }
 
-  uint32_t magic = bswap32(*reinterpret_cast<const uint32_t*>(data.data()));
+  uint32_t magic = *reinterpret_cast<const be_uint32_t*>(data.data());
   if ((magic == 0x47565254) || (magic == 0x47424958)) { // GVRT or GBIX
     if (magic == 0x47424958) { // GBIX
       uint32_t gbix_size = *reinterpret_cast<const uint32_t*>(data.data() + 4);
@@ -266,22 +249,21 @@ int main(int argc, char* argv[]) {
     }
 
   } else if (magic == 0x47564D48) { // GVMH
-    GVMFileHeader* gvm = reinterpret_cast<GVMFileHeader*>(data.data());
+    const GVMFileHeader* gvm = reinterpret_cast<const GVMFileHeader*>(data.data());
     if (data.size() < sizeof(GVMFileHeader)) {
       fprintf(stderr, "gvm file is too small\n");
       return 2;
     }
-    gvm->byteswap();
     if (gvm->magic != 0x47564D48) {
       fprintf(stderr, "warning: gvm header may be corrupt\n");
     }
 
-    fprintf(stderr, "%s: %hu files\n", argv[1], gvm->num_files);
+    fprintf(stderr, "%s: %hu files\n", argv[1], gvm->num_files.load());
     size_t offset = gvm->header_size + 8;
     for (size_t x = 0; x < gvm->num_files; x++) {
       string filename = argv[1];
       filename += '_';
-      for (char* ch = gvm->entries[x].name; *ch; ch++) {
+      for (const char* ch = gvm->entries[x].name; *ch; ch++) {
         if (*ch < 0x20 || *ch > 0x7E) {
           filename += string_printf("_x%02hhX", *ch);
         } else {
@@ -290,27 +272,25 @@ int main(int argc, char* argv[]) {
       }
       filename += ".gvr";
 
-      struct GVRHeader gvr;
-      memcpy(&gvr, data.data() + offset, sizeof(GVRHeader));
-      gvr.byteswap();
-      if (gvr.magic != 0x47565254) {
+      const GVRHeader* gvr = reinterpret_cast<const GVRHeader*>(data.data() + offset);
+      if (gvr->magic != 0x47565254) {
         fprintf(stderr, "warning: gvr header may be corrupt\n");
       }
 
-      string gvr_contents = data.substr(offset, gvr.data_size + 8);
+      string gvr_contents = data.substr(offset, gvr->data_size + 8);
       try {
         Image decoded = decode_gvr(gvr_contents);
         decoded.save(filename + ".bmp", Image::ImageFormat::WindowsBitmap);
         printf("> %04zu = %08zX:%08X => %s.bmp\n",
-            x + 1, offset, gvr.data_size + 8, filename.c_str());
+            x + 1, offset, gvr->data_size + 8, filename.c_str());
       } catch (const exception& e) {
         fprintf(stderr, "failed to decode gvr: %s\n", e.what());
       }
 
       printf("> %04zu = %08zX:%08X => %s\n",
-          x + 1, offset, gvr.data_size + 8, filename.c_str());
+          x + 1, offset, gvr->data_size + 8, filename.c_str());
       save_file(filename, gvr_contents);
-      offset += (gvr.data_size + 8);
+      offset += (gvr->data_size + 8);
     }
 
   } else {
