@@ -210,7 +210,7 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
         break;
       }
       case 0x88: {
-        uint16_t wait_time = r.get_u16r();
+        uint16_t wait_time = r.get_u16b();
         disassembly = string_printf("wait            %hu", wait_time);
         break;
       }
@@ -246,12 +246,12 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
         } else if (data_type == 8) {
           value = r.get_s8();
         } else if (data_type == 12) {
-          value = r.get_s16r();
+          value = r.get_s16b();
         }
         if (duration_flags == 2) {
           duration = r.get_u8();
         } else if (duration == 3) {
-          duration = r.get_u16r();
+          duration = r.get_u16b();
         }
 
         static const unordered_map<uint8_t, string> param_names({
@@ -287,7 +287,7 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       case 0xA4:
       case 0xAC: {
         uint8_t param = r.get_u8();
-        uint16_t value = (opcode & 0x08) ? r.get_u16r() : r.get_u8();
+        uint16_t value = (opcode & 0x08) ? r.get_u16b() : r.get_u8();
 
         // guess: 07 as pitch bend semitones seems to make sense - some seqs set
         // it to 0x0C (one octave) immediately before/after a pitch bend opcode
@@ -312,7 +312,7 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
 
       case 0xC1: {
         uint8_t track_id = r.get_u8();
-        uint32_t offset = r.get_u24r();
+        uint32_t offset = r.get_u24b();
         disassembly = string_printf("start_track     %hhu, offset=0x%" PRIX32,
             track_id, offset);
         track_start_labels.emplace(offset, string_printf("track_%02hhX_start",
@@ -328,7 +328,7 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
         string conditional_str = (opcode & 1) ? "" :
             string_printf("cond=0x%02hhX, ", r.get_u8());
 
-        uint32_t offset = r.get_u24r();
+        uint32_t offset = r.get_u24b();
         disassembly = string_printf("%s            %soffset=0x%" PRIX32,
             opcode_name, conditional_str.c_str(), offset);
         break;
@@ -345,20 +345,20 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       }
 
       case 0xE7: {
-        uint16_t arg = r.get_u16r();
+        uint16_t arg = r.get_u16b();
         disassembly = string_printf("sync_gpu        0x%04hX", arg);
         break;
       }
 
       case 0xFD: {
-        uint16_t pulse_rate = r.get_u16r();
+        uint16_t pulse_rate = r.get_u16b();
         disassembly = string_printf("set_pulse_rate  %hu", pulse_rate);
         break;
       }
 
       case 0xE0:
       case 0xFE: {
-        uint16_t tempo = r.get_u16r();
+        uint16_t tempo = r.get_u16b();
         uint64_t usec_pqn = 60000000 / tempo;
         disassembly = string_printf("set_tempo       %hu /* usecs per quarter note = %"
             PRIu64 " */", tempo, usec_pqn);
@@ -395,16 +395,16 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       }
 
       case 0xD2:
-        disassembly = string_printf(".check_port_in  0x%hX", r.get_u16r());
+        disassembly = string_printf(".check_port_in  0x%hX", r.get_u16b());
         break;
 
       case 0xD3:
-        disassembly = string_printf(".check_port_ex  0x%hX", r.get_u16r());
+        disassembly = string_printf(".check_port_ex  0x%hX", r.get_u16b());
         break;
 
       case 0xD8: {
         uint8_t reg = r.get_u8();
-        int16_t val = r.get_s16r();
+        int16_t val = r.get_s16b();
         if (reg == 0x62) {
           disassembly = string_printf("mov             r98, %hd /* set_pulse_rate */", val);
         } else {
@@ -431,7 +431,7 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       case 0xDA: {
         uint8_t op = r.get_u8();
         uint8_t dst_reg = r.get_u8();
-        int16_t val = r.get_s16r();
+        int16_t val = r.get_s16b();
 
         const char* opcode_name = ".unknown";
         try {
@@ -483,7 +483,7 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       case 0xCC:
       case 0xE6:
       case 0xF9: {
-        uint16_t param = r.get_u16r();
+        uint16_t param = r.get_u16b();
         disassembly = string_printf(".unknown        0x%02hhX, 0x%04hX",
             opcode, param);
         break;
@@ -494,7 +494,7 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       case 0xB9:
       case 0xDD:
       case 0xEF: {
-        uint32_t param = r.get_u24r();
+        uint32_t param = r.get_u24b();
         disassembly = string_printf(".unknown        0x%02hhX, 0x%06" PRIX32,
             opcode, param);
         break;
@@ -504,7 +504,7 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       case 0xAA:
       case 0xB4:
       case 0xDF: {
-        uint32_t param = r.get_u32r();
+        uint32_t param = r.get_u32b();
         disassembly = string_printf(".unknown        0x%02hhX, 0x%08" PRIX32,
             opcode, param);
         break;
@@ -513,11 +513,11 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       case 0xB1: {
         uint8_t param1 = r.get_u8();
         if (param1 == 0x40) {
-          uint16_t param2 = r.get_u16r();
+          uint16_t param2 = r.get_u16b();
           disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX, 0x%04hX",
               opcode, param1, param2);
         } else if (param1 == 0x80) {
-          uint32_t param2 = r.get_u32r();
+          uint32_t param2 = r.get_u32b();
           disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX, 0x%08" PRIX32,
               opcode, param1, param2);
         } else {
@@ -680,7 +680,7 @@ void disassemble_midi(StringReader& r) {
         uint8_t size = r.get_u8();
 
         if ((type == 0x00) && (size == 0x02)) {
-          printf("seq_number   %hu\n", r.get_u16r());
+          printf("seq_number   %hu\n", r.get_u16b());
 
         } else if (type == 0x01) {
           string data = r.read(size);
@@ -723,7 +723,7 @@ void disassemble_midi(StringReader& r) {
           printf("end_track\n");
 
         } else if ((type == 0x51) && (size == 3)) {
-          uint32_t usecs_per_qnote = r.get_u24r();
+          uint32_t usecs_per_qnote = r.get_u24b();
           printf("set_tempo    %" PRIu32 "\n", usecs_per_qnote);
 
         } else if ((type == 0x54) && (size == 5)) {
@@ -1510,7 +1510,7 @@ protected:
         if (opcode == 0xF0) {
           wait_time = read_variable_int(t->r);
         } else {
-          wait_time = (opcode & 0x08) ? t->r.get_u16r() : t->r.get_u8();
+          wait_time = (opcode & 0x08) ? t->r.get_u16b() : t->r.get_u8();
         }
         uint64_t reactivation_time = this->current_time + wait_time;
         this->next_event_to_track.erase(track_it);
@@ -1549,12 +1549,12 @@ protected:
         } else if (data_type == 8) {
           value = static_cast<float>(t->r.get_s8()) / 0x7F;
         } else if (data_type == 12) {
-          value = static_cast<float>(t->r.get_s16r()) / 0x7FFF;
+          value = static_cast<float>(t->r.get_s16b()) / 0x7FFF;
         }
         if (duration_flags == 2) {
           duration = t->r.get_u8();
         } else if (duration == 3) {
-          duration = t->r.get_u16r();
+          duration = t->r.get_u16b();
         }
 
         this->execute_set_perf(t, type, value, duration);
@@ -1564,7 +1564,7 @@ protected:
       case 0xA4:
       case 0xAC: {
         uint8_t param = t->r.get_u8();
-        uint16_t value = (opcode & 0x08) ? t->r.get_u16r() : t->r.get_u8();
+        uint16_t value = (opcode & 0x08) ? t->r.get_u16b() : t->r.get_u8();
         this->execute_set_param(t, param, value);
         break;
       }
@@ -1578,7 +1578,7 @@ protected:
 
       case 0xC1: {
         uint8_t track_id = t->r.get_u8();
-        uint32_t offset = t->r.get_u24r();
+        uint32_t offset = t->r.get_u24b();
         if (offset >= t->r.size()) {
           throw invalid_argument(string_printf(
               "cannot start track at pc=0x%" PRIX32 " (from pc=0x%zX)",
@@ -1604,7 +1604,7 @@ protected:
         bool is_conditional = !(opcode & 1);
 
         int16_t cond = is_conditional ? t->r.get_u8() : -1;
-        uint32_t offset = t->r.get_u24r();
+        uint32_t offset = t->r.get_u24b();
 
         if (offset >= t->r.size()) {
           throw invalid_argument(string_printf(
@@ -1649,7 +1649,7 @@ protected:
       }
 
       case 0xE7: { // sync_gpu; note: arookas writes this as "track init"
-        t->r.get_u16r();
+        t->r.get_u16b();
         break;
       }
 
@@ -1659,13 +1659,13 @@ protected:
       }
 
       case 0xFD: {
-        this->pulse_rate = t->r.get_u16r();
+        this->pulse_rate = t->r.get_u16b();
         break;
       }
 
       case 0xE0:
       case 0xFE: {
-        this->tempo = t->r.get_u16r() * this->tempo_bias;
+        this->tempo = t->r.get_u16b() * this->tempo_bias;
         break;
       }
 
@@ -1716,9 +1716,9 @@ protected:
       case 0xE6:
       case 0xF9:
         if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
-          fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%04hX\n", opcode, t->r.get_u16r());
+          fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%04hX\n", opcode, t->r.get_u16b());
         } else {
-          t->r.get_u16r();
+          t->r.get_u16b();
         }
         break;
 
@@ -1729,9 +1729,9 @@ protected:
       case 0xDD:
       case 0xEF:
         if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
-          fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%06X\n", opcode, t->r.get_u24r());
+          fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%06X\n", opcode, t->r.get_u24b());
         } else {
-          t->r.get_u24r();
+          t->r.get_u24b();
         }
         break;
 
@@ -1739,15 +1739,15 @@ protected:
       case 0xAA:
       case 0xDF:
         if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
-          fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%08X\n", opcode, t->r.get_u32r());
+          fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%08X\n", opcode, t->r.get_u32b());
         } else {
-          t->r.get_u32r();
+          t->r.get_u32b();
         }
         break;
 
       case 0xD8: {
         uint8_t reg = t->r.get_u8();
-        int16_t value = t->r.get_s16r();
+        int16_t value = t->r.get_s16b();
         if (reg == 0x62) {
           this->pulse_rate = value;
         } else if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
@@ -1761,9 +1761,9 @@ protected:
         uint8_t param1 = t->r.get_u8();
         uint32_t param2 = 0;
         if (param1 == 0x40) {
-          param2 = t->r.get_u16r();
+          param2 = t->r.get_u16b();
         } else if (param1 == 0x80) {
-          param2 = t->r.get_u32r();
+          param2 = t->r.get_u32b();
         }
         if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
           fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%02hhX 0x%08X\n",
@@ -1962,7 +1962,7 @@ protected:
         this->next_event_to_track.erase(track_it);
 
       } else if (type == 0x51) { // set tempo
-        this->tempo = (60000000 / t->r.get_u24r()) * this->tempo_bias;
+        this->tempo = (60000000 / t->r.get_u24b()) * this->tempo_bias;
 
       } else { // anything else? just skip it
         t->r.go(t->r.where() + size);

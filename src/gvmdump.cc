@@ -139,7 +139,7 @@ Image decode_gvr(const string& data) {
         for (size_t x = 0; x < header.width; x += 4) {
           for (size_t yy = 0; yy < 4; yy++) {
             for (size_t xx = 0; xx < 4; xx++) {
-              uint16_t pixel = r.get_u16r();
+              uint16_t pixel = r.get_u16b();
               if (pixel & 0x8000) { // RGB555
                 result.write_pixel(x + xx, y + yy,
                     ((pixel >> 7) & 0xF8) | ((pixel >> 12) & 7),
@@ -165,8 +165,8 @@ Image decode_gvr(const string& data) {
           for (size_t yy = 0; yy < 8; yy += 4) {
             for (size_t xx = 0; xx < 8; xx += 4) {
               uint8_t color_table[4][4]; // 4 entries of [r, g, b, a] each
-              uint16_t color1 = r.get_u16r(); // RGB565
-              uint16_t color2 = r.get_u16r(); // RGB565
+              uint16_t color1 = r.get_u16b(); // RGB565
+              uint16_t color2 = r.get_u16b(); // RGB565
               color_table[0][0] = ((color1 >> 8) & 0xF8) | ((color1 >> 13) & 0x07);
               color_table[0][1] = ((color1 >> 3) & 0xFC) | ((color1 >> 9) & 0x03);
               color_table[0][2] = ((color1 << 3) & 0xF8) | ((color1 >> 2) & 0x07);

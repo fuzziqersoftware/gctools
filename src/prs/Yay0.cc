@@ -56,7 +56,7 @@ string yay0_decompress(const void* in_data, size_t in_size, size_t max_out_size)
       ret.push_back(data_stream_r.get_u8());
 
     } else {
-      uint16_t nr = count_stream_r.get_u16r();
+      uint16_t nr = count_stream_r.get_u16b();
       uint16_t r = (nr & 0x0FFF) + 1;
       uint16_t n = (nr & 0xF000) >> 12;
       if (n == 0) {

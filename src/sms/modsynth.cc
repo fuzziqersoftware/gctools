@@ -114,7 +114,7 @@ shared_ptr<Module> parse_mod(const string& data) {
   // signature field is pretty late in the file format, and some preceding
   // fields' sizes depend on the enabled extensions.
   try {
-    mod->extension_signature = r.pget_u32r(0x438);
+    mod->extension_signature = r.pget_u32b(0x438);
   } catch (const out_of_range&) {
     mod->extension_signature = 0;
   }
@@ -161,11 +161,11 @@ shared_ptr<Module> parse_mod(const string& data) {
     i.index = x;
     i.name = r.read(0x16);
     strip_trailing_zeroes(i.name);
-    i.num_samples = static_cast<uint32_t>(r.get_u16r()) << 1;
+    i.num_samples = static_cast<uint32_t>(r.get_u16b()) << 1;
     i.finetune = sign_extend_nybble(r.get_u8());
     i.volume = r.get_u8();
-    i.loop_start_samples = static_cast<uint32_t>(r.get_u16r()) << 1;
-    i.loop_length_samples = static_cast<uint32_t>(r.get_u16r()) << 1;
+    i.loop_start_samples = static_cast<uint32_t>(r.get_u16b()) << 1;
+    i.loop_length_samples = static_cast<uint32_t>(r.get_u16b()) << 1;
     if (flags & Flags::ShowLoadingDebug) {
       fprintf(stderr, "Loader[%zX]: loaded instrument %zu (0x%X samples to read)\n",
           r.where(), x + 1, i.num_samples);
@@ -174,7 +174,7 @@ shared_ptr<Module> parse_mod(const string& data) {
 
   mod->partition_count = r.get_u8();
   r.get_u8(); // unused
-  r.read_into(mod->partition_table.data(), mod->partition_table.size());
+  r.read(mod->partition_table.data(), mod->partition_table.size());
   if (flags & Flags::ShowLoadingDebug) {
     fprintf(stderr, "Loader[%zX]: loaded partition table (%hhu/128 partitions)\n",
         r.where(), mod->partition_count);
@@ -183,7 +183,7 @@ shared_ptr<Module> parse_mod(const string& data) {
   // We should have gotten to exactly the same offset that we read ahead to at
   // the beginning, unless there were not 31 instruments.
   if (num_instruments == 31) {
-    uint32_t inplace_extension_signature = r.get_u32r();
+    uint32_t inplace_extension_signature = r.get_u32b();
     if (mod->extension_signature &&
         mod->extension_signature != inplace_extension_signature) {
       if (flags & Flags::ShowLoadingDebug) {
@@ -220,8 +220,8 @@ shared_ptr<Module> parse_mod(const string& data) {
     auto& pat = mod->patterns[x];
     pat.divisions.resize(mod->num_tracks * 64);
     for (auto& div : pat.divisions) {
-      div.wx = r.get_u16r();
-      div.yz = r.get_u16r();
+      div.wx = r.get_u16b();
+      div.yz = r.get_u16b();
     }
     if (flags & Flags::ShowLoadingDebug) {
       fprintf(stderr, "Loader[%zX]: loaded pattern %zu\n", r.where(), x);
@@ -231,7 +231,7 @@ shared_ptr<Module> parse_mod(const string& data) {
   // Load the sample data for each instrument.
   for (auto& i : mod->instruments) {
     i.original_sample_data.resize(i.num_samples);
-    if (r.read_into(i.original_sample_data.data(), i.num_samples) != i.num_samples) {
+    if (r.read(i.original_sample_data.data(), i.num_samples) != i.num_samples) {
       fprintf(stderr, "Warning: sound data is missing for instrument %zu\n",
           i.index + 1);
     }
