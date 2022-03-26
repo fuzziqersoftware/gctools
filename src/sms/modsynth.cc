@@ -19,16 +19,16 @@ using namespace std;
 
 
 enum Flags {
-  TerminalColor          = 0x01,
-  ShowSampleData         = 0x02,
-  ShowSampleWaveforms    = 0x04,
-  ShowUnusedPatterns     = 0x08,
-  ShowLoadingDebug       = 0x10,
-  ShowDCOffsetDebug      = 0x20,
-  Default                = 0x00,
+  TERMINAL_COLOR         = 0x01,
+  SHOW_SAMPLE_DATA       = 0x02,
+  SHOW_SAMPLE_WAVEFORMS  = 0x04,
+  SHOW_UNUSED_PATTERNS   = 0x08,
+  SHOW_LOADING_DEBUG     = 0x10,
+  SHOW_DC_OFFSET_DEBUG   = 0x20,
+  DEFAULT                = 0x00,
 };
 
-uint64_t flags = Flags::Default;
+uint64_t flags = Flags::DEFAULT;
 
 struct Module {
   struct Instrument {
@@ -141,7 +141,7 @@ shared_ptr<Module> parse_mod(const string& data) {
       }
   }
 
-  if (flags & Flags::ShowLoadingDebug) {
+  if (flags & Flags::SHOW_LOADING_DEBUG) {
     fprintf(stderr, "Loader[%zX]: extension signature is %08X (%zu tracks, %zu instruments)\n",
         r.where(), mod->extension_signature, mod->num_tracks, num_instruments);
   }
@@ -149,7 +149,7 @@ shared_ptr<Module> parse_mod(const string& data) {
   mod->name = r.read(0x14);
   strip_trailing_zeroes(mod->name);
 
-  if (flags & Flags::ShowLoadingDebug) {
+  if (flags & Flags::SHOW_LOADING_DEBUG) {
     string escaped_name = escape_quotes(mod->name);
     fprintf(stderr, "Loader[%zX]: name is \"%s\"\n",
         r.where(), escaped_name.c_str());
@@ -166,7 +166,7 @@ shared_ptr<Module> parse_mod(const string& data) {
     i.volume = r.get_u8();
     i.loop_start_samples = static_cast<uint32_t>(r.get_u16b()) << 1;
     i.loop_length_samples = static_cast<uint32_t>(r.get_u16b()) << 1;
-    if (flags & Flags::ShowLoadingDebug) {
+    if (flags & Flags::SHOW_LOADING_DEBUG) {
       fprintf(stderr, "Loader[%zX]: loaded instrument %zu (0x%X samples to read)\n",
           r.where(), x + 1, i.num_samples);
     }
@@ -175,7 +175,7 @@ shared_ptr<Module> parse_mod(const string& data) {
   mod->partition_count = r.get_u8();
   r.get_u8(); // unused
   r.read(mod->partition_table.data(), mod->partition_table.size());
-  if (flags & Flags::ShowLoadingDebug) {
+  if (flags & Flags::SHOW_LOADING_DEBUG) {
     fprintf(stderr, "Loader[%zX]: loaded partition table (%hhu/128 partitions)\n",
         r.where(), mod->partition_count);
   }
@@ -186,13 +186,13 @@ shared_ptr<Module> parse_mod(const string& data) {
     uint32_t inplace_extension_signature = r.get_u32b();
     if (mod->extension_signature &&
         mod->extension_signature != inplace_extension_signature) {
-      if (flags & Flags::ShowLoadingDebug) {
+      if (flags & Flags::SHOW_LOADING_DEBUG) {
         fprintf(stderr, "Loader[%zX]: Loaded so far:\n", r.where());
         disassemble_mod(stderr, mod);
       }
       throw logic_error("read-ahead extension signature does not match inplace extension signature");
     }
-    if (flags & Flags::ShowLoadingDebug) {
+    if (flags & Flags::SHOW_LOADING_DEBUG) {
       fprintf(stderr, "Loader[%zX]: inplace extension signature ok\n", r.where());
     }
   }
@@ -210,7 +210,7 @@ shared_ptr<Module> parse_mod(const string& data) {
       num_patterns = mod->partition_table[x] + 1;
     }
   }
-  if (flags & Flags::ShowLoadingDebug) {
+  if (flags & Flags::SHOW_LOADING_DEBUG) {
     fprintf(stderr, "Loader[%zX]: there are %zu patterns\n", r.where(), num_patterns);
   }
 
@@ -223,7 +223,7 @@ shared_ptr<Module> parse_mod(const string& data) {
       div.wx = r.get_u16b();
       div.yz = r.get_u16b();
     }
-    if (flags & Flags::ShowLoadingDebug) {
+    if (flags & Flags::SHOW_LOADING_DEBUG) {
       fprintf(stderr, "Loader[%zX]: loaded pattern %zu\n", r.where(), x);
     }
   }
@@ -236,7 +236,7 @@ shared_ptr<Module> parse_mod(const string& data) {
           i.index + 1);
     }
     i.sample_data = convert_samples_s8_to_f32(i.original_sample_data);
-    if (flags & Flags::ShowLoadingDebug) {
+    if (flags & Flags::SHOW_LOADING_DEBUG) {
       fprintf(stderr, "Loader[%zX]: loaded samples for instrument %zu\n",
           r.where(), i.index + 1);
     }
@@ -272,7 +272,7 @@ void disassemble_pattern_row(
     TerminalFormat::FG_GREEN,
     TerminalFormat::FG_MAGENTA,
   };
-  bool use_color = flags & Flags::TerminalColor;
+  bool use_color = flags & Flags::TERMINAL_COLOR;
 
   const auto& p = mod->patterns.at(pattern_num);
   fprintf(stream, "  %02hhu +%2hhu", pattern_num, y);
@@ -355,11 +355,11 @@ void disassemble_mod(FILE* stream, shared_ptr<const Module> mod) {
     fprintf(stream, "  Loop: start at %hu for %hu samples\n", i.loop_start_samples, i.loop_length_samples);
     fprintf(stream, "  Data: (%zu samples)\n", i.sample_data.size());
 
-    if (flags & Flags::ShowSampleData) {
+    if (flags & Flags::SHOW_SAMPLE_DATA) {
       print_data(stream, i.original_sample_data.data(), i.original_sample_data.size());
     }
 
-    if (flags & Flags::ShowSampleWaveforms) {
+    if (flags & Flags::SHOW_SAMPLE_WAVEFORMS) {
       string line_data(0x80, ' ');
       for (size_t z = 0; z < i.original_sample_data.size(); z++) {
         const char* suffix = "";
@@ -371,11 +371,11 @@ void disassemble_mod(FILE* stream, shared_ptr<const Module> mod) {
         int8_t sample = i.original_sample_data[z];
         uint16_t offset = (static_cast<int16_t>(sample) + 0x80) / 2;
         line_data[offset] = '*';
-        if (((sample == -0x80) || (sample == 0x7F)) && (flags & Flags::TerminalColor)) {
+        if (((sample == -0x80) || (sample == 0x7F)) && (flags & Flags::TERMINAL_COLOR)) {
           print_color_escape(stream, TerminalFormat::FG_RED, TerminalFormat::BOLD, TerminalFormat::END);
         }
         fprintf(stream, "  ins %02zu +%04zX [%s]%s\n", i.index + 1, z, line_data.c_str(), suffix);
-        if (((sample == -0x80) || (sample == 0x7F)) && (flags & Flags::TerminalColor)) {
+        if (((sample == -0x80) || (sample == 0x7F)) && (flags & Flags::TERMINAL_COLOR)) {
           print_color_escape(stream, TerminalFormat::NORMAL, TerminalFormat::END);
         }
         line_data[offset] = ' ';
@@ -383,7 +383,7 @@ void disassemble_mod(FILE* stream, shared_ptr<const Module> mod) {
     }
   }
 
-  vector<bool> patterns_used(0x80, !!(flags & Flags::ShowUnusedPatterns));
+  vector<bool> patterns_used(0x80, !!(flags & Flags::SHOW_UNUSED_PATTERNS));
   for (size_t x = 0; x < mod->partition_count; x++) {
     patterns_used.at(mod->partition_table.at(x)) = true;
   }
@@ -634,13 +634,13 @@ protected:
     }
 
     void set_discontinuous_flag() {
-      if (flags & Flags::ShowDCOffsetDebug) {
+      if (flags & Flags::SHOW_DC_OFFSET_DEBUG) {
         fprintf(stderr, "(dc_offset debug) track %zu set discontinuous from dc_offset %g",
             this->index, this->dc_offset);
       }
       this->dc_offset = this->last_sample;
       this->next_sample_may_be_discontinuous = true;
-      if (flags & Flags::ShowDCOffsetDebug) {
+      if (flags & Flags::SHOW_DC_OFFSET_DEBUG) {
         fprintf(stderr, " to %g\n", this->dc_offset);
       }
     }
@@ -1360,13 +1360,13 @@ protected:
           float sample_from_ins = resampled_data->at(static_cast<size_t>(resampled_offset)) *
                 overall_volume_factor;
           if (track.next_sample_may_be_discontinuous) {
-            if (flags & Flags::ShowDCOffsetDebug) {
+            if (flags & Flags::SHOW_DC_OFFSET_DEBUG) {
               fprintf(stderr, "track %zu dc_offset correction from %g to ", track.index, track.dc_offset);
             }
             track.last_sample = track.dc_offset;
             track.dc_offset -= sample_from_ins;
             track.next_sample_may_be_discontinuous = false;
-            if (flags & Flags::ShowDCOffsetDebug) {
+            if (flags & Flags::SHOW_DC_OFFSET_DEBUG) {
               fprintf(stderr, "%g by instrument sample %g\n", track.dc_offset, sample_from_ins);
             }
           } else {
@@ -1720,14 +1720,14 @@ Options for all usage modes:\n\
 
 int main(int argc, char** argv) {
   enum class Behavior {
-    Disassemble,
-    DisassembleDirectory,
-    ExportInstruments,
-    Render,
-    Play,
+    DISASSEMBLE,
+    DISASSEMBLE_DIRECTORY,
+    EXPORT_INSTRUMENTS,
+    RENDER,
+    PLAY,
   };
 
-  Behavior behavior = Behavior::Disassemble;
+  Behavior behavior = Behavior::DISASSEMBLE;
   const char* input_filename = nullptr;
   size_t num_play_buffers = 8;
   bool use_default_color_flags = true;
@@ -1739,15 +1739,15 @@ int main(int argc, char** argv) {
   shared_ptr<MODSynthesizer::Options> opts(new MODSynthesizer::Options());
   for (int x = 1; x < argc; x++) {
     if (!strcmp(argv[x], "--disassemble")) {
-      behavior = Behavior::Disassemble;
+      behavior = Behavior::DISASSEMBLE;
     } else if (!strcmp(argv[x], "--disassemble-directory")) {
-      behavior = Behavior::DisassembleDirectory;
+      behavior = Behavior::DISASSEMBLE_DIRECTORY;
     } else if (!strcmp(argv[x], "--export-instruments")) {
-      behavior = Behavior::ExportInstruments;
+      behavior = Behavior::EXPORT_INSTRUMENTS;
     } else if (!strcmp(argv[x], "--render")) {
-      behavior = Behavior::Render;
+      behavior = Behavior::RENDER;
     } else if (!strcmp(argv[x], "--play")) {
-      behavior = Behavior::Play;
+      behavior = Behavior::PLAY;
 
     } else if (!strcmp(argv[x], "--resample-method=sinc-best")) {
       opts->resample_method = SRC_SINC_BEST_QUALITY;
@@ -1764,21 +1764,21 @@ int main(int argc, char** argv) {
       write_stdout = true;
 
     } else if (!strcmp(argv[x], "--no-color")) {
-      flags &= ~Flags::TerminalColor;
+      flags &= ~Flags::TERMINAL_COLOR;
       use_default_color_flags = false;
     } else if (!strcmp(argv[x], "--color")) {
-      flags |= Flags::TerminalColor;
+      flags |= Flags::TERMINAL_COLOR;
       use_default_color_flags = false;
     } else if (!strcmp(argv[x], "--show-sample-data")) {
-      flags |= Flags::ShowSampleData;
+      flags |= Flags::SHOW_SAMPLE_DATA;
     } else if (!strcmp(argv[x], "--show-sample-waveforms")) {
-      flags |= Flags::ShowSampleWaveforms;
+      flags |= Flags::SHOW_SAMPLE_WAVEFORMS;
     } else if (!strcmp(argv[x], "--show-unused-patterns")) {
-      flags |= Flags::ShowUnusedPatterns;
+      flags |= Flags::SHOW_UNUSED_PATTERNS;
     } else if (!strcmp(argv[x], "--show-loading-debug")) {
-      flags |= Flags::ShowLoadingDebug;
+      flags |= Flags::SHOW_LOADING_DEBUG;
     } else if (!strcmp(argv[x], "--show-dc-offset-debug")) {
-      flags |= Flags::ShowDCOffsetDebug;
+      flags |= Flags::SHOW_DC_OFFSET_DEBUG;
 
     } else if (!strncmp(argv[x], "--solo-track=", 13)) {
       opts->solo_tracks.emplace(atoi(&argv[x][13]));
@@ -1857,15 +1857,15 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  bool behavior_is_disassemble = ((behavior == Behavior::Disassemble) ||
-      (behavior == Behavior::DisassembleDirectory));
+  bool behavior_is_disassemble = ((behavior == Behavior::DISASSEMBLE) ||
+      (behavior == Behavior::DISASSEMBLE_DIRECTORY));
   if (use_default_color_flags &&
       isatty(fileno(behavior_is_disassemble ? stdout : stderr))) {
-    flags |= Flags::TerminalColor;
+    flags |= Flags::TERMINAL_COLOR;
   }
 
   shared_ptr<Module> mod;
-  if (behavior != Behavior::DisassembleDirectory) {
+  if (behavior != Behavior::DISASSEMBLE_DIRECTORY) {
     mod = load_mod(input_filename);
   }
 
@@ -1876,7 +1876,7 @@ int main(int argc, char** argv) {
   // based on the number of tracks, which essentially limits the output range to
   // [-1.0, 1.0].
   if (use_default_global_volume) {
-    if (behavior == Behavior::Play) {
+    if (behavior == Behavior::PLAY) {
       opts->global_volume = 2.0 / mod->num_tracks;
       fprintf(stderr, "Setting global volume to %g to account for %zu tracks\n",
           opts->global_volume, mod->num_tracks);
@@ -1886,12 +1886,12 @@ int main(int argc, char** argv) {
   }
 
   switch (behavior) {
-    case Behavior::Disassemble:
+    case Behavior::DISASSEMBLE:
       // We don't call print_mod_text in this case because all the text is
       // contained in the disassembly
       disassemble_mod(stdout, mod);
       break;
-    case Behavior::DisassembleDirectory: {
+    case Behavior::DISASSEMBLE_DIRECTORY: {
       auto files = list_directory(input_filename);
       size_t num_disassembled = 0;
       for (const auto& filename : files) {
@@ -1911,10 +1911,10 @@ int main(int argc, char** argv) {
       }
       break;
     }
-    case Behavior::ExportInstruments:
+    case Behavior::EXPORT_INSTRUMENTS:
       export_mod_instruments(mod, input_filename);
       break;
-    case Behavior::Render: {
+    case Behavior::RENDER: {
       print_mod_text(stderr, mod);
       if (write_stdout) {
         MODWriter writer(mod, opts, stdout);
@@ -1951,7 +1951,7 @@ int main(int argc, char** argv) {
       }
       break;
     }
-    case Behavior::Play: {
+    case Behavior::PLAY: {
       print_mod_text(stderr, mod);
       init_al();
       MODPlayer player(mod, opts, sample_bits, num_play_buffers);

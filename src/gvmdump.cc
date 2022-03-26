@@ -38,30 +38,30 @@ struct GVMFileHeader {
 // Note: most of these formats are named after those in puyotools but are
 // currently unimplemented here
 enum GVRColorTablePixelFormat {
-  IntensityA8ColorTablePixelFormat = 0x00,
-  RGB565ColorTablePixelFormat      = 0x10,
-  RGB5A3ColorTablePixelFormat      = 0x20,
-  ColorTablePixelFormatMask        = 0xF0,
+  INTENSITY_A8 = 0x00,
+  RGB565       = 0x10,
+  RGB5A3       = 0x20,
+  MASK         = 0xF0,
 };
 
 enum GVRDataFlag {
-  HasMipmaps            = 0x01,
-  HasExternalColorTable = 0x02,
-  HasInternalColorTable = 0x08,
-  DataFlagMask          = 0x0F,
+  HAS_MIPMAPS              = 0x01,
+  HAS_EXTERNAL_COLOR_TABLE = 0x02,
+  HAS_INTERNAL_COLOR_TABLE = 0x08,
+  DATA_FLAG_MASK           = 0x0F,
 };
 
-enum GVRDataFormat {
-  Intensity4DataFormat  = 0x00,
-  Intensity8DataFormat  = 0x01,
-  IntensityA4DataFormat = 0x02,
-  IntensityA8DataFormat = 0x03,
-  RGB565DataFormat      = 0x04,
-  RGB5A3DataFormat      = 0x05,
-  ARGB8888DataFormat    = 0x06,
-  Indexed4DataFormat    = 0x08,
-  Indexed8DataFormat    = 0x09,
-  DXT1DataFormat        = 0x0E,
+enum class GVRDataFormat : uint8_t {
+  INTENSITY_4  = 0x00,
+  INTENSITY_8  = 0x01,
+  INTENSITY_A4 = 0x02,
+  INTENSITY_A8 = 0x03,
+  RGB565       = 0x04,
+  RGB5A3       = 0x05,
+  ARGB8888     = 0x06,
+  INDEXED_4    = 0x08,
+  INDEXED_8    = 0x09,
+  DXT1         = 0x0E,
 };
 
 struct GVRHeader {
@@ -71,7 +71,7 @@ struct GVRHeader {
   le_uint32_t data_size;
   be_uint16_t unknown;
   uint8_t format_flags; // High 4 bits are pixel format, low 4 are data flags
-  uint8_t data_format;
+  GVRDataFormat data_format;
   be_uint16_t width;
   be_uint16_t height;
 } __attribute__((packed));
@@ -94,16 +94,17 @@ Image decode_gvr(const string& data) {
 
   // TODO: deal with color table if needed. If present, the color table
   // immediately follows the header and precedes the data
-  if ((header.data_format == Indexed4DataFormat) || (header.data_format == Indexed8DataFormat)) {
-    if (header.format_flags & HasInternalColorTable) {
+  if ((header.data_format == GVRDataFormat::INDEXED_4) ||
+      (header.data_format == GVRDataFormat::INDEXED_8)) {
+    if (header.format_flags & GVRDataFlag::HAS_INTERNAL_COLOR_TABLE) {
       throw logic_error("internal color tables not implemented");
     }
-    if (header.format_flags & HasInternalColorTable) {
+    if (header.format_flags & GVRDataFlag::HAS_EXTERNAL_COLOR_TABLE) {
       throw logic_error("external color tables not implemented");
     }
   }
 
-  if (header.format_flags & HasMipmaps) {
+  if (header.format_flags & GVRDataFlag::HAS_MIPMAPS) {
     fprintf(stderr, "Note: image has mipmaps; ignoring them\n");
 
     /* TODO: deal with mipmaps properly
@@ -127,13 +128,14 @@ Image decode_gvr(const string& data) {
   }
 
   // For DXT1, w/h must be multiples of 4
-  if ((header.data_format == DXT1DataFormat) && ((header.width & 3) || (header.height & 3))) {
+  if ((header.data_format == GVRDataFormat::DXT1) &&
+      ((header.width & 3) || (header.height & 3))) {
     throw runtime_error("width/height must be multiples of 4 for dxt1 format");
   }
 
   Image result(header.width, header.height, true);
   switch (header.data_format) {
-    case RGB5A3DataFormat: {
+    case GVRDataFormat::RGB5A3: {
       // 4x4 blocks of pixels
       for (size_t y = 0; y < header.height; y += 4) {
         for (size_t x = 0; x < header.width; x += 4) {
@@ -159,7 +161,7 @@ Image decode_gvr(const string& data) {
       break;
     }
 
-    case DXT1DataFormat: {
+    case GVRDataFormat::DXT1: {
       for (size_t y = 0; y < header.height; y += 8) {
         for (size_t x = 0; x < header.width; x += 8) {
           for (size_t yy = 0; yy < 8; yy += 4) {
@@ -242,7 +244,7 @@ int main(int argc, char* argv[]) {
     }
     try {
       Image decoded = decode_gvr(data);
-      decoded.save(string(argv[1]) + ".bmp", Image::ImageFormat::WindowsBitmap);
+      decoded.save(string(argv[1]) + ".bmp", Image::Format::WINDOWS_BITMAP);
     } catch (const exception& e) {
       fprintf(stderr, "failed to decode gvr: %s\n", e.what());
       return 2;
@@ -280,7 +282,7 @@ int main(int argc, char* argv[]) {
       string gvr_contents = data.substr(offset, gvr->data_size + 8);
       try {
         Image decoded = decode_gvr(gvr_contents);
-        decoded.save(filename + ".bmp", Image::ImageFormat::WindowsBitmap);
+        decoded.save(filename + ".bmp", Image::Format::WINDOWS_BITMAP);
         printf("> %04zu = %08zX:%08X => %s.bmp\n",
             x + 1, offset, gvr->data_size + 8, filename.c_str());
       } catch (const exception& e) {

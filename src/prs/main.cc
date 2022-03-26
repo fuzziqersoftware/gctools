@@ -16,8 +16,8 @@ using namespace std;
 
 enum class Format {
   PRS,
-  Yaz0,
-  Yay0,
+  YAZ0,
+  YAY0,
 };
 
 
@@ -57,9 +57,9 @@ int main(int argc, char* argv[]) {
     } else if (!strncmp(argv[x], "--start-offset=", 15)) {
       start_offset = strtoull(&argv[x][15], nullptr, 0);
     } else if (!strcmp(argv[x], "--yaz0")) {
-      format = Format::Yaz0;
+      format = Format::YAZ0;
     } else if (!strcmp(argv[x], "--yay0")) {
-      format = Format::Yay0;
+      format = Format::YAY0;
     } else if (!strcmp(argv[x], "--prs")) {
       format = Format::PRS;
     } else if (!strncmp(argv[x], "--raw-bytes=", 12)) {
@@ -87,9 +87,9 @@ int main(int argc, char* argv[]) {
 
     if (format == Format::PRS) {
       bytes_written = prs_decompress_stream(in, out, 0);
-    } else if (format == Format::Yaz0) {
+    } else if (format == Format::YAZ0) {
       bytes_written = yaz0_decompress_stream(in, out, 0);
-    } else if (format == Format::Yay0) {
+    } else if (format == Format::YAY0) {
       string in_data = read_all(in);
       string out_data = yay0_decompress(in_data.data(), in_data.size());
       fwritex(out, out_data);
@@ -99,9 +99,9 @@ int main(int argc, char* argv[]) {
   } else {
     if (format == Format::PRS) {
       bytes_written = prs_compress_stream(in, out, -1);
-    } else if (format == Format::Yaz0) {
+    } else if (format == Format::YAZ0) {
       throw invalid_argument("yaz0 compression not supported");
-    } else if (format == Format::Yay0) {
+    } else if (format == Format::YAY0) {
       throw invalid_argument("yay0 compression not supported");
     }
   }

@@ -171,7 +171,7 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
 
 
 enum Format {
-  Unknown = 0,
+  UNKNOWN = 0,
   GCM = 1,
   TGC = 2,
 };
@@ -183,7 +183,7 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  Format format = Format::Unknown;
+  Format format = Format::UNKNOWN;
   const char* filename = NULL;
   unordered_set<string> target_filenames;
   for (int x = 1; x < argc; x++) {
@@ -206,7 +206,7 @@ int main(int argc, char* argv[]) {
 
   ImageHeader header;
   readx(fd, &header, sizeof(ImageHeader));
-  if (format == Format::Unknown) {
+  if (format == Format::UNKNOWN) {
     if (header.gcm.gc_magic == 0xC2339F3D) {
       format = Format::GCM;
     } else if (header.tgc.magic == 0xAE0F38A2) {

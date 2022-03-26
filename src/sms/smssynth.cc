@@ -34,31 +34,31 @@ using namespace std;
 
 
 enum DebugFlag {
-  ShowResampleEvents          = 0x0000000000000001,
-  ShowNotesOn                 = 0x0000000000000002,
-  ShowKeyPresses              = 0x0000000000000004,
-  ShowUnknownPerfOptions      = 0x0000000000000008,
-  ShowUnknownParamOptions     = 0x0000000000000010,
-  ShowUnimplementedConditions = 0x0000000000000020,
-  ShowLongStatus              = 0x0000000000000040,
-  ShowMissingNotes            = 0x0000000000000080,
-  ShowUnimplementedOpcodes    = 0x0000000000000100,
+  SHOW_RESAMPLE_EVENTS          = 0x0000000000000001,
+  SHOW_NOTES_ON                 = 0x0000000000000002,
+  SHOW_KEY_PRESSES              = 0x0000000000000004,
+  SHOW_UNKNOWN_PERF_OPTIONS     = 0x0000000000000008,
+  SHOW_UNKNOWN_PARAM_OPTIONS    = 0x0000000000000010,
+  SHOW_UNIMPLEMENTED_CONDITIONS = 0x0000000000000020,
+  SHOW_LONG_STATUS              = 0x0000000000000040,
+  SHOW_MISSING_NOTES            = 0x0000000000000080,
+  SHOW_UNIMPLEMENTED_OPCODES    = 0x0000000000000100,
 
-  PlayMissingNotes            = 0x0000000000010000,
+  PLAY_MISSING_NOTES            = 0x0000000000010000,
 
-  ColorField                  = 0x0000000000020000,
-  ColorStatus                 = 0x0000000000040000,
-  AllColorOptions             = 0x0000000000060000,
+  COLOR_FIELD                   = 0x0000000000020000,
+  COLOR_STATUS                  = 0x0000000000040000,
+  ALL_COLOR_OPTIONS             = 0x0000000000060000,
 
 #ifndef WINDOWS
-  Default                     = 0x00000000000600C2,
+  DEFAULT                       = 0x00000000000600C2,
 #else
   // no color by default on windows (cmd.exe doesn't handle the escapes)
-  Default                     = 0x00000000000000C2,
+  DEFAULT                       = 0x00000000000000C2,
 #endif
 };
 
-uint64_t debug_flags = DebugFlag::Default;
+uint64_t debug_flags = DebugFlag::DEFAULT;
 
 
 
@@ -955,7 +955,7 @@ public:
       const auto& ret = this->cache->resample_add(
           this->vel_region->sound, this->vel_region->sound->samples(),
           this->vel_region->sound->num_channels, this->src_ratio);
-      if (debug_flags & DebugFlag::ShowResampleEvents) {
+      if (debug_flags & DebugFlag::SHOW_RESAMPLE_EVENTS) {
         string key_low_str = name_for_note(this->key_region->key_low);
         string key_high_str = name_for_note(this->key_region->key_high);
         fprintf(stderr, "[%s:%" PRIX64 "] resampled note %02hhX in range "
@@ -1117,12 +1117,12 @@ protected:
         t->voices[voice_id].reset(v);
       } catch (const out_of_range& e) {
         string key_str = name_for_note(key);
-        if (debug_flags & DebugFlag::ShowMissingNotes) {
+        if (debug_flags & DebugFlag::SHOW_MISSING_NOTES) {
           fprintf(stderr, "warning: can\'t find sample (%s): bank=%" PRIX32
               " instrument=%" PRIX32 " key=%02hhX=%s vel=%02hhX\n", e.what(),
               t->bank, t->instrument, key, key_str.c_str(), vel);
         }
-        if (debug_flags & DebugFlag::PlayMissingNotes) {
+        if (debug_flags & DebugFlag::PLAY_MISSING_NOTES) {
           t->voices[voice_id].reset(new SineVoice(this->sample_rate, key, vel, c));
         } else {
           t->voices[voice_id].reset(new SilentVoice(this->sample_rate, key, vel, c));
@@ -1296,7 +1296,7 @@ public:
     static const string white = format_color_escape(TerminalFormat::NORMAL, TerminalFormat::END);
 
     // render the text view
-    if (debug_flags & DebugFlag::ShowNotesOn) {
+    if (debug_flags & DebugFlag::SHOW_NOTES_ON) {
       uint64_t when_usecs = (this->samples_rendered * 1000000) / this->sample_rate;
 
       const string* buffers_color;
@@ -1310,11 +1310,12 @@ public:
         buffers_color = &red;
       }
 
-      bool short_status = !(debug_flags & DebugFlag::ShowLongStatus);
+      bool short_status = !(debug_flags & DebugFlag::SHOW_LONG_STATUS);
       bool all_tracks_finished = this->next_event_to_track.empty();
       string when_str = format_duration(when_usecs);
 
-      if ((debug_flags & DebugFlag::ColorField) || (short_status && (debug_flags & DebugFlag::ColorStatus))) {
+      if ((debug_flags & DebugFlag::COLOR_FIELD) ||
+          (short_status && (debug_flags & DebugFlag::COLOR_STATUS))) {
         fprintf(stderr, "\r%08" PRIX64 "%c %s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.12s%s%.8s%s @ %s + %s%zu/%zu%s%c",
             current_time, all_tracks_finished ? '-' : ':',
             field_magenta.c_str(), &notes_table[0], field_red.c_str(), &notes_table[12],
@@ -1325,7 +1326,7 @@ public:
             field_cyan.c_str(), &notes_table[120], white.c_str(), when_str.c_str(),
             buffers_color->c_str(), queued_buffer_count, buffer_count, white.c_str(),
             short_status ? ' ' : '\n');
-      } else if (debug_flags & DebugFlag::ColorStatus) {
+      } else if (debug_flags & DebugFlag::COLOR_STATUS) {
         fprintf(stderr, "\r%08" PRIX64 "%c %s @ %s + %s%zu/%zu%s%c", current_time,
             all_tracks_finished ? '-' : ':', notes_table, when_str.c_str(),
             buffers_color->c_str(), queued_buffer_count, buffer_count,
@@ -1337,7 +1338,7 @@ public:
       }
 
       if (!short_status) {
-        if (debug_flags & DebugFlag::ColorStatus) {
+        if (debug_flags & DebugFlag::COLOR_STATUS) {
           fprintf(stderr, "TIMESTEP: %sC D EF G A B%sC D EF G A B%sC D EF G A B%sC "
               "D EF G A B%sC D EF G A B%sC D EF G A B%sC D EF G A B%sC D EF G A B%s"
               "C D EF G A B%sC D EF G A B%sC D EF G%s @ SECONDS + %sBUF%s",
@@ -1443,7 +1444,7 @@ protected:
         c->panning_target = value;
         c->panning_target_frames = duration;
       } else {
-        if (debug_flags & DebugFlag::ShowUnknownPerfOptions) {
+        if (debug_flags & DebugFlag::SHOW_UNKNOWN_PERF_OPTIONS) {
           fprintf(stderr, "unknown perf type option: %02hhX (value=%g)\n", type,
               value);
         }
@@ -1463,7 +1464,7 @@ protected:
         c->panning = value;
         c->panning_target_frames = 0;
       } else {
-        if (debug_flags & DebugFlag::ShowUnknownPerfOptions) {
+        if (debug_flags & DebugFlag::SHOW_UNKNOWN_PERF_OPTIONS) {
           fprintf(stderr, "unknown perf type option: %02hhX (value=%g)\n", type,
               value);
         }
@@ -1483,7 +1484,7 @@ protected:
       // TODO: verify if this is actually correct
       t->channel(0)->pitch_bend_semitone_range = static_cast<float>(value) * 4.0;
     } else {
-      if (debug_flags & DebugFlag::ShowUnknownParamOptions) {
+      if (debug_flags & DebugFlag::SHOW_UNKNOWN_PARAM_OPTIONS) {
         fprintf(stderr, "unknown param type option: %02hhX (value=%hu)\n",
             param, value);
       }
@@ -1613,7 +1614,7 @@ protected:
         }
 
         if (cond > 0) {
-          if (debug_flags & DebugFlag::ShowUnimplementedConditions) {
+          if (debug_flags & DebugFlag::SHOW_UNIMPLEMENTED_CONDITIONS) {
             fprintf(stderr, "unimplemented condition: 0x%02hX\n", cond);
           }
 
@@ -1633,7 +1634,7 @@ protected:
         int16_t cond = is_conditional ? t->r.get_u8() : -1;
 
         if (cond > 0) {
-          if (debug_flags & DebugFlag::ShowUnimplementedConditions) {
+          if (debug_flags & DebugFlag::SHOW_UNIMPLEMENTED_CONDITIONS) {
             fprintf(stderr, "unimplemented condition: 0x%02hX\n", cond);
           }
 
@@ -1683,7 +1684,7 @@ protected:
       case 0xE1:
       case 0xFA:
       case 0xBF:
-        if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+        if (debug_flags & DebugFlag::SHOW_UNIMPLEMENTED_OPCODES) {
           fprintf(stderr, "unimplemented opcode: 0x%02hhX\n", opcode);
         }
         break;
@@ -1695,7 +1696,7 @@ protected:
       case 0xDB:
       case 0xF1:
       case 0xF4:
-        if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+        if (debug_flags & DebugFlag::SHOW_UNIMPLEMENTED_OPCODES) {
           fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%02hhX\n", opcode, t->r.get_u8());
         } else {
           t->r.get_u8();
@@ -1715,7 +1716,7 @@ protected:
       case 0xCC:
       case 0xE6:
       case 0xF9:
-        if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+        if (debug_flags & DebugFlag::SHOW_UNIMPLEMENTED_OPCODES) {
           fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%04hX\n", opcode, t->r.get_u16b());
         } else {
           t->r.get_u16b();
@@ -1728,7 +1729,7 @@ protected:
       case 0xD6:
       case 0xDD:
       case 0xEF:
-        if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+        if (debug_flags & DebugFlag::SHOW_UNIMPLEMENTED_OPCODES) {
           fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%06X\n", opcode, t->r.get_u24b());
         } else {
           t->r.get_u24b();
@@ -1738,7 +1739,7 @@ protected:
       case 0xA9:
       case 0xAA:
       case 0xDF:
-        if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+        if (debug_flags & DebugFlag::SHOW_UNIMPLEMENTED_OPCODES) {
           fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%08X\n", opcode, t->r.get_u32b());
         } else {
           t->r.get_u32b();
@@ -1750,7 +1751,7 @@ protected:
         int16_t value = t->r.get_s16b();
         if (reg == 0x62) {
           this->pulse_rate = value;
-        } else if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+        } else if (debug_flags & DebugFlag::SHOW_UNIMPLEMENTED_OPCODES) {
           fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%02hhX 0x%04hX\n", opcode, reg, value);
         }
 
@@ -1765,7 +1766,7 @@ protected:
         } else if (param1 == 0x80) {
           param2 = t->r.get_u32b();
         }
-        if (debug_flags & DebugFlag::ShowUnimplementedOpcodes) {
+        if (debug_flags & DebugFlag::SHOW_UNIMPLEMENTED_OPCODES) {
           fprintf(stderr, "unimplemented opcode: 0x%02hhX 0x%02hhX 0x%08X\n",
               opcode, param1, param2);
         }
@@ -2047,7 +2048,7 @@ int main(int argc, char** argv) {
 
   // default to no color if stderr isn't a tty
   if (!isatty(fileno(stderr))) {
-    debug_flags &= ~DebugFlag::AllColorOptions;
+    debug_flags &= ~DebugFlag::ALL_COLOR_OPTIONS;
   }
 
   string filename;
@@ -2091,7 +2092,7 @@ int main(int argc, char** argv) {
       env_json_filename = &argv[x][19];
     } else if (!strncmp(argv[x], "--output-filename=", 18)) {
       output_filename = &argv[x][18];
-      debug_flags &= ~DebugFlag::ShowLongStatus;
+      debug_flags &= ~DebugFlag::SHOW_LONG_STATUS;
     } else if (!strcmp(argv[x], "--no-decay-when-off")) {
       decay_when_off = false;
     } else if (!strcmp(argv[x], "--midi")) {
@@ -2114,14 +2115,14 @@ int main(int argc, char** argv) {
       debug_flags = atoi(&argv[x][14]);
 #ifndef WINDOWS
     } else if (!strcmp(argv[x], "--no-color")) {
-      debug_flags &= ~DebugFlag::AllColorOptions;
+      debug_flags &= ~DebugFlag::ALL_COLOR_OPTIONS;
 #endif
     } else if (!strcmp(argv[x], "--short-status")) {
-      debug_flags &= ~DebugFlag::ShowLongStatus;
+      debug_flags &= ~DebugFlag::SHOW_LONG_STATUS;
     } else if (!strcmp(argv[x], "--long-status")) {
-      debug_flags |= DebugFlag::ShowLongStatus;
+      debug_flags |= DebugFlag::SHOW_LONG_STATUS;
     } else if (!strcmp(argv[x], "--play-missing-notes")) {
-      debug_flags |= DebugFlag::PlayMissingNotes;
+      debug_flags |= DebugFlag::PLAY_MISSING_NOTES;
     } else if (!strcmp(argv[x], "--quiet")) {
       debug_flags = 0;
 
@@ -2334,7 +2335,7 @@ int main(int argc, char** argv) {
           stream.buffer_count());
       stream.add_samples(step_samples.data(), step_samples.size());
     }
-    if (debug_flags & DebugFlag::ShowNotesOn) {
+    if (debug_flags & DebugFlag::SHOW_NOTES_ON) {
       fprintf(stderr, "\nrendering complete; waiting for buffers to drain\n");
     }
     stream.wait();
