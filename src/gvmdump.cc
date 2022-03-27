@@ -216,7 +216,8 @@ Image decode_gvr(const string& data) {
     }
     default:
       throw logic_error(string_printf(
-          "unimplemented data format: %02hhX", header.data_format));
+          "unimplemented data format: %02hhX",
+          static_cast<uint8_t>(header.data_format)));
   }
 
   return result;
