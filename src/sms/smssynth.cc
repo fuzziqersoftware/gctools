@@ -1095,6 +1095,7 @@ protected:
   uint16_t tempo;
   uint16_t pulse_rate;
   double tempo_bias;
+  double freq_bias;
 
   shared_ptr<const SoundEnvironment> env;
   unordered_set<int16_t> mute_tracks;
@@ -1142,6 +1143,7 @@ public:
       const unordered_set<int16_t>& solo_tracks,
       const unordered_set<int16_t>& disable_tracks,
       double tempo_bias,
+      double freq_bias,
       bool decay_when_off)
     : sample_rate(sample_rate),
       current_time(0),
@@ -1149,6 +1151,7 @@ public:
       tempo(0),
       pulse_rate(0),
       tempo_bias(tempo_bias),
+      freq_bias(freq_bias),
       env(env),
       mute_tracks(mute_tracks),
       solo_tracks(solo_tracks),
@@ -1406,6 +1409,7 @@ public:
       const unordered_set<int16_t>& solo_tracks,
       const unordered_set<int16_t>& disable_tracks,
       double tempo_bias,
+      double freq_bias,
       bool decay_when_off)
     : Renderer(
         sample_rate,
@@ -1415,12 +1419,14 @@ public:
         solo_tracks,
         disable_tracks,
         tempo_bias,
+        freq_bias,
         decay_when_off),
       seq(seq),
       seq_data(new string(seq->data)) {
     shared_ptr<Track> default_track(new Track(-1, this->seq_data, 0, this->seq->index));
     this->tracks.emplace(default_track);
     this->next_event_to_track.emplace(0, default_track);
+    default_track->freq_mult = this->freq_bias;
   }
 
   virtual ~BMSRenderer() = default;
@@ -1593,6 +1599,7 @@ protected:
           shared_ptr<Track> new_track(new Track(track_id, this->seq_data, offset, this->seq->index));
           this->tracks.emplace(new_track);
           this->next_event_to_track.emplace(this->current_time, new_track);
+          new_track->freq_mult = this->freq_bias;
         }
         break;
       }
@@ -1796,6 +1803,7 @@ public:
       const unordered_set<int16_t>& solo_tracks,
       const unordered_set<int16_t>& disable_tracks,
       double tempo_bias,
+      double freq_bias,
       bool decay_when_off,
       uint8_t percussion_instrument,
       bool allow_program_change)
@@ -1807,6 +1815,7 @@ public:
         solo_tracks,
         disable_tracks,
         tempo_bias,
+        freq_bias,
         decay_when_off),
       midi_contents(midi_contents),
       allow_program_change(allow_program_change) {
@@ -1848,6 +1857,7 @@ public:
         shared_ptr<Track> t(new Track(track_id, this->midi_contents, r.where(), 0));
         this->tracks.emplace(t);
         this->next_event_to_track.emplace(0, t);
+        t->freq_mult = this->freq_bias;
       }
 
       r.go(r.where() + ch.header.size);
@@ -2007,8 +2017,8 @@ Synthesis options:\n\
   --solo-track=N: disable all tracks except N (can be given multiple times).\n\
       For BMS, the default track (-1) is not disabled by this option.\n\
   --mute-track=N: execute instructions for track N, but mute its sound.\n\
-  --midi-tempo-bias=BIAS: for MIDI, play songs at this proportion of their\n\
-      original speed.\n\
+  --tempo-bias=BIAS: play songs at this proportion of their original speed.\n\
+  --freq-bias=BIAS: play notes at this proportion of their original pitch.\n\
   --time-limit=N: stop after this many seconds (default 5 minutes).\n"
 #ifndef WINDOWS
 "      When --play is used, this option is ignored.\n"
@@ -2044,6 +2054,17 @@ Debugging options:\n\
 ", argv0);
 }
 
+static double parse_fraction(const string& arg) {
+  size_t slash_pos = arg.find('/');
+  if (slash_pos == string::npos) {
+    return stof(arg);
+  } else {
+    double numer = stof(arg.substr(0, slash_pos));
+    double denom = stof(arg.substr(slash_pos + 1));
+    return numer / denom;
+  }
+}
+
 int main(int argc, char** argv) {
 
   // default to no color if stderr isn't a tty
@@ -2063,7 +2084,8 @@ int main(int argc, char** argv) {
   float start_time = 0.0f;
   size_t sample_rate = 48000;
   bool play = false;
-  float tempo_bias = 1.0;
+  double tempo_bias = 1.0;
+  double freq_bias = 1.0;
 #ifndef WINDOWS
   size_t num_buffers = 128;
 #endif
@@ -2145,7 +2167,9 @@ int main(int argc, char** argv) {
     } else if (!strncmp(argv[x], "--default-bank=", 15)) {
       default_bank = atoi(&argv[x][15]);
     } else if (!strncmp(argv[x], "--tempo-bias=", 13)) {
-      tempo_bias = atof(&argv[x][13]);
+      tempo_bias = parse_fraction(&argv[x][13]);
+    } else if (!strncmp(argv[x], "--freq-bias=", 12)) {
+      freq_bias = parse_fraction(&argv[x][12]);
 #ifndef WINDOWS
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
       num_buffers = atoi(&argv[x][15]);
@@ -2282,6 +2306,7 @@ int main(int argc, char** argv) {
         solo_tracks,
         disable_tracks,
         tempo_bias,
+        freq_bias,
         decay_when_off));
   } else {
     // midi has some extra params; get them from the json if possible
@@ -2307,6 +2332,7 @@ int main(int argc, char** argv) {
         solo_tracks,
         disable_tracks,
         tempo_bias,
+        freq_bias,
         decay_when_off,
         percussion_instrument,
         allow_program_change));
