@@ -131,7 +131,8 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
              &string_table[fst[x].string_offset()]);
 
       pwd += &string_table[fst[x].file.dir_flag_string_offset & 0x00FFFFFF];
-      if (mkdir(pwd.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
+      if (mkdir(pwd.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) &&
+          (errno != EEXIST)) {
         throw runtime_error("cannot create directory " + pwd);
       }
       if (chdir(pwd.c_str())) {
