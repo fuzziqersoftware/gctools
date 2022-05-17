@@ -1629,92 +1629,112 @@ void print_usage() {
 \n\
 modsynth - a synthesizer for Protracker/Soundtracker modules\n\
 \n\
-Usage:\n\
-  modsynth --disassemble [options] input_filename\n\
-    Generates a human-readable representation of the instruments and sequence\n\
-    program from the module. Options:\n\
-      --show-sample-data: Shows raw sample data in a hex/ASCII view.\n\
-      --show-sample-saveforms: Shows sample waveforms vertically. If color is\n\
-          enabled, possibly-clipped samples are highlighted in red.\n\
-      --show-unused-patterns: Disassemble all patterns, even those that don\'t\n\
-          appear in the partition table.\n\
+Usage: modsynth <mode> [options] <input_filename>\n\
 \n\
-  modsynth --disassemble-directory [options] directory_name\n\
-    Disassembles all files in the given directory. Options are the same as for\n\
-    --disassemble.\n\
+The --disassemble mode generates a human-readable representation of the\n\
+instruments and sequence program from the module. Options in this mode:\n\
+  --show-sample-data\n\
+      Show raw sample data in a hex/ASCII view.\n\
+  --show-sample-waveforms\n\
+      Shows sample waveforms vertically. If color is enabled, possibly-clipped\n\
+      samples are highlighted in red.\n\
+  --show-unused-patterns\n\
+      Disassemble all patterns, even those that don\'t appear in the partition\n\
+      table.\n\
 \n\
-  modsynth --export-instruments input_filename\n\
-    Exports the instruments from the module. Each instrument has at most one\n\
-    sample. Each sample is saved as <input_filename>_<instrument_number>.wav.\n\
-    Samples are converted to 32-bit floating-point format during export.\n\
+The --disassemble-directory mode is like --disassemble, but operates on all\n\
+files in the given directory. The options are the same as for --disassemble.\n\
 \n\
-  modsynth --render [options] input_filename\n\
-    Generates a rasterized version of the sequence. Saves the result as\n\
-    <input_filename>.wav. Options for both --play and --render:\n\
-      --sample-rate=N: Output audio at this sample rate (default 48000).\n\
-      --sample-bits=N: Specify the sample format. Valid values are 8 (unsigned\n\
-          8-bit PCM), 16 (signed little-endian 16-bit PCM), and 32\n\
-          (little-endian 32-bit float). The default is 32.\n\
-      --resample-method=METHOD: Use this method for resampling instruments.\n\
-          Values are sinc-best, sinc-medium, sinc-fast, hold, and linear. The\n\
-          default is hold, which most closely approximates what happens on old\n\
-          systems when they play these kinds of modules.\n\
-      --volume=N: Set global volume to N (-1.0-1.0). With --render this doesn\'t\n\
-          really matter unless --skip-normalize is also used, but with --play\n\
-          it overrides the default behavior of using (2.0 / num_tracks), which\n\
-          corrects for potentially very loud output for MODs with high track\n\
-          counts. Negative volumes simply invert the output waveform; it will\n\
-          sound the same as a positive volume but can be used for some advanced\n\
-          effects.\n\
-      --default-panning-split=N: Set default panning split to N. Ranges from\n\
-          -64 (tracks 0 and 3 on the right, 1 and 2 on the left) to +64 (the\n\
-          opposite). The default is +32.\n\
-      --time-limit=N: Stop generating audio after this many seconds have been\n\
-          generated (unlimited by default).\n\
-      --skip-partitions=N: Start at this offset in the partition table instead\n\
-          of at the beginning.\n\
-      --allow-backward-position-jump: Allow position jump effects (Bxx) to jump\n\
-          to parts of the song that have already been played. These generally\n\
-          result in infinite loops and are disallowed by default.\n\
-      --aggressive-tick-correction: Apply DC offsets on all volume changes, not\n\
-          just those that occur as a result of a Cxx effect. This makes some\n\
-          songs sound better but others sound worse.\n\
-      --solo-track=N: Mute all the tracks except this one. The first track is\n\
-          numbered 0; most MODs have tracks 0-3. May be given multiple times.\n\
-      --mute-track=N: Mute this track. May be given multiple times.\n\
-      --tempo-bias=N: Speed up or slow down the song by this factor without\n\
-          changing pitch (default 1.0). For example, 2.0 plays the song twice\n\
-          as fast; 0.5 plays the song at half speed.\n\
-      --pal-amiga: Use a slightly lower hardware frequency when computing note\n\
-          pitches, which matches Amiga machines sold in Europe. The default is\n\
-          to use the North American machines' frequency. (The difference is\n\
-          essentially imperceptible.)\n\
-      --arpeggio-frequency=N: Use a fixed arpeggio frequency instead of the\n\
-          default behavior, which is to align arpeggio boundaries to ticks.\n\
-      --vibrato-resolution=N: Evaluate vibrato effects this many times each\n\
-          tick (default 1).\n\
-    Options for --render only:\n\
-      --skip-trim-silence: By default, modsynth will delete contiguous silence\n\
-          at the end of the generated audio. This option skips that step.\n\
-      --skip-normalize: By default, modsynth will normalize the output so the\n\
-          maximum sample amplitude is 1.0 or -1.0. This option skips that step,\n\
-          so the output may contain samples with higher amplitudes.\n\
-      --write-stdout: Instead of saving to a file, write raw float32 data to\n\
-          stdout, which can be piped to audiocat --play --format=stereo-f32.\n\
-          Generally only useful for debugging problems with --render that don't\n\
-          occur when using --play.\n\
+The --export-instruments mode exports the instruments from the module. Each\n\
+instrument has at most one sample. Each sample is saved as\n\
+<input_filename>_<instrument_number>.wav. Samples are converted to 32-bit\n\
+floating-point format during export. This mode has no other options.\n\
 \n\
-  modsynth --play [options] input_filename\n\
-    Plays the sequence through the default audio device.\n\
-    Most options to --render apply here too. Extra options for --play only:\n\
-      --play-buffers=N: Generate this many ticks of audio ahead of the output\n\
-          device (default 8). If audio is choppy, try increasing this value.\n\
+The --render mode generates a rasterized version of the sequence and saves the\n\
+result as <input_filename>.wav.\n\
+\n\
+The --play mode plays the sequence through the default audio device.\n\
+\n\
+Options for --render and --play:\n\
+  --sample-rate=N\n\
+      Output audio at this sample rate (default 48000).\n\
+  --sample-bits=N\n\
+      Specify the sample format. Valid values are 8 (unsigned 8-bit PCM), 16\n\
+      (signed little-endian 16-bit PCM), and 32 (little-endian 32-bit float).\n\
+      The default is 32.\n\
+  --resample-method=METHOD\n\
+      Use this method for resampling instruments. Values are sinc-best,\n\
+      sinc-medium, sinc-fast, hold, and linear. The default is hold, which most\n\
+      closely approximates what happens on old systems when they play these\n\
+      kinds of modules.\n\
+  --volume=N\n\
+      Set global volume to N (-1.0-1.0). With --render this doesn\'t really\n\
+      matter unless --skip-normalize is also used, but with --play it overrides\n\
+      the default behavior of using (2.0 / num_tracks), which corrects for\n\
+      potentially very loud output for MODs with high track counts. Negative\n\
+      volumes simply invert the output waveform; it will sound the same as a\n\
+      positive volume but can be used for some advanced effects.\n\
+  --default-panning-split=N\n\
+      Set default panning split to N. Ranges from -64 (tracks 0 and 3 on the\n\
+      right, 1 and 2 on the left) to +64 (the opposite). The default is +32.\n\
+  --time-limit=N\n\
+      Stop generating audio after this many seconds have been generated\n\
+      (unlimited by default).\n\
+  --skip-partitions=N\n\
+      Start at this offset in the partition table instead of at the beginning.\n\
+  --allow-backward-position-jump\n\
+      Allow position jump effects (Bxx) to jump to parts of the song that have\n\
+      already been played. These generally result in infinite loops and are\n\
+      disallowed by default.\n\
+  --aggressive-tick-correction\n\
+      Apply DC offsets on all volume changes, not just those that occur as a\n\
+      result of a Cxx effect. This makes some songs sound better but others\n\
+      sound worse.\n\
+  --solo-track=N\n\
+      Mute all the tracks except this one. The first track is numbered 0; most\n\
+      MODs have tracks 0-3. May be given multiple times.\n\
+  --mute-track=N\n\
+      Mute this track. May be given multiple times.\n\
+  --tempo-bias=N\n\
+      Speed up or slow down the song by this factor without changing pitch\n\
+      (default 1.0). For example, 2.0 plays the song twice as fast; 0.5 plays\n\
+      the song at half speed.\n\
+  --pal-amiga\n\
+      Use a slightly lower hardware frequency when computing note pitches,\n\
+      which matches Amiga machines sold in Europe. The default is to use the\n\
+      North American machines' frequency. (The difference is essentially\n\
+      imperceptible.)\n\
+  --arpeggio-frequency=N\n\
+      Use a fixed arpeggio frequency instead of the default behavior, which is\n\
+      to align arpeggio boundaries to ticks.\n\
+  --vibrato-resolution=N\n\
+      Evaluate vibrato effects this many times each tick (default 1).\n\
+\n\
+Options for --render only:\n\
+  --skip-trim-silence\n\
+      By default, modsynth will delete contiguous silence at the end of the\n\
+      generated audio. This option skips that step.\n\
+  --skip-normalize\n\
+      By default, modsynth will normalize the output so the maximum sample\n\
+      amplitude is 1.0 or -1.0. This option skips that step, so the output may\n\
+      contain samples with higher amplitudes.\n\
+  --write-stdout\n\
+      Instead of saving to a file, write raw float32 data to stdout, which can\n\
+      be piped to audiocat --play --format=stereo-f32. Generally only useful\n\
+      for debugging problems with --render that don\'t occur when using --play.\n\
+\n\
+Options for --play only:\n\
+  --play-buffers=N\n\
+      Generate this many ticks of audio ahead of the output device (default 8).\n\
+      If audio is choppy, try increasing this value.\n\
 \n\
 Options for all usage modes:\n\
-  --color/--no-color: Enables or disables the generation of color escape codes\n\
-      for visualizing pattern and instrument data. By default, color escapes\n\
-      are generated only if the output is to a terminal.\n\
-  --show-loading-debug: Show debugging information when loading the file.\n\
+  --color/--no-color\n\
+      Enables or disables the generation of color escape codes for visualizing\n\
+      pattern and instrument data. By default, color escapes are generated only\n\
+      if the output is to a terminal.\n\
+  --show-loading-debug\n\
+      Show debugging information when loading the file.\n\
 \n");
 }
 

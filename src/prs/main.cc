@@ -23,20 +23,29 @@ enum class Format {
 
 void print_help() {
   fprintf(stderr, "\
-Usage: prs [options] < input_file > output_file\n\
+Usage: prsd [options] < input_file > output_file\n\
   (or use unix pipes appropriately)\n\
 \n\
 Options:\n\
-  -h, --help: Show this message.\n\
-  -d, --decompress: Decompress the input instead of compressing it.\n\
-  --start-offset=N: Before decompressing, ignore this many bytes from the input\n\
-      stream. Useful if the input data has an uncompressed header.\n\
-  --raw-bytes=N: After ignoring any bytes requested via --start-offset but\n\
-      before decompressing, copy this many bytes directly to the output stream\n\
-      without compressing or decompressing.\n\
-  --prs: Use Sega\'s press format (default).\n\
-  --yaz0: Use Nintendo\'s Yaz0 format.\n\
-  --yay0: Use Nintendo\'s Yay0 format.\n\
+  -h\n\
+  --help\n\
+      Show this message.\n\
+  -d\n\
+  --decompress\n\
+      Decompress the input instead of compressing it.\n\
+  --start-offset=N\n\
+      Before decompressing, ignore this many bytes from the input stream.\n\
+      Useful if the input data has an uncompressed header.\n\
+  --raw-bytes=N\n\
+      After ignoring any bytes requested via --start-offset, but before\n\
+      decompressing, copy this many bytes directly to the output stream without\n\
+      compressing or decompressing.\n\
+  --prs\n\
+      Use Sega\'s press format (default).\n\
+  --yaz0\n\
+      Use Nintendo\'s Yaz0 format (decompress only).\n\
+  --yay0\n\
+      Use Nintendo\'s Yay0 format (decompress only).\n\
 \n");
 }
 
