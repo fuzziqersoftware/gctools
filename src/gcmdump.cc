@@ -102,6 +102,17 @@ union FSTEntry {
 };
 
 
+static string sanitize_filename(const string& name) {
+  string ret = name;
+  for (auto& ch : ret) {
+    if (ch < 0x20 || ch > 0x7E) {
+      ch = '_';
+    }
+  }
+  return ret;
+}
+
+
 uint32_t dol_file_size(const DOLHeader* dol) {
   static const int num_sections = 18;
   uint32_t x, max_offset = 0;
@@ -130,7 +141,7 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
              fst[x].file.file_size.load(), pwd.c_str(),
              &string_table[fst[x].string_offset()]);
 
-      pwd += &string_table[fst[x].file.dir_flag_string_offset & 0x00FFFFFF];
+      pwd += sanitize_filename(&string_table[fst[x].file.dir_flag_string_offset & 0x00FFFFFF]);
       if (mkdir(pwd.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) &&
           (errno != EEXIST)) {
         throw runtime_error("cannot create directory " + pwd);
@@ -155,14 +166,7 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
 
       if (target_filenames.empty() ||
           target_filenames.count(&string_table[fst[x].string_offset()])) {
-        // some games have non-ascii chars in filenames; get rid of them
-        string filename(&string_table[fst[x].string_offset()]);
-        for (auto& ch : filename) {
-          if (ch < 0x20 || ch > 0x7E) {
-            ch = '_';
-          }
-        }
-
+        string filename = sanitize_filename(&string_table[fst[x].string_offset()]);
         save_file(filename, preadx(fd, fst[x].file.file_size,
             fst[x].file.file_offset + base_offset));
       }
