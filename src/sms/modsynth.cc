@@ -25,10 +25,10 @@ enum Flags {
   SHOW_UNUSED_PATTERNS   = 0x08,
   SHOW_LOADING_DEBUG     = 0x10,
   SHOW_DC_OFFSET_DEBUG   = 0x20,
-  DEFAULT                = 0x00,
+  DEFAULT_FLAGS          = 0x00,
 };
 
-uint64_t flags = Flags::DEFAULT;
+uint64_t flags = Flags::DEFAULT_FLAGS;
 
 struct Module {
   struct Instrument {

@@ -3,6 +3,7 @@
 
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
+#include <phosg/Strings.hh>
 
 using namespace std;
 

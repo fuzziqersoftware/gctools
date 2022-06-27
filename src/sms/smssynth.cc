@@ -51,14 +51,14 @@ enum DebugFlag {
   ALL_COLOR_OPTIONS             = 0x0000000000060000,
 
 #ifndef WINDOWS
-  DEFAULT                       = 0x00000000000600C2,
+  DEFAULT_FLAGS                 = 0x00000000000600C2,
 #else
   // no color by default on windows (cmd.exe doesn't handle the escapes)
-  DEFAULT                       = 0x00000000000000C2,
+  DEFAULT_FLAGS                 = 0x00000000000000C2,
 #endif
 };
 
-uint64_t debug_flags = DebugFlag::DEFAULT;
+uint64_t debug_flags = DebugFlag::DEFAULT_FLAGS;
 
 
 

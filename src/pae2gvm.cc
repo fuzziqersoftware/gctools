@@ -7,6 +7,7 @@
 
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
+#include <phosg/Strings.hh>
 
 #include "prs/PRS.hh"
 
