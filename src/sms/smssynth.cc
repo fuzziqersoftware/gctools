@@ -825,7 +825,7 @@ public:
       note_off_decay_remaining(-1) { }
   virtual ~Voice() = default;
 
-  virtual vector<float> render(size_t count, float freq_mult) = 0;
+  virtual vector<float> render(size_t count, float freq_mult, float volume_bias) = 0;
 
   void off() {
     // TODO: for now we use a constant release time of 1/5 second; we probably
@@ -866,7 +866,7 @@ public:
       shared_ptr<Channel> channel) : Voice(sample_rate, note, vel, true, channel) { }
   virtual ~SilentVoice() = default;
 
-  virtual vector<float> render(size_t count, float) {
+  virtual vector<float> render(size_t count, float, float) {
     this->advance_note_off_factor();
     return vector<float>(count * 2, 0.0f);
   }
@@ -879,7 +879,7 @@ public:
       offset(0) { }
   virtual ~SineVoice() = default;
 
-  virtual vector<float> render(size_t count, float) {
+  virtual vector<float> render(size_t count, float, float volume_bias) {
     // TODO: implement pitch bend and freq_mult somehow
     vector<float> data(count * 2, 0.0f);
 
@@ -888,8 +888,8 @@ public:
     for (size_t x = 0; x < count; x++) {
       // panning is 0.0f (left) - 1.0f (right)
       float off_factor = this->advance_note_off_factor();
-      data[2 * x + 0] = vel_factor * off_factor * (1.0f - this->channel->panning) * this->channel->volume * sin((2.0f * M_PI * frequency) / this->sample_rate * (x + this->offset));
-      data[2 * x + 1] = vel_factor * off_factor * this->channel->panning * this->channel->volume * sin((2.0f * M_PI * frequency) / this->sample_rate * (x + this->offset));
+      data[2 * x + 0] = volume_bias * vel_factor * off_factor * (1.0f - this->channel->panning) * this->channel->volume * sin((2.0f * M_PI * frequency) / this->sample_rate * (x + this->offset));
+      data[2 * x + 1] = volume_bias * vel_factor * off_factor * this->channel->panning * this->channel->volume * sin((2.0f * M_PI * frequency) / this->sample_rate * (x + this->offset));
     }
     this->offset += count;
 
@@ -988,7 +988,7 @@ public:
     }
   }
 
-  virtual vector<float> render(size_t count, float freq_mult) {
+  virtual vector<float> render(size_t count, float freq_mult, float volume_bias) {
     vector<float> data(count * 2, 0.0f);
 
     const auto& samples = this->get_samples(this->channel->pitch_bend,
@@ -996,8 +996,8 @@ public:
     float vel_factor = static_cast<float>(this->vel) / 0x7F;
     for (size_t x = 0; (x < count) && (this->offset < samples.size()); x++) {
       float off_factor = this->advance_note_off_factor();
-      data[2 * x + 0] = vel_factor * off_factor * (1.0f - this->channel->panning) * this->channel->volume * samples[this->offset];
-      data[2 * x + 1] = vel_factor * off_factor * this->channel->panning * this->channel->volume * samples[this->offset];
+      data[2 * x + 0] = volume_bias * vel_factor * off_factor * (1.0f - this->channel->panning) * this->channel->volume * samples[this->offset];
+      data[2 * x + 1] = volume_bias * vel_factor * off_factor * this->channel->panning * this->channel->volume * samples[this->offset];
 
       this->offset++;
       if ((this->note_off_decay_remaining < 0) && (this->loop_end_offset > 0) && (this->offset > this->loop_end_offset)) {
@@ -1096,6 +1096,7 @@ protected:
   uint16_t pulse_rate;
   double tempo_bias;
   double freq_bias;
+  double volume_bias;
 
   shared_ptr<const SoundEnvironment> env;
   unordered_set<int16_t> mute_tracks;
@@ -1144,6 +1145,7 @@ public:
       const unordered_set<int16_t>& disable_tracks,
       double tempo_bias,
       double freq_bias,
+      double volume_bias,
       bool decay_when_off)
     : sample_rate(sample_rate),
       current_time(0),
@@ -1152,6 +1154,7 @@ public:
       pulse_rate(0),
       tempo_bias(tempo_bias),
       freq_bias(freq_bias),
+      volume_bias(volume_bias),
       env(env),
       mute_tracks(mute_tracks),
       solo_tracks(solo_tracks),
@@ -1235,7 +1238,7 @@ public:
       for (auto v : all_voices) {
         vector<float> voice_samples;
         try {
-          voice_samples = v->render(samples_per_pulse, t->freq_mult);
+          voice_samples = v->render(samples_per_pulse, t->freq_mult, this->volume_bias);
         } catch (...) {
           fprintf(stderr, "error while rendering voices for track %hd (freq_mult=%g)\n",
               t->id, t->freq_mult);
@@ -1410,6 +1413,7 @@ public:
       const unordered_set<int16_t>& disable_tracks,
       double tempo_bias,
       double freq_bias,
+      double volume_bias,
       bool decay_when_off)
     : Renderer(
         sample_rate,
@@ -1420,6 +1424,7 @@ public:
         disable_tracks,
         tempo_bias,
         freq_bias,
+        volume_bias,
         decay_when_off),
       seq(seq),
       seq_data(new string(seq->data)) {
@@ -1804,6 +1809,7 @@ public:
       const unordered_set<int16_t>& disable_tracks,
       double tempo_bias,
       double freq_bias,
+      double volume_bias,
       bool decay_when_off,
       uint8_t percussion_instrument,
       bool allow_program_change)
@@ -1816,6 +1822,7 @@ public:
         disable_tracks,
         tempo_bias,
         freq_bias,
+        volume_bias,
         decay_when_off),
       midi_contents(midi_contents),
       allow_program_change(allow_program_change) {
@@ -2086,6 +2093,7 @@ int main(int argc, char** argv) {
   bool play = false;
   double tempo_bias = 1.0;
   double freq_bias = 1.0;
+  double volume_bias = 1.0;
 #ifndef WINDOWS
   size_t num_buffers = 128;
 #endif
@@ -2170,6 +2178,8 @@ int main(int argc, char** argv) {
       tempo_bias = parse_fraction(&argv[x][13]);
     } else if (!strncmp(argv[x], "--freq-bias=", 12)) {
       freq_bias = parse_fraction(&argv[x][12]);
+    } else if (!strncmp(argv[x], "--volume=", 9)) {
+      volume_bias = parse_fraction(&argv[x][9]);
 #ifndef WINDOWS
     } else if (!strncmp(argv[x], "--play-buffers=", 15)) {
       num_buffers = atoi(&argv[x][15]);
@@ -2307,6 +2317,7 @@ int main(int argc, char** argv) {
         disable_tracks,
         tempo_bias,
         freq_bias,
+        volume_bias,
         decay_when_off));
   } else {
     // midi has some extra params; get them from the json if possible
@@ -2333,6 +2344,7 @@ int main(int argc, char** argv) {
         disable_tracks,
         tempo_bias,
         freq_bias,
+        volume_bias,
         decay_when_off,
         percussion_instrument,
         allow_program_change));
