@@ -235,10 +235,16 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       case 0x9B:
       case 0x9C:
       case 0x9E:
-      case 0x9F: {
+      case 0x9F:
+      case 0xB8:
+      case 0xB9: {
+        bool is_extended = (opcode & 0x20);
         uint8_t type = r.get_u8();
-        uint8_t duration_flags = opcode & 0x03;
-        uint8_t data_type = opcode & 0x0C;
+        // B8/B9 always have zero duration (they set the value immediately)
+        uint8_t duration_flags = is_extended ? 0 : (opcode & 0x03);
+        // B8 = s8, B9 = s16... turn these into the same data_type constants as
+        // used by the 9x class of opcodes
+        uint8_t data_type = is_extended ? (8 + 4 * (opcode & 1)) : (opcode & 0x0C);
         int16_t value = 0;
         uint16_t duration = 0;
         if (data_type == 4) {
@@ -267,7 +273,8 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
           param_name=string_printf("[%02hhX]", type);
         }
 
-        disassembly = string_printf("set_perf        %s=", param_name.c_str());
+        disassembly = string_printf("set_perf%s    %s=",
+            is_extended ? "_ext" : "    ", param_name.c_str());
         if (data_type == 4) {
           disassembly += string_printf("0x%02hhX (u8)", static_cast<uint8_t>(value));
         } else if (data_type == 8) {
@@ -478,7 +485,6 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       case 0xA3:
       case 0xA5:
       case 0xA7:
-      case 0xB8:
       case 0xCB:
       case 0xCC:
       case 0xE6:
@@ -491,7 +497,6 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
 
       case 0xAD:
       case 0xAF:
-      case 0xB9:
       case 0xDD:
       case 0xEF: {
         uint32_t param = r.get_u24b();
@@ -1581,6 +1586,19 @@ protected:
         break;
       }
 
+      case 0xB8:
+      case 0xB9: {
+        uint8_t type = t->r.get_u8();
+        float value = 0.0f;
+        if (opcode & 1) {
+          value = static_cast<float>(t->r.get_s16b()) / 0x7FFF;
+        } else {
+          value = static_cast<float>(t->r.get_s8()) / 0x7F;
+        }
+        this->execute_set_perf(t, type, value, 0);
+        break;
+      }
+
       case 0xE2:
         t->bank = t->r.get_u8();
         break;
@@ -1723,7 +1741,6 @@ protected:
       case 0xA3:
       case 0xA5:
       case 0xA7:
-      case 0xB8:
       case 0xCB:
       case 0xCC:
       case 0xE6:
@@ -1737,7 +1754,6 @@ protected:
 
       case 0xAD:
       case 0xAF:
-      case 0xB9:
       case 0xD6:
       case 0xDD:
       case 0xEF:
