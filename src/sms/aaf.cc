@@ -480,7 +480,7 @@ SoundEnvironment baa_decode(const void* vdata, size_t size, const char* base_dir
   if (size < 8) {
     throw runtime_error("baa file is too small for header");
   }
-  if (data_fields[0] != 0x3C5F4141) { // 'AA_<'
+  if (data_fields[0] != 0x41415F3C) { // 'AA_<'
     throw runtime_error("baa file does not appear to be an audio archive");
   }
 
