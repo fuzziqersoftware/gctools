@@ -132,7 +132,10 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
     for (size_t y = 0; y < cdf->record_count; y++) {
       const cdf_record* record = reinterpret_cast<const cdf_record*>(
           data + cdf->record_offsets[y]);
-      sound_ids.emplace(make_pair(record->aw_file_index, y), record->sound_id);
+      if (!sound_ids.emplace(make_pair(record->aw_file_index, y), record->sound_id).second) {
+        fprintf(stderr, "[SoundEnvironment] warning: duplicate sound ID: %hu,%zu => %hu\n",
+            record->aw_file_index.load(), y, record->sound_id.load());
+      }
     }
   }
 
@@ -285,7 +288,12 @@ unordered_map<string, SequenceProgram> barc_decode(const void* vdata,
 #else
     string data = preadx(sequence_archive_fd, e.size, e.offset);
 #endif
-    ret.emplace(piecewise_construct, forward_as_tuple(e.name),
+    size_t suffix = 0;
+    string effective_name = e.name;
+    while (ret.count(effective_name)) {
+      effective_name = string_printf("%s@%zu", e.name, ++suffix);
+    }
+    ret.emplace(piecewise_construct, forward_as_tuple(effective_name),
         forward_as_tuple(x, move(data)));
   }
 
@@ -304,7 +312,11 @@ void SoundEnvironment::resolve_pointers() {
   unordered_map<uint32_t, unordered_map<int64_t, size_t>> sound_id_to_index;
   for (const auto& wsys_it : this->sample_banks) {
     for (size_t x = 0; x < wsys_it.second.size(); x++) {
-      sound_id_to_index[wsys_it.first].emplace(wsys_it.second[x].sound_id, x);
+      bool ret = sound_id_to_index[wsys_it.first].emplace(wsys_it.second[x].sound_id, x).second;
+      if (!ret) {
+        fprintf(stderr, "[SoundEnvironment] warning: duplicate sound id %" PRId64 "\n",
+            wsys_it.second[x].sound_id);
+      }
     }
   }
 
