@@ -7,8 +7,8 @@ gctools is a set of tools for reading and translating video game files. These to
 - GVM files from Phantasy Star Online (gvmdump)
 - RCF files from The Simpsons: Hit and Run (rcfdump)
 - PAE files from Phantasy Star Online Episode III (pae2gvm)
-- PRS files from Phantasy Star Online (prs)
-- Yay0 and Yaz0 files from various Nintendo games (prs)
+- PRS files from Phantasy Star Online (prsd)
+- Yay0 and Yaz0 files from various Nintendo games (prsd)
 - AAF, BX, and AW files from Super Mario Sunshine, Luigi's Mansion, Pikmin, and other games (smsdumpbanks, smssynth)
 - MIDI, INST, SONG, and related resources from classic Macintosh games (smssynth)
 - Protracker/Soundtracker modules (modsynth)
@@ -40,11 +40,11 @@ gctools is a set of tools for reading and translating video game files. These to
 **pae2gvm** - extracts the embedded GVM from a PAE file. The decompressed PAE data is saved as <filename>.dec; the output GVM is saved as <filename>.gvm.
 - Example: `pae2gvm file.pae`
 
-**prs** - decompresses data in PRS, Yay0, and Yaz0 formats, or compresses data in PRS format.
-- Example (decompress PRS): `prs -d < file.prs > file.bin`
-- Example (compress PRS): `prs < file.bin > file.prs`
-- Example (decompress Yay0): `prs --yay0 -d < file.yay0 > file.bin`
-- Example (decompress Yaz0): `prs --yaz0 -d < file.yaz0 > file.bin`
+**prsd** - decompresses data in PRS, Yay0, and Yaz0 formats, or compresses data in PRS format.
+- Example (decompress PRS): `prsd -d < file.prs > file.bin`
+- Example (compress PRS): `prsd < file.bin > file.prs`
+- Example (decompress Yay0): `prsd --yay0 -d < file.yay0 > file.bin`
+- Example (decompress Yaz0): `prsd --yaz0 -d < file.yaz0 > file.bin`
 
 **smsdumpbanks** - extracts the contents of instrument and waveform banks in AAF, BX, or BAA format. Games using this format include Luigi's Mansion, Pikmin, and Super Mario Sunshine. Produces text files describing the instruments, uncompressed .wav files containing the sounds, and .bms files containing the music sequences. Before running this program, do the steps in the "Getting auxiliary files" section below.
 - Example: `mkdir sms_decoded_data && smsdumpbanks sms_extracted_data/AudioRes sms_decoded_data`
@@ -120,7 +120,7 @@ Luigi's Mansion should work without any modifications. Just point `--audiores-di
 
 You'll have to copy msound.aaf into the AudioRes directory manually to use the Super Mario Sunshine tools. To do so:
 - Get nintendo.szs from the disc image (use gcmdump or some other tool).
-- Yaz0-decompress it (you can do this with `prs -d --yaz0 < nintendo.szs > nintendo.szs.rarc`).
+- Yaz0-decompress it (you can do this with `prsd -d --yaz0 < nintendo.szs > nintendo.szs.rarc`).
 - Extract the contents of the archive (you can do this with rarcdump, which is part of [szstools](http://amnoid.de/gc/)).
 - Copy msound.aaf into the AudioRes directory.
 
@@ -135,13 +135,13 @@ After extracting the AudioRes directory, rename the Waves subdirectory to Banks.
 #### Getting files from The Legend of Zelda: Twilight Princess
 
 The sequences are stored in a compressed RARC file, and don't appear to be listed in the environment index. (This means `--list` won't work and you'll have to specify a sequence file manually.) To get the sequences:
-- Decompress the sequence file: `prs -d --yaz0 < Seqs/Z2SoundSeqs.arc > .Seqs/Z2SoundSeqs.arc.dec`
+- Decompress the sequence file: `prsd -d --yaz0 < Seqs/Z2SoundSeqs.arc > .Seqs/Z2SoundSeqs.arc.dec`
 - Extract the sequences: `rarcdump Seqs/Z2SoundSeqs.arc.dec`
 
 #### Getting files from Super Mario Galaxy
 
 Like Twilight Princess, the sequences are stored in a RARC archive, but this time each individual sequence is compressed, and the index is compressed too. Fortunately they're all Yaz0:
 
-- Decompress the index file: `prs -d --yaz0 < SMR.szs > SMR.baa`
+- Decompress the index file: `prsd -d --yaz0 < SMR.szs > SMR.baa`
 - Extract the sequences: `rarcdump Seqs/JaiSeq.arc)`
-- Decompress the sequences: `ls Seqs/JaiSeq.arc_dir/szs/*.szs | xargs -I {} bash -c "prs -d --yaz0 < {} > {}.bms"`
+- Decompress the sequences: `ls Seqs/JaiSeq.arc_dir/szs/*.szs | xargs -I {} bash -c "prsd -d --yaz0 < {} > {}.bms"`
