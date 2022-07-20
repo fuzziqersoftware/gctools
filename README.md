@@ -13,11 +13,37 @@ gctools is a set of tools for reading and translating video game files. These to
 - MIDI, INST, SONG, and related resources from classic Macintosh games (smssynth)
 - Protracker/Soundtracker modules (modsynth)
 
+## Releases
+
+The macOS releases on the GitHub repository are built for the latest version of macOS on an arm64 (Apple Silicon) system.
+
+The Windows releases on the GitHub repository are built for the amd64 architecture and are dynamically linked with Cygwin DLLs, so you'll have to install some parts of the Cygwin runtime environment to use them. See the Building section for how to install the dependencies.
+
 ## Building
 
-- Install CMake and OpenAL if you don't have them already.
-- Build and install phosg (https://github.com/fuzziqersoftware/phosg) and phosg-audio (https://github.com/fuzziqersoftware/phosg-audio).
-- Install libsamplerate (http://www.mega-nerd.com/SRC/).
+On Windows, install the dependencies via Cygwin (https://www.cygwin.com/install.html). During the step where it asks which packages to install, set View to "Full", then search for each of these packages and change "Skip" to the latest version available:
+- cmake
+- gcc-core
+- gcc-g++
+- libopenal-devel
+- libopenal1
+- libsamplerate
+- libsamplerate-devel
+- libsamplerate0
+- make
+- openal
+- openal-config
+After installing all these, open a Cygwin bash shell do to the rest of the steps. Unlike macOS and Linux, there is no CI for this project in the Windows build environment, so I may accidentally break this and not know about it. Feel free to create a GitHub issue if it doesn't build on Windows.
+
+On macOS, install the dependencies with Homebrew or MacPorts. For example, with Homebrew:
+- `brew install cmake libsamplerate openal-soft`
+
+On Linux, install the dependencies with apt-get:
+- `sudo apt-get install cmake libsamplerate-dev libopenal-dev`
+
+After the dependencies are installed (on any platform), do this:
+- Build and install phosg (https://github.com/fuzziqersoftware/phosg).
+- Build and install phosg-audio (https://github.com/fuzziqersoftware/phosg-audio).
 - Run `cmake . && make` in the root directory of gctools. Executables will be generated for each tool. These tools all build and run on macOS and Ubuntu, but are untested on other platforms.
 
 ## The tools
