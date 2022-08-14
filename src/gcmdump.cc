@@ -167,8 +167,12 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
       if (target_filenames.empty() ||
           target_filenames.count(&string_table[fst[x].string_offset()])) {
         string filename = sanitize_filename(&string_table[fst[x].string_offset()]);
-        save_file(filename, preadx(fd, fst[x].file.file_size,
-            fst[x].file.file_offset + base_offset));
+        try {
+          save_file(filename, preadx(fd, fst[x].file.file_size,
+              fst[x].file.file_offset + base_offset));
+        } catch (const exception& e) {
+          fprintf(stderr, "!!! failed to write file: %s\n", e.what());
+        }
       }
     }
   }
