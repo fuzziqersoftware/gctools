@@ -1,4 +1,4 @@
-# gctools
+# gctools <img align="right" src="s-gctools.png" />
 
 gctools is a set of tools for reading and translating video game files. These tools can understand:
 - AFS archives from various Sega games (afsdump)
