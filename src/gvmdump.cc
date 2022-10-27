@@ -28,7 +28,7 @@ struct GVMFileHeader {
   // Note: Add 8 to this value (it doesn't include magic and size). Also, yes,
   // it really is little-endian.
   le_uint32_t header_size;
-  be_uint16_t unknown;
+  be_uint16_t flags;
   be_uint16_t num_files;
   GVMFileEntry entries[0];
 } __attribute__((packed));
