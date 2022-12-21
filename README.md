@@ -54,6 +54,9 @@ After the dependencies are installed (on any platform), do this:
 **gcmdump** - extracts all files in a GCM file (GameCube disc image) or TGC file (embedded GameCube disc image) to the current directory. You can force formats with the --gcm or --tgc options (by default gcmdump will try to figure out the file format itself).
 - Example: `mkdir out && cd out && gcmdump ../image.gcm`
 
+**gcmasm** - generates a .gcm image from a directory tree. Ideally the source data would be a directory tree produced by gcmdump, but if not, you can provide the header data on the command line instead.
+- Example: `gcmasm extracted_image_dir` (produces extracted_image_dir.gcm)
+
 **gsldump** - extracts all files in a GSL archive to the current directory. This format was used in multiple versions of Phantasy Star Online for various game parameters.
 - Example: `mkdir out && cd out && gsldump ../archive.gsl`
 

@@ -15,7 +15,15 @@
 using namespace std;
 
 
-#pragma pack(1)
+
+struct ApploaderHeader {
+  char date[0x10];
+  be_uint32_t entrypoint;
+  be_uint32_t size;
+  be_uint32_t trailer_size;
+  be_uint32_t unknown_a1;
+  // Apploader code follows immediately (loaded to 0x81200000)
+} __attribute__((packed));
 
 struct GCMHeader {
   be_uint32_t game_id;
@@ -35,7 +43,7 @@ struct GCMHeader {
   be_uint32_t fst_offset;
   be_uint32_t fst_size;
   be_uint32_t fst_max_size;
-};
+} __attribute__((packed));
 
 struct TGCHeader {
   be_uint32_t magic;
@@ -52,12 +60,12 @@ struct TGCHeader {
   be_uint32_t banner_offset;
   be_uint32_t banner_size;
   be_uint32_t file_offset_base;
-};
+} __attribute__((packed));
 
 union ImageHeader {
   GCMHeader gcm;
   TGCHeader tgc;
-};
+} __attribute__((packed));
 
 struct DOLHeader {
   // Sections 0-6 are text; the rest (7-17) are data
@@ -68,25 +76,25 @@ struct DOLHeader {
   be_uint32_t bss_size;
   be_uint32_t entry_point;
   be_uint32_t unused[7];
-};
+} __attribute__((packed));
 
 struct FSTRootEntry {
   be_uint32_t dir_flag_string_offset;
   be_uint32_t parent_offset;
   be_uint32_t num_entries;
-};
+} __attribute__((packed));
 
 struct FSTDirEntry {
   be_uint32_t dir_flag_string_offset;
   be_uint32_t parent_offset;
   be_uint32_t next_offset;
-};
+} __attribute__((packed));
 
 struct FSTFileEntry {
   be_uint32_t dir_flag_string_offset;
   be_uint32_t file_offset;
   be_uint32_t file_size;
-};
+} __attribute__((packed));
 
 union FSTEntry {
   FSTRootEntry root;
@@ -99,7 +107,8 @@ union FSTEntry {
   uint32_t string_offset() const {
     return this->file.dir_flag_string_offset & 0x00FFFFFF;
   }
-};
+} __attribute__((packed));
+
 
 
 static string sanitize_filename(const string& name) {
@@ -111,6 +120,7 @@ static string sanitize_filename(const string& name) {
   }
   return ret;
 }
+
 
 
 uint32_t dol_file_size(const DOLHeader* dol) {
@@ -177,6 +187,7 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
     }
   }
 }
+
 
 
 enum Format {
@@ -258,6 +269,18 @@ int main(int argc, char* argv[]) {
         dol_offset + sizeof(DOLHeader));
 
     save_file("default.dol", dol_data);
+  }
+
+  if (target_filenames.empty() || target_filenames.count("__gcm_header__.bin")) {
+    save_file("__gcm_header__.bin", preadx(fd, 0x2440, 0));
+  }
+
+  if (target_filenames.empty() || target_filenames.count("apploader.bin")) {
+    string data = preadx(fd, sizeof(ApploaderHeader), 0x2440);
+    const auto* header = reinterpret_cast<const ApploaderHeader*>(data.data());
+    data += preadx(
+        fd, header->size + header->trailer_size, 0x2440 + sizeof(ApploaderHeader));
+    save_file("apploader.bin", data);
   }
 
   string fst_data = preadx(fd, fst_size, fst_offset);

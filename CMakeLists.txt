@@ -34,7 +34,7 @@ add_library(prs src/prs/PRSDataLog.cc src/prs/PRS.cc src/prs/Yay0.cc src/prs/Yaz
 
 find_package(OpenAL REQUIRED)
 
-set(SimpleExecutableNames afsdump gcmdump gsldump gvmdump rcfdump)
+set(SimpleExecutableNames afsdump gcmasm gcmdump gsldump gvmdump rcfdump)
 set(AllExecutableNames ${SimpleExecutableNames} pae2gvm prsd smsdumpbanks smssynth modsynth)
 
 foreach(ExecutableName IN ITEMS ${SimpleExecutableNames})

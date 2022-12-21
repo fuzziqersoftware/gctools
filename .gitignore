@@ -4,6 +4,7 @@
 # Build products
 libprs.a
 afsdump
+gcmasm
 gcmdump
 gsldump
 gvmdump
