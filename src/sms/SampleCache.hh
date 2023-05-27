@@ -8,11 +8,10 @@
 #include <samplerate.h>
 
 #include <algorithm>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 using namespace std;
-
 
 vector<float> resample(
     const vector<float>& input_samples,
@@ -20,11 +19,11 @@ vector<float> resample(
     double src_ratio,
     int resample_method);
 
-template<typename SampleKey>
+template <typename SampleKey>
 class SampleCache {
 public:
   explicit SampleCache(int resample_method)
-      : resample_method(resample_method) { }
+      : resample_method(resample_method) {}
   ~SampleCache() = default;
 
   const vector<float>& at(SampleKey k, float src_ratio) const {
@@ -32,7 +31,7 @@ public:
   }
 
   const vector<float>& add(SampleKey k, float src_ratio, vector<float>&& data) {
-    return this->cache[k].emplace(src_ratio, move(data)).first->second;
+    return this->cache[k].emplace(src_ratio, std::move(data)).first->second;
   }
 
   const vector<float>& resample_add(
@@ -48,7 +47,7 @@ public:
           num_channels,
           src_ratio,
           this->resample_method);
-      return this->add(k, src_ratio, move(data));
+      return this->add(k, src_ratio, std::move(data));
     }
   }
 

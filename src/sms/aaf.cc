@@ -4,13 +4,13 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <map>
+#include <phosg-audio/File.hh>
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
 #include <phosg/Strings.hh>
-#include <phosg-audio/File.hh>
-#include <vector>
 #include <unordered_map>
-#include <map>
+#include <vector>
 
 #include "instrument.hh"
 
@@ -22,8 +22,6 @@ using namespace std;
 #define PRId64 "lld"
 #define PRIX64 "llX"
 #endif
-
-
 
 struct wave_table_entry {
   uint8_t unknown1;
@@ -89,8 +87,6 @@ struct wsys_header {
   be_uint32_t wbct_offset;
 };
 
-
-
 pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
     const char* base_directory) {
   const uint8_t* data = reinterpret_cast<const uint8_t*>(vdata);
@@ -108,7 +104,7 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
 
   // get all sample IDs before processing aw files
   // this map is {(aw_file_index, wave_table_entry_index): sound_id}
-  map<pair<size_t, size_t>, size_t> sound_ids;
+  map<pair<size_t, size_t>, size_t> aw_file_and_sound_index_to_cdf_id;
 
   const wbct_header* wbct = reinterpret_cast<const wbct_header*>(
       data + wsys->wbct_offset);
@@ -132,7 +128,9 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
     for (size_t y = 0; y < cdf->record_count; y++) {
       const cdf_record* record = reinterpret_cast<const cdf_record*>(
           data + cdf->record_offsets[y]);
-      if (!sound_ids.emplace(make_pair(record->aw_file_index, y), record->sound_id).second) {
+      fprintf(stderr, "[SoundEnvironment/debug] CDF %zu => %hu,%zu => %hu\n",
+          y, record->aw_file_index.load(), y, record->sound_id.load());
+      if (!aw_file_and_sound_index_to_cdf_id.emplace(make_pair(record->aw_file_index, y), record->sound_id).second) {
         fprintf(stderr, "[SoundEnvironment] warning: duplicate sound ID: %hu,%zu => %hu\n",
             record->aw_file_index.load(), y, record->sound_id.load());
       }
@@ -174,7 +172,7 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
       const wave_table_entry* wav_entry = reinterpret_cast<const wave_table_entry*>(
           data + entry->wav_entry_offsets[y]);
 
-      uint16_t sound_id = sound_ids.at(make_pair(x, y));
+      uint16_t sound_id = aw_file_and_sound_index_to_cdf_id.at(make_pair(x, y));
 
       ret.emplace_back();
       Sound& ret_snd = ret.back();
@@ -201,7 +199,6 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
             wav_entry->size);
         ret_snd.afc_large_frames = (wav_entry->type == 1);
         ret_snd.num_channels = 1;
-
       } else if (wav_entry->type < 4) {
         // uncompressed big-endian mono/stereo apparently
         bool is_stereo = (wav_entry->type == 3);
@@ -227,7 +224,6 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
           ret_snd.decoded_samples.emplace_back(decoded);
         }
         ret_snd.num_channels = is_stereo ? 2 : 1;
-
       } else {
         throw runtime_error(string_printf("unknown wav entry type: 0x%" PRIX32, wav_entry->type));
       }
@@ -236,8 +232,6 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
 
   return make_pair(wsys->wsys_id, ret);
 }
-
-
 
 struct barc_entry {
   char name[14];
@@ -294,16 +288,15 @@ unordered_map<string, SequenceProgram> barc_decode(const void* vdata,
       effective_name = string_printf("%s@%zu", e.name, ++suffix);
     }
     ret.emplace(piecewise_construct, forward_as_tuple(effective_name),
-        forward_as_tuple(x, move(data)));
+        forward_as_tuple(x, std::move(data)));
   }
 
   return ret;
 }
 
-
-
-SequenceProgram::SequenceProgram(uint32_t index, std::string&& data) :
-    index(index), data(move(data)) { }
+SequenceProgram::SequenceProgram(uint32_t index, std::string&& data)
+    : index(index),
+      data(std::move(data)) {}
 
 void SoundEnvironment::resolve_pointers() {
   // postprocessing: resolve all sample bank pointers
@@ -312,7 +305,10 @@ void SoundEnvironment::resolve_pointers() {
   unordered_map<uint32_t, unordered_map<int64_t, size_t>> sound_id_to_index;
   for (const auto& wsys_it : this->sample_banks) {
     for (size_t x = 0; x < wsys_it.second.size(); x++) {
-      bool ret = sound_id_to_index[wsys_it.first].emplace(wsys_it.second[x].sound_id, x).second;
+      const auto& sound = wsys_it.second[x];
+      fprintf(stderr, "[SoundEnvironment/debug] %" PRIu32 ",%zu => %" PRIu32 " %" PRIu32 " %" PRId64 "\n",
+          wsys_it.first, x, sound.aw_file_index, sound.wave_table_index, sound.sound_id);
+      bool ret = sound_id_to_index[wsys_it.first].emplace(sound.sound_id, x).second;
       if (!ret) {
         fprintf(stderr, "[SoundEnvironment] warning: duplicate sound id %" PRId64 "\n",
             wsys_it.second[x].sound_id);
@@ -375,15 +371,15 @@ void SoundEnvironment::resolve_pointers() {
               const auto& wsys_indexes = sound_id_to_index.at(wsys_id);
               vel_region.sound = &wsys_bank[wsys_indexes.at(vel_region.sound_id)];
               break;
-            } catch (const out_of_range&) { }
+            } catch (const out_of_range&) {
+            }
           }
 
           total_sounds++;
           if (!vel_region.sound) {
-            fprintf(stderr, "[SoundEnvironment] error: can\'t resolve sound: bank=%" PRIX32
-                " (chunk=%" PRIX32 ") inst=%" PRIX32 " key_rgn=[%hhX,%hhX] "
-                "vel_rgn=[%hhX, %hhX, base=%hhX, sample_bank_id=%" PRIX32
-                ", sound_id=%hX]\n", bank_it.first, bank.chunk_id,
+            fprintf(stderr, "[SoundEnvironment] error: can\'t resolve sound: bank=%" PRIX32 " (chunk=%" PRIX32 ") inst=%" PRIX32 " key_rgn=[%hhX,%hhX] "
+                            "vel_rgn=[%hhX, %hhX, base=%hhX, sample_bank_id=%" PRIX32 ", sound_id=%hX]\n",
+                bank_it.first, bank.chunk_id,
                 instrument_it.first, key_region.key_low, key_region.key_high,
                 vel_region.vel_low, vel_region.vel_high, vel_region.base_note,
                 vel_region.sample_bank_id, vel_region.sound_id);
@@ -401,17 +397,15 @@ void SoundEnvironment::resolve_pointers() {
 
 void SoundEnvironment::merge_from(SoundEnvironment&& other) {
   for (auto& it : other.instrument_banks) {
-    this->instrument_banks.emplace(move(it.first), move(it.second));
+    this->instrument_banks.emplace(std::move(it.first), std::move(it.second));
   }
   for (auto& it : other.sample_banks) {
-    this->sample_banks.emplace(move(it.first), move(it.second));
+    this->sample_banks.emplace(std::move(it.first), std::move(it.second));
   }
   for (auto& it : other.sequence_programs) {
-    this->sequence_programs.emplace(move(it.first), move(it.second));
+    this->sequence_programs.emplace(std::move(it.first), std::move(it.second));
   }
 }
-
-
 
 SoundEnvironment aaf_decode(const void* vdata, size_t size, const char* base_directory) {
   const uint8_t* data = reinterpret_cast<const uint8_t*>(vdata);
@@ -449,11 +443,11 @@ SoundEnvironment aaf_decode(const void* vdata, size_t size, const char* base_dir
             auto ibnk = ibnk_decode(data + chunk_offset);
             // this is the index of the related wsys block
             ibnk.chunk_id = chunk_id;
-            ret.instrument_banks.emplace(ibnk.id, move(ibnk));
+            ret.instrument_banks.emplace(ibnk.id, std::move(ibnk));
           } else {
             auto wsys_pair = wsys_decode(data + chunk_offset, base_directory);
             uint32_t wsys_id = wsys_pair.first ? wsys_pair.first : ret.sample_banks.size();
-            if (!ret.sample_banks.emplace(wsys_id, move(wsys_pair.second)).second) {
+            if (!ret.sample_banks.emplace(wsys_id, std::move(wsys_pair.second)).second) {
               fprintf(stderr, "[SoundEnvironment] warning: duplicate wsys id %" PRIX32 "\n",
                   wsys_id);
             }
@@ -521,7 +515,7 @@ SoundEnvironment baa_decode(const void* vdata, size_t size, const char* base_dir
         // TODO: should we trust wsys_id here or use the same logic as for aaf?
         auto wsys_pair = wsys_decode(data + offset, base_directory);
         wsys_id = wsys_pair.first ? wsys_pair.first : wsys_id;
-        if (!ret.sample_banks.emplace(wsys_id, move(wsys_pair.second)).second) {
+        if (!ret.sample_banks.emplace(wsys_id, std::move(wsys_pair.second)).second) {
           fprintf(stderr, "[SoundEnvironment] warning: duplicate wsys id %" PRIX32 "\n",
               wsys_id);
         }
@@ -534,7 +528,7 @@ SoundEnvironment baa_decode(const void* vdata, size_t size, const char* base_dir
         // unlike 'ws  ' above, there isn't an extra unused field here
         auto ibnk = ibnk_decode(data + offset);
         ibnk.chunk_id = chunk_id;
-        ret.instrument_banks.emplace(ibnk.id, move(ibnk));
+        ret.instrument_banks.emplace(ibnk.id, std::move(ibnk));
         break;
       }
 
@@ -604,7 +598,7 @@ SoundEnvironment bx_decode(const void* vdata, size_t,
     } else {
       auto wsys_pair = wsys_decode(data + entry->offset, base_directory);
       uint32_t wsys_id = wsys_pair.first ? wsys_pair.first : ret.sample_banks.size();
-      if (!ret.sample_banks.emplace(wsys_id, move(wsys_pair.second)).second) {
+      if (!ret.sample_banks.emplace(wsys_id, std::move(wsys_pair.second)).second) {
         fprintf(stderr, "[SoundEnvironment] warning: duplicate wsys id %" PRIX32 "\n",
             wsys_id);
       }
@@ -618,7 +612,7 @@ SoundEnvironment bx_decode(const void* vdata, size_t,
     if (entry->size != 0) {
       auto ibnk = ibnk_decode(data + entry->offset);
       ibnk.chunk_id = x;
-      ret.instrument_banks.emplace(x, move(ibnk));
+      ret.instrument_banks.emplace(x, std::move(ibnk));
     } else {
       ret.instrument_banks.emplace(piecewise_construct, forward_as_tuple(x),
           forward_as_tuple(x));
@@ -629,8 +623,6 @@ SoundEnvironment bx_decode(const void* vdata, size_t,
   ret.resolve_pointers();
   return ret;
 }
-
-
 
 SoundEnvironment load_sound_environment(const char* base_directory) {
   // Pikmin: pikibank.bx has almost everything; the sequence index is inside
@@ -652,8 +644,8 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
 
   {
     static const vector<string> filenames = {
-      "/JaiInit.aaf",
-      "/msound.aaf", // Super Mario Sunshine
+        "/JaiInit.aaf",
+        "/msound.aaf", // Super Mario Sunshine
     };
     for (const auto& filename : filenames) {
       string data;
@@ -668,9 +660,9 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
 
   {
     static const vector<string> filenames = {
-      "/GCKart.baa",
-      "/Z2Sound.baa",
-      "/SMR.baa",
+        "/GCKart.baa",
+        "/Z2Sound.baa",
+        "/SMR.baa",
     };
     for (const auto& filename : filenames) {
       string data;
@@ -686,27 +678,22 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
   throw runtime_error("no index file found");
 }
 
-
-
 SoundEnvironment create_midi_sound_environment(
     const unordered_map<int16_t, InstrumentMetadata>& instrument_metadata) {
   SoundEnvironment env;
 
   // create instrument bank 0
-  auto& inst_bank = env.instrument_banks.emplace(piecewise_construct,
-      forward_as_tuple(0), forward_as_tuple(0)).first->second;
+  auto& inst_bank = env.instrument_banks.emplace(piecewise_construct, forward_as_tuple(0), forward_as_tuple(0)).first->second;
   for (const auto& it : instrument_metadata) {
     // TODO: do we need to pass in base_note for the vel region?
-    auto& inst = inst_bank.id_to_instrument.emplace(piecewise_construct,
-        forward_as_tuple(it.first), forward_as_tuple(it.first)).first->second;
+    auto& inst = inst_bank.id_to_instrument.emplace(piecewise_construct, forward_as_tuple(it.first), forward_as_tuple(it.first)).first->second;
     inst.key_regions.emplace_back(0, 0x7F);
     auto& key_region = inst.key_regions.back();
     key_region.vel_regions.emplace_back(0, 0x7F, 0, it.first, 1, 1);
   }
 
   // create sample bank 0
-  auto& sample_bank = env.sample_banks.emplace(piecewise_construct,
-      forward_as_tuple(0), forward_as_tuple(0)).first->second;
+  auto& sample_bank = env.sample_banks.emplace(piecewise_construct, forward_as_tuple(0), forward_as_tuple(0)).first->second;
   for (const auto& it : instrument_metadata) {
     sample_bank.emplace_back();
     Sound& s = sample_bank.back();
@@ -741,26 +728,22 @@ SoundEnvironment create_midi_sound_environment(
   return env;
 }
 
-
-
 SoundEnvironment create_json_sound_environment(
-    shared_ptr<const JSONObject> instruments_json, const string& directory) {
+    shared_ptr<const JSONObject> instruments_json,
+    const string& directory) {
   SoundEnvironment env;
 
   // create instrument bank 0 and sample bank 0
-  auto& inst_bank = env.instrument_banks.emplace(piecewise_construct,
-      forward_as_tuple(0), forward_as_tuple(0)).first->second;
-  auto& sample_bank = env.sample_banks.emplace(piecewise_construct,
-      forward_as_tuple(0), forward_as_tuple(0)).first->second;
+  auto& inst_bank = env.instrument_banks.emplace(piecewise_construct, forward_as_tuple(0), forward_as_tuple(0)).first->second;
+  auto& sample_bank = env.sample_banks.emplace(piecewise_construct, forward_as_tuple(0), forward_as_tuple(0)).first->second;
 
   // create instruments
   size_t sound_id = 1;
   for (const auto& inst_json : instruments_json->as_list()) {
     int64_t id = inst_json->as_dict().at("id")->as_int();
-    auto& inst = inst_bank.id_to_instrument.emplace(piecewise_construct,
-        forward_as_tuple(id), forward_as_tuple(id)).first->second;
+    auto& inst = inst_bank.id_to_instrument.emplace(piecewise_construct, forward_as_tuple(id), forward_as_tuple(id)).first->second;
 
-    //fprintf(stderr, "[create_json_sound_environment] creating instrument %" PRId64 "\n", id);
+    // fprintf(stderr, "[create_json_sound_environment] creating instrument %" PRId64 "\n", id);
 
     for (const auto& rgn_json : inst_json->as_dict().at("regions")->as_list()) {
       auto& rgn_dict = rgn_json->as_dict();
@@ -772,12 +755,14 @@ SoundEnvironment create_json_sound_environment(
       double freq_mult = 1;
       try {
         freq_mult = rgn_dict.at("freq_mult")->as_float();
-      } catch (const out_of_range&) { }
+      } catch (const out_of_range&) {
+      }
 
       bool constant_pitch = false;
       try {
         constant_pitch = rgn_dict.at("constant_pitch")->as_bool();
-      } catch (const out_of_range&) { }
+      } catch (const out_of_range&) {
+      }
 
       WAVContents wav;
       try {

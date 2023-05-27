@@ -1,11 +1,11 @@
 #include <errno.h>
 #include <inttypes.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
@@ -14,8 +14,6 @@
 #include <unordered_set>
 
 using namespace std;
-
-
 
 enum RegionCode {
   NTSC_J = 0,
@@ -100,8 +98,6 @@ struct FSTEntry {
 
 static_assert(sizeof(FSTEntry) == 0x0C);
 
-
-
 struct FST {
   vector<FSTEntry> entries;
   StringWriter strings;
@@ -133,9 +129,9 @@ struct File {
   size_t size;
 
   explicit File(const string& src_path)
-    : src_path(src_path),
-      name(basename(this->src_path)),
-      size(stat(this->src_path).st_size) {
+      : src_path(src_path),
+        name(basename(this->src_path)),
+        size(stat(this->src_path).st_size) {
     log_info("Add file: %s (as %s)", this->src_path.c_str(), this->name.c_str());
   }
 
@@ -151,7 +147,8 @@ struct Directory {
   unordered_map<string, shared_ptr<File>> files;
 
   explicit Directory(const string& src_path)
-    : src_path(src_path), name(basename(this->src_path)) {
+      : src_path(src_path),
+        name(basename(this->src_path)) {
     log_info("Add directory: %s (as %s)", this->src_path.c_str(), this->name.c_str());
     for (const string& item : list_directory(src_path)) {
       string item_path = src_path + "/" + item;
@@ -212,8 +209,6 @@ FST generate_fst(const Directory& root) {
 
   return fst;
 }
-
-
 
 struct HeaderParams {
   int64_t game_id = -1;
@@ -344,8 +339,6 @@ void compile_image(
 
   log_info("Complete");
 }
-
-
 
 void print_usage() {
   fprintf(stderr, "\

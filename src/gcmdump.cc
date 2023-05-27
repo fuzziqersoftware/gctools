@@ -1,11 +1,11 @@
 #include <errno.h>
 #include <inttypes.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
@@ -13,8 +13,6 @@
 #include <unordered_set>
 
 using namespace std;
-
-
 
 struct ApploaderHeader {
   char date[0x10];
@@ -109,8 +107,6 @@ union FSTEntry {
   }
 } __attribute__((packed));
 
-
-
 static string sanitize_filename(const string& name) {
   string ret = name;
   for (auto& ch : ret) {
@@ -120,8 +116,6 @@ static string sanitize_filename(const string& name) {
   }
   return ret;
 }
-
-
 
 uint32_t dol_file_size(const DOLHeader* dol) {
   static const int num_sections = 18;
@@ -146,10 +140,10 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
   for (x = start; x < end; x++) {
     if (fst[x].is_dir()) {
       fprintf(stderr, "> entry: %08X $ %08X %08X %08X %s%s/\n", x,
-             fst[x].file.dir_flag_string_offset.load(),
-             fst[x].file.file_offset.load(),
-             fst[x].file.file_size.load(), pwd.c_str(),
-             &string_table[fst[x].string_offset()]);
+          fst[x].file.dir_flag_string_offset.load(),
+          fst[x].file.file_offset.load(),
+          fst[x].file.file_size.load(), pwd.c_str(),
+          &string_table[fst[x].string_offset()]);
 
       pwd += sanitize_filename(&string_table[fst[x].file.dir_flag_string_offset & 0x00FFFFFF]);
       if (mkdir(pwd.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) &&
@@ -170,16 +164,15 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
 
     } else {
       fprintf(stderr, "> entry: %08X $ %08X %08X %08X %s%s\n", x,
-             fst[x].file.dir_flag_string_offset.load(),
-             fst[x].file.file_offset.load(), fst[x].file.file_size.load(),
-             pwd.c_str(), &string_table[fst[x].string_offset()]);
+          fst[x].file.dir_flag_string_offset.load(),
+          fst[x].file.file_offset.load(), fst[x].file.file_size.load(),
+          pwd.c_str(), &string_table[fst[x].string_offset()]);
 
       if (target_filenames.empty() ||
           target_filenames.count(&string_table[fst[x].string_offset()])) {
         string filename = sanitize_filename(&string_table[fst[x].string_offset()]);
         try {
-          save_file(filename, preadx(fd, fst[x].file.file_size,
-              fst[x].file.file_offset + base_offset));
+          save_file(filename, preadx(fd, fst[x].file.file_size, fst[x].file.file_offset + base_offset));
         } catch (const exception& e) {
           fprintf(stderr, "!!! failed to write file: %s\n", e.what());
         }
@@ -187,8 +180,6 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
     }
   }
 }
-
-
 
 enum Format {
   UNKNOWN = 0,

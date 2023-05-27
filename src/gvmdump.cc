@@ -1,11 +1,11 @@
 #include <errno.h>
 #include <inttypes.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
@@ -14,8 +14,6 @@
 #include <string>
 
 using namespace std;
-
-
 
 struct GVMFileEntry {
   be_uint16_t file_num;
@@ -33,35 +31,33 @@ struct GVMFileHeader {
   GVMFileEntry entries[0];
 } __attribute__((packed));
 
-
-
 // Note: most of these formats are named after those in puyotools but are
 // currently unimplemented here
 enum GVRColorTablePixelFormat {
   INTENSITY_A8 = 0x00,
-  RGB565       = 0x10,
-  RGB5A3       = 0x20,
-  MASK         = 0xF0,
+  RGB565 = 0x10,
+  RGB5A3 = 0x20,
+  MASK = 0xF0,
 };
 
 enum GVRDataFlag {
-  HAS_MIPMAPS              = 0x01,
+  HAS_MIPMAPS = 0x01,
   HAS_EXTERNAL_COLOR_TABLE = 0x02,
   HAS_INTERNAL_COLOR_TABLE = 0x08,
-  DATA_FLAG_MASK           = 0x0F,
+  DATA_FLAG_MASK = 0x0F,
 };
 
 enum class GVRDataFormat : uint8_t {
-  INTENSITY_4  = 0x00,
-  INTENSITY_8  = 0x01,
+  INTENSITY_4 = 0x00,
+  INTENSITY_8 = 0x01,
   INTENSITY_A4 = 0x02,
   INTENSITY_A8 = 0x03,
-  RGB565       = 0x04,
-  RGB5A3       = 0x05,
-  ARGB8888     = 0x06,
-  INDEXED_4    = 0x08,
-  INDEXED_8    = 0x09,
-  DXT1         = 0x0E,
+  RGB565 = 0x04,
+  RGB5A3 = 0x05,
+  ARGB8888 = 0x06,
+  INDEXED_4 = 0x08,
+  INDEXED_8 = 0x09,
+  DXT1 = 0x0E,
 };
 
 struct GVRHeader {
@@ -223,8 +219,6 @@ Image decode_gvr(const string& data) {
   return result;
 }
 
-
-
 int main(int argc, char* argv[]) {
   if (argc != 2) {
     fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
@@ -300,6 +294,6 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "file signature is incorrect\n");
     return 2;
   }
-  
+
   return 0;
 }

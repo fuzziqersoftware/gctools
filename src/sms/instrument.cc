@@ -15,8 +15,6 @@ using namespace std;
 
 #pragma pack(1)
 
-
-
 const vector<float>& Sound::samples() const {
   if (this->decoded_samples.empty()) {
     this->decoded_samples = afc_decode(this->afc_data.data(),
@@ -27,17 +25,22 @@ const vector<float>& Sound::samples() const {
   return this->decoded_samples;
 }
 
-
-
 VelocityRegion::VelocityRegion(uint8_t vel_low, uint8_t vel_high,
     uint16_t sample_bank_id, uint16_t sound_id, float freq_mult,
-    float volume_mult, int8_t base_note, bool constant_pitch) :
-    vel_low(vel_low), vel_high(vel_high), sample_bank_id(sample_bank_id),
-    sound_id(sound_id), freq_mult(freq_mult), volume_mult(volume_mult),
-    constant_pitch(constant_pitch), base_note(base_note), sound(NULL) { }
+    float volume_mult, int8_t base_note, bool constant_pitch)
+    : vel_low(vel_low),
+      vel_high(vel_high),
+      sample_bank_id(sample_bank_id),
+      sound_id(sound_id),
+      freq_mult(freq_mult),
+      volume_mult(volume_mult),
+      constant_pitch(constant_pitch),
+      base_note(base_note),
+      sound(NULL) {}
 
-KeyRegion::KeyRegion(uint8_t key_low, uint8_t key_high) : key_low(key_low),
-    key_high(key_high) { }
+KeyRegion::KeyRegion(uint8_t key_low, uint8_t key_high)
+    : key_low(key_low),
+      key_high(key_high) {}
 
 const VelocityRegion& KeyRegion::region_for_velocity(uint8_t velocity) const {
   for (const VelocityRegion& r : this->vel_regions) {
@@ -48,7 +51,7 @@ const VelocityRegion& KeyRegion::region_for_velocity(uint8_t velocity) const {
   throw out_of_range("no such velocity");
 }
 
-Instrument::Instrument(uint32_t id) : id(id) { }
+Instrument::Instrument(uint32_t id) : id(id) {}
 
 const KeyRegion& Instrument::region_for_key(uint8_t key) const {
   for (const KeyRegion& r : this->key_regions) {
@@ -59,9 +62,9 @@ const KeyRegion& Instrument::region_for_key(uint8_t key) const {
   throw out_of_range("no such key");
 }
 
-InstrumentBank::InstrumentBank(uint32_t id) : id(id), chunk_id(0) { }
-
-
+InstrumentBank::InstrumentBank(uint32_t id)
+    : id(id),
+      chunk_id(0) {}
 
 struct ibnk_inst_inst_vel_region {
   uint8_t vel_high;
@@ -412,8 +415,8 @@ InstrumentBank ibnk_decode(const void* vdata) {
       // file, so do that here too
       offset = (offset + sizeof(chunk_header) + chunk_header->size + 3) & (~3);
 
-    // there might be a few zeroes to pad out the IBNK block at the end (looks
-    // like they want to be aligned to 0x20-byte boundaries?)
+      // there might be a few zeroes to pad out the IBNK block at the end (looks
+      // like they want to be aligned to 0x20-byte boundaries?)
     } else if (chunk_header->magic == 0) {
       offset += 4;
 

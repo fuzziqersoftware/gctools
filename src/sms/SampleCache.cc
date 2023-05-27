@@ -4,7 +4,6 @@
 
 using namespace std;
 
-
 vector<float> resample(
     const vector<float>& input_samples,
     size_t num_channels,

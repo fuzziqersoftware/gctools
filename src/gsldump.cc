@@ -1,10 +1,10 @@
 #include <errno.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include <array>
 #include <phosg/Encoding.hh>
@@ -21,8 +21,8 @@ struct GSLEntry {
   be_int32_t unknown2[2];
 } __attribute__((packed));
 
-struct GSLEntryBE : GSLEntry<be_uint32_t> { };
-struct GSLEntryLE : GSLEntry<le_uint32_t> { };
+struct GSLEntryBE : GSLEntry<be_uint32_t> {};
+struct GSLEntryLE : GSLEntry<le_uint32_t> {};
 
 template <typename EntryT, size_t EntryCount>
 void extract_gsl_t(const char* filename) {

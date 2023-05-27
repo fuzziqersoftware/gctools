@@ -4,28 +4,27 @@
 
 #include <array>
 #include <deque>
-#include <phosg/Filesystem.hh>
-#include <phosg/Strings.hh>
+#include <map>
 #include <phosg-audio/Convert.hh>
 #include <phosg-audio/File.hh>
 #include <phosg-audio/Stream.hh>
+#include <phosg/Filesystem.hh>
+#include <phosg/Strings.hh>
+#include <phosg/Time.hh>
 #include <string>
-#include <map>
 
 #include "SampleCache.hh"
 
 using namespace std;
 
-
-
 enum Flags {
-  TERMINAL_COLOR         = 0x01,
-  SHOW_SAMPLE_DATA       = 0x02,
-  SHOW_SAMPLE_WAVEFORMS  = 0x04,
-  SHOW_UNUSED_PATTERNS   = 0x08,
-  SHOW_LOADING_DEBUG     = 0x10,
-  SHOW_DC_OFFSET_DEBUG   = 0x20,
-  DEFAULT_FLAGS          = 0x00,
+  TERMINAL_COLOR = 0x01,
+  SHOW_SAMPLE_DATA = 0x02,
+  SHOW_SAMPLE_WAVEFORMS = 0x04,
+  SHOW_UNUSED_PATTERNS = 0x08,
+  SHOW_LOADING_DEBUG = 0x10,
+  SHOW_DC_OFFSET_DEBUG = 0x20,
+  DEFAULT_FLAGS = 0x00,
 };
 
 uint64_t flags = Flags::DEFAULT_FLAGS;
@@ -77,8 +76,6 @@ struct Module {
   uint32_t extension_signature;
   vector<Pattern> patterns;
 };
-
-
 
 int8_t sign_extend_nybble(int8_t x) {
   if (x & 0x08) {
@@ -249,14 +246,67 @@ shared_ptr<Module> load_mod(const string& filename) {
   return parse_mod(load_file(filename));
 }
 
-
-
 static const map<uint16_t, const char*> note_name_for_period({
-  {1712, "C 0"}, {1616, "C#0"}, {1525, "D 0"}, {1440, "D#0"}, {1357, "E 0"}, {1281, "F 0"}, {1209, "F#0"}, {1141, "G 0"}, {1077, "G#0"}, {1017, "A 0"}, {961,  "A#0"}, {907,  "B 0"},
-  {856,  "C 1"}, {808,  "C#1"}, {762,  "D 1"}, {720,  "D#1"}, {678,  "E 1"}, {640,  "F 1"}, {604,  "F#1"}, {570,  "G 1"}, {538,  "G#1"}, {508,  "A 1"}, {480,  "A#1"}, {453,  "B 1"},
-  {428,  "C 2"}, {404,  "C#2"}, {381,  "D 2"}, {360,  "D#2"}, {339,  "E 2"}, {320,  "F 2"}, {302,  "F#2"}, {285,  "G 2"}, {269,  "G#2"}, {254,  "A 2"}, {240,  "A#2"}, {226,  "B 2"},
-  {214,  "C 3"}, {202,  "C#3"}, {190,  "D 3"}, {180,  "D#3"}, {170,  "E 3"}, {160,  "F 3"}, {151,  "F#3"}, {143,  "G 3"}, {135,  "G#3"}, {127,  "A 3"}, {120,  "A#3"}, {113,  "B 3"},
-  {107,  "C 4"}, {101,  "C#4"}, {95,   "D 4"}, {90,   "D#4"}, {85,   "E 4"}, {80,   "F 4"}, {76,   "F#4"}, {71,   "G 4"}, {67,   "G#4"}, {64,   "A 4"}, {60,   "A#4"}, {57,   "B 4"},
+    {1712, "C 0"},
+    {1616, "C#0"},
+    {1525, "D 0"},
+    {1440, "D#0"},
+    {1357, "E 0"},
+    {1281, "F 0"},
+    {1209, "F#0"},
+    {1141, "G 0"},
+    {1077, "G#0"},
+    {1017, "A 0"},
+    {961, "A#0"},
+    {907, "B 0"},
+    {856, "C 1"},
+    {808, "C#1"},
+    {762, "D 1"},
+    {720, "D#1"},
+    {678, "E 1"},
+    {640, "F 1"},
+    {604, "F#1"},
+    {570, "G 1"},
+    {538, "G#1"},
+    {508, "A 1"},
+    {480, "A#1"},
+    {453, "B 1"},
+    {428, "C 2"},
+    {404, "C#2"},
+    {381, "D 2"},
+    {360, "D#2"},
+    {339, "E 2"},
+    {320, "F 2"},
+    {302, "F#2"},
+    {285, "G 2"},
+    {269, "G#2"},
+    {254, "A 2"},
+    {240, "A#2"},
+    {226, "B 2"},
+    {214, "C 3"},
+    {202, "C#3"},
+    {190, "D 3"},
+    {180, "D#3"},
+    {170, "E 3"},
+    {160, "F 3"},
+    {151, "F#3"},
+    {143, "G 3"},
+    {135, "G#3"},
+    {127, "A 3"},
+    {120, "A#3"},
+    {113, "B 3"},
+    {107, "C 4"},
+    {101, "C#4"},
+    {95, "D 4"},
+    {90, "D#4"},
+    {85, "E 4"},
+    {80, "F 4"},
+    {76, "F#4"},
+    {71, "G 4"},
+    {67, "G#4"},
+    {64, "A 4"},
+    {60, "A#4"},
+    {57, "B 4"},
 });
 
 void disassemble_pattern_row(
@@ -266,11 +316,11 @@ void disassemble_pattern_row(
     uint8_t y) {
 
   static const TerminalFormat track_colors[5] = {
-    TerminalFormat::FG_RED,
-    TerminalFormat::FG_CYAN,
-    TerminalFormat::FG_YELLOW,
-    TerminalFormat::FG_GREEN,
-    TerminalFormat::FG_MAGENTA,
+      TerminalFormat::FG_RED,
+      TerminalFormat::FG_CYAN,
+      TerminalFormat::FG_YELLOW,
+      TerminalFormat::FG_GREEN,
+      TerminalFormat::FG_MAGENTA,
   };
   bool use_color = flags & Flags::TERMINAL_COLOR;
 
@@ -407,8 +457,6 @@ void disassemble_mod(FILE* stream, shared_ptr<const Module> mod) {
   }
 }
 
-
-
 void export_mod_instruments(
     shared_ptr<const Module> mod, const char* output_prefix) {
   // Andrew's observational spec notes that about 8287 bytes of data are sent to
@@ -446,8 +494,6 @@ void export_mod_instruments(
   }
 }
 
-
-
 class MODSynthesizer {
 public:
   struct Options {
@@ -470,25 +516,24 @@ public:
     size_t vibrato_resolution;
 
     Options()
-      : amiga_hardware_frequency(7159090.5),
-        synth_sample_rate(48000),
-        output_sample_rate(48000),
-        resample_method(SRC_ZERO_ORDER_HOLD),
-        default_panning_split(0x20),
-        default_enable_surround(false),
-        global_volume(1.0),
-        max_output_seconds(0.0),
-        skip_partitions(0),
-        allow_backward_position_jump(false),
-        correct_ticks_on_all_volume_changes(false),
-        nonlinear_volume_scaling(false),
-        mute_tracks(),
-        solo_tracks(),
-        tempo_bias(1.0),
-        arpeggio_frequency(0),
-        vibrato_resolution(1) { }
+        : amiga_hardware_frequency(7159090.5),
+          synth_sample_rate(48000),
+          output_sample_rate(48000),
+          resample_method(SRC_ZERO_ORDER_HOLD),
+          default_panning_split(0x20),
+          default_enable_surround(false),
+          global_volume(1.0),
+          max_output_seconds(0.0),
+          skip_partitions(0),
+          allow_backward_position_jump(false),
+          correct_ticks_on_all_volume_changes(false),
+          nonlinear_volume_scaling(false),
+          mute_tracks(),
+          solo_tracks(),
+          tempo_bias(1.0),
+          arpeggio_frequency(0),
+          vibrato_resolution(1) {}
   };
-
 
 protected:
   struct Timing {
@@ -512,15 +557,13 @@ protected:
         size_t sample_rate,
         size_t beats_per_minute = 125,
         size_t ticks_per_division = 6)
-      : sample_rate(sample_rate),
-        beats_per_minute(beats_per_minute),
-        ticks_per_division(ticks_per_division),
-        divisions_per_minute(static_cast<double>(24 * this->beats_per_minute)
-          / this->ticks_per_division),
-        ticks_per_second(
-          static_cast<double>(this->divisions_per_minute * this->ticks_per_division) / 60),
-        samples_per_tick(static_cast<double>(this->sample_rate * 60)
-          / (this->divisions_per_minute * this->ticks_per_division)) { }
+        : sample_rate(sample_rate),
+          beats_per_minute(beats_per_minute),
+          ticks_per_division(ticks_per_division),
+          divisions_per_minute(static_cast<double>(24 * this->beats_per_minute) / this->ticks_per_division),
+          ticks_per_second(
+              static_cast<double>(this->divisions_per_minute * this->ticks_per_division) / 60),
+          samples_per_tick(static_cast<double>(this->sample_rate * 60) / (this->divisions_per_minute * this->ticks_per_division)) {}
     string str() const {
       return string_printf("%zukHz %zubpm %zut/d => %lgd/m %lgt/sec %lgsmp/t",
           this->sample_rate,
@@ -576,29 +619,29 @@ protected:
     bool next_sample_may_be_discontinuous;
 
     TrackState()
-      : index(0),
-        instrument_num(0),
-        period(0),
-        volume(64),
-        panning(64),
-        enable_surround_effect(false),
-        finetune_override(-0x80),
-        input_sample_offset(0.0),
-        vibrato_waveform(0),
-        tremolo_waveform(0),
-        vibrato_offset(0.0),
-        tremolo_offset(0.0),
-        enable_discrete_glissando(false),
-        last_slide_target_period(0),
-        last_per_tick_period_increment(0),
-        last_vibrato_amplitude(0),
-        last_tremolo_amplitude(0),
-        last_vibrato_cycles(0),
-        last_tremolo_cycles(0),
-        last_sample(0),
-        last_effective_volume(0),
-        dc_offset(0),
-        next_sample_may_be_discontinuous(false) {
+        : index(0),
+          instrument_num(0),
+          period(0),
+          volume(64),
+          panning(64),
+          enable_surround_effect(false),
+          finetune_override(-0x80),
+          input_sample_offset(0.0),
+          vibrato_waveform(0),
+          tremolo_waveform(0),
+          vibrato_offset(0.0),
+          tremolo_offset(0.0),
+          enable_discrete_glissando(false),
+          last_slide_target_period(0),
+          last_per_tick_period_increment(0),
+          last_vibrato_amplitude(0),
+          last_tremolo_amplitude(0),
+          last_vibrato_cycles(0),
+          last_tremolo_cycles(0),
+          last_sample(0),
+          last_effective_volume(0),
+          dc_offset(0),
+          next_sample_may_be_discontinuous(false) {
       this->reset_division_scoped_effects();
     }
 
@@ -676,17 +719,17 @@ protected:
     ssize_t divisions_to_delay;
 
     SongPosition(size_t partition_count, size_t partition_index)
-      : partition_count(partition_count),
-        partition_index(partition_index),
-        division_index(0),
-        pattern_loop_start_index(0),
-        pattern_loop_times_remaining(-1),
-        jump_to_pattern_loop_start(false),
-        total_output_samples(0),
-        pattern_break_target(-1),
-        partition_break_target(-1),
-        partitions_executed(0x80, false),
-        divisions_to_delay(0) { }
+        : partition_count(partition_count),
+          partition_index(partition_index),
+          division_index(0),
+          pattern_loop_start_index(0),
+          pattern_loop_times_remaining(-1),
+          jump_to_pattern_loop_start(false),
+          total_output_samples(0),
+          pattern_break_target(-1),
+          partition_break_target(-1),
+          partitions_executed(0x80, false),
+          divisions_to_delay(0) {}
 
     void advance_division() {
       if (this->pattern_break_target >= 0 && this->partition_break_target >= 0) {
@@ -733,14 +776,14 @@ protected:
 
 public:
   MODSynthesizer(shared_ptr<const Module> mod, shared_ptr<const Options> opts)
-    : mod(mod),
-      opts(opts),
-      max_output_samples(0),
-      timing(this->opts->synth_sample_rate),
-      pos(this->mod->partition_count, this->opts->skip_partitions),
-      tracks(this->mod->num_tracks),
-      sample_cache(this->opts->resample_method),
-      dc_offset_decay(0.001) {
+      : mod(mod),
+        opts(opts),
+        max_output_samples(0),
+        timing(this->opts->synth_sample_rate),
+        pos(this->mod->partition_count, this->opts->skip_partitions),
+        tracks(this->mod->num_tracks),
+        sample_cache(this->opts->resample_method),
+        dc_offset_decay(0.001) {
     // Initialize track state which depends on track index
     for (size_t x = 0; x < this->tracks.size(); x++) {
       this->tracks[x].index = x;
@@ -819,7 +862,7 @@ protected:
         // at least another tick.
         if (((effect & 0xF00) != 0x300) && ((effect & 0xF00) != 0x500) &&
             (div_period || // Cases (1) and (2)
-             (div_ins_num && (div_ins_num != track.instrument_num)))) { // Case (4)
+                (div_ins_num && (div_ins_num != track.instrument_num)))) { // Case (4)
           uint16_t note_period = div_period ? div_period : track.period;
           uint8_t note_ins_num = div_ins_num ? div_ins_num : track.instrument_num;
           // We already reset the track's volume above if ins_num is given. If
@@ -1061,15 +1104,15 @@ protected:
               this->pos.divisions_to_delay = effect & 0x00F;
               break;
 
-            // TODO: Implement this effect. See MODs:
-            //   deepest space
-            //   Gummisnoppis
-            // [14][15]: Invert loop
-            // Where [14][15][x] means "if x is greater than 0, then play the
-            // current sample's loop upside down at speed x". Each byte in the
-            // sample's loop will have its sign changed (negated). It will only
-            // work if the sample's loop (defined previously) is not too big. The
-            // speed is based on an internal table.
+              // TODO: Implement this effect. See MODs:
+              //   deepest space
+              //   Gummisnoppis
+              // [14][15]: Invert loop
+              // Where [14][15][x] means "if x is greater than 0, then play the
+              // current sample's loop upside down at speed x". Each byte in the
+              // sample's loop will have its sign changed (negated). It will only
+              // work if the sample's loop (defined previously) is not too big. The
+              // speed is based on an internal table.
 
             default:
               goto UnimplementedEffect;
@@ -1155,7 +1198,7 @@ protected:
         // If track is muted or another track is solo'd, don't play its sound
         if (this->opts->mute_tracks.count(track.index) ||
             (!this->opts->solo_tracks.empty() &&
-             !this->opts->solo_tracks.count(track.index))) {
+                !this->opts->solo_tracks.count(track.index))) {
           track.last_sample = 0;
           continue;
         }
@@ -1191,7 +1234,7 @@ protected:
 
         float effective_period = track.enable_discrete_glissando
             ? this->nearest_note_for_period(track.period,
-                track.per_tick_period_increment < 0)
+                  track.per_tick_period_increment < 0)
             : track.period;
         int8_t finetune = (track.finetune_override == -0x80) ? i.finetune : track.finetune_override;
         if (finetune) {
@@ -1222,9 +1265,9 @@ protected:
 
         } else if (track.arpeggio_arg) {
           float periods[3] = {
-            effective_period,
-            effective_period / powf(2, ((track.arpeggio_arg >> 4) & 0x0F) / 12.0),
-            effective_period / powf(2, (track.arpeggio_arg & 0x0F) / 12.0),
+              effective_period,
+              effective_period / powf(2, ((track.arpeggio_arg >> 4) & 0x0F) / 12.0),
+              effective_period / powf(2, (track.arpeggio_arg & 0x0F) / 12.0),
           };
 
           // The spec describes arpeggio effects as being "evenly spaced" within
@@ -1267,7 +1310,8 @@ protected:
         int8_t effective_volume = track.volume;
         if (track.tremolo_amplitude && track.tremolo_cycles) {
           effective_volume += this->get_vibrato_tremolo_wave_amplitude(
-              track.tremolo_offset + static_cast<float>(track.tremolo_cycles) / 64, track.tremolo_waveform) * track.tremolo_amplitude;
+                                  track.tremolo_offset + static_cast<float>(track.tremolo_cycles) / 64, track.tremolo_waveform) *
+              track.tremolo_amplitude;
           if (effective_volume < 0) {
             effective_volume = 0;
           } else if (effective_volume > 64) {
@@ -1358,7 +1402,7 @@ protected:
           // subsequent sample and fairly quickly reaches zero. This eliminates
           // the tick and doesn't leave any other audible effects.
           float sample_from_ins = resampled_data->at(static_cast<size_t>(resampled_offset)) *
-                overall_volume_factor;
+              overall_volume_factor;
           if (track.next_sample_may_be_discontinuous) {
             if (flags & Flags::SHOW_DC_OFFSET_DEBUG) {
               fprintf(stderr, "track %zu dc_offset correction from %g to ", track.index, track.dc_offset);
@@ -1423,9 +1467,9 @@ protected:
             // given by the effect command
             if (track.slide_target_period &&
                 (((track.per_tick_period_increment > 0) &&
-                  (track.period > track.slide_target_period)) ||
-                 ((track.per_tick_period_increment < 0) &&
-                  (track.period < track.slide_target_period)))) {
+                     (track.period > track.slide_target_period)) ||
+                    ((track.per_tick_period_increment < 0) &&
+                        (track.period < track.slide_target_period)))) {
               track.period = track.slide_target_period;
               track.per_tick_period_increment = 0;
               track.slide_target_period = 0;
@@ -1453,7 +1497,7 @@ protected:
         }
       }
       this->pos.total_output_samples += tick_samples.size();
-      on_tick_samples_ready(move(tick_samples));
+      on_tick_samples_ready(std::move(tick_samples));
 
       if (this->exceeded_time_limit()) {
         break;
@@ -1495,22 +1539,20 @@ public:
   }
 };
 
-
-
 class MODWriter : public MODSynthesizer {
 protected:
   FILE* f;
 
 public:
   MODWriter(shared_ptr<const Module> mod, shared_ptr<const Options> opts, FILE* f)
-    : MODSynthesizer(mod, opts), f(f) { }
+      : MODSynthesizer(mod, opts),
+        f(f) {}
 
   virtual void on_tick_samples_ready(vector<float>&& samples) {
     fwrite(samples.data(), sizeof(samples[0]), samples.size(), this->f);
     fflush(this->f);
   }
 };
-
 
 class MODExporter : public MODSynthesizer {
 protected:
@@ -1519,10 +1561,10 @@ protected:
 
 public:
   MODExporter(shared_ptr<const Module> mod, shared_ptr<const Options> opts)
-    : MODSynthesizer(mod, opts) { }
+      : MODSynthesizer(mod, opts) {}
 
   virtual void on_tick_samples_ready(vector<float>&& samples) {
-    this->tick_samples.emplace_back(move(samples));
+    this->tick_samples.emplace_back(std::move(samples));
   }
 
   const vector<float>& result() {
@@ -1536,7 +1578,6 @@ public:
     return this->all_tick_samples;
   }
 };
-
 
 class MODPlayer : public MODSynthesizer {
 protected:
@@ -1561,11 +1602,11 @@ public:
       shared_ptr<const Options> opts,
       uint8_t sample_bits,
       size_t num_play_buffers)
-    : MODSynthesizer(mod, opts),
-      sample_bits(sample_bits),
-      stream(this->opts->output_sample_rate,
-        this->get_al_format(this->sample_bits),
-        num_play_buffers) { }
+      : MODSynthesizer(mod, opts),
+        sample_bits(sample_bits),
+        stream(this->opts->output_sample_rate,
+            this->get_al_format(this->sample_bits),
+            num_play_buffers) {}
 
   virtual void on_tick_samples_ready(vector<float>&& samples) {
     this->stream.check_buffers();
@@ -1586,8 +1627,6 @@ public:
     this->stream.wait();
   }
 };
-
-
 
 void normalize_amplitude(vector<float>& data) {
   float max_amplitude = 0.0f;
@@ -1621,8 +1660,6 @@ void trim_ending_silence(vector<float>& data) {
     data.resize(end_offset);
   }
 }
-
-
 
 void print_usage() {
   fprintf(stderr, "\

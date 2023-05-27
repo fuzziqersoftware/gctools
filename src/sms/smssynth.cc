@@ -7,60 +7,55 @@
 
 #include <algorithm>
 #include <map>
-#include <phosg/Encoding.hh>
-#include <phosg/Filesystem.hh>
-#include <phosg/Strings.hh>
 #include <phosg-audio/Convert.hh>
 #include <phosg-audio/File.hh>
 #include <phosg-audio/Stream.hh>
+#include <phosg/Encoding.hh>
+#include <phosg/Filesystem.hh>
+#include <phosg/Strings.hh>
+#include <phosg/Time.hh>
 #include <string>
 #include <unordered_map>
 
-#include "aaf.hh"
 #include "SampleCache.hh"
+#include "aaf.hh"
 
 #ifdef WINDOWS
-
 #define PRId32 "d"
 #define PRIu32 "u"
 #define PRIX32 "X"
 #define PRIu64 "llu"
 #define PRIX64 "llX"
-
 #endif
 
 using namespace std;
 
-
-
 enum DebugFlag {
-  SHOW_RESAMPLE_EVENTS          = 0x0000000000000001,
-  SHOW_NOTES_ON                 = 0x0000000000000002,
-  SHOW_KEY_PRESSES              = 0x0000000000000004,
-  SHOW_UNKNOWN_PERF_OPTIONS     = 0x0000000000000008,
-  SHOW_UNKNOWN_PARAM_OPTIONS    = 0x0000000000000010,
+  SHOW_RESAMPLE_EVENTS = 0x0000000000000001,
+  SHOW_NOTES_ON = 0x0000000000000002,
+  SHOW_KEY_PRESSES = 0x0000000000000004,
+  SHOW_UNKNOWN_PERF_OPTIONS = 0x0000000000000008,
+  SHOW_UNKNOWN_PARAM_OPTIONS = 0x0000000000000010,
   SHOW_UNIMPLEMENTED_CONDITIONS = 0x0000000000000020,
-  SHOW_LONG_STATUS              = 0x0000000000000040,
-  SHOW_MISSING_NOTES            = 0x0000000000000080,
-  SHOW_UNIMPLEMENTED_OPCODES    = 0x0000000000000100,
+  SHOW_LONG_STATUS = 0x0000000000000040,
+  SHOW_MISSING_NOTES = 0x0000000000000080,
+  SHOW_UNIMPLEMENTED_OPCODES = 0x0000000000000100,
 
-  PLAY_MISSING_NOTES            = 0x0000000000010000,
+  PLAY_MISSING_NOTES = 0x0000000000010000,
 
-  COLOR_FIELD                   = 0x0000000000020000,
-  COLOR_STATUS                  = 0x0000000000040000,
-  ALL_COLOR_OPTIONS             = 0x0000000000060000,
+  COLOR_FIELD = 0x0000000000020000,
+  COLOR_STATUS = 0x0000000000040000,
+  ALL_COLOR_OPTIONS = 0x0000000000060000,
 
 #ifndef WINDOWS
-  DEFAULT_FLAGS                 = 0x00000000000600C2,
+  DEFAULT_FLAGS = 0x00000000000600C2,
 #else
   // no color by default on windows (cmd.exe doesn't handle the escapes)
-  DEFAULT_FLAGS                 = 0x00000000000000C2,
+  DEFAULT_FLAGS = 0x00000000000000C2,
 #endif
 };
 
 uint64_t debug_flags = DebugFlag::DEFAULT_FLAGS;
-
-
 
 bool is_binary(const char* s, size_t size) {
   for (size_t x = 0; x < size; x++) {
@@ -78,8 +73,6 @@ bool is_binary(const string& s) {
 uint8_t lower_c_note_for_note(uint8_t note) {
   return note - (note % 12);
 }
-
-
 
 struct MIDIChunkHeader {
   be_uint32_t magic;
@@ -106,8 +99,6 @@ struct MIDITrackChunk {
   uint8_t data[0];
 } __attribute__((packed));
 
-
-
 uint64_t read_variable_int(StringReader& r) {
   uint8_t b = r.get_u8();
   if (!(b & 0x80)) {
@@ -121,8 +112,6 @@ uint64_t read_variable_int(StringReader& r) {
   }
   return (v << 7) | b;
 }
-
-
 
 void disassemble_set_perf(
     size_t opcode_offset,
@@ -166,17 +155,17 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
   unordered_map<size_t, string> track_start_labels;
 
   static const unordered_map<uint8_t, const char*> register_opcode_names({
-    {0x00, "mov      "},
-    {0x01, "add      "},
-    {0x02, "sub      "},
-    {0x03, "cmp      "},
-    {0x04, "mul      "},
-    {0x05, "and      "},
-    {0x06, "or       "},
-    {0x07, "xor      "},
-    {0x08, "rnd      "},
-    {0x09, "shl      "},
-    {0x0A, "shr      "},
+      {0x00, "mov      "},
+      {0x01, "add      "},
+      {0x02, "sub      "},
+      {0x03, "cmp      "},
+      {0x04, "mul      "},
+      {0x05, "and      "},
+      {0x06, "or       "},
+      {0x07, "xor      "},
+      {0x08, "rnd      "},
+      {0x09, "shl      "},
+      {0x0A, "shr      "},
   });
 
   if (default_bank >= 0) {
@@ -203,343 +192,342 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
       string note_name = name_for_note(opcode);
       disassembly = string_printf("note            note=%s, voice=%hhu, vel=0x%02hhX",
           note_name.c_str(), voice, vel);
-    } else switch (opcode) {
-      case 0x80: {
-        uint8_t wait_time = r.get_u8();
-        disassembly = string_printf("wait            %hhu", wait_time);
-        break;
-      }
-      case 0x88: {
-        uint16_t wait_time = r.get_u16b();
-        disassembly = string_printf("wait            %hu", wait_time);
-        break;
-      }
-
-      case 0x81:
-      case 0x82:
-      case 0x83:
-      case 0x84:
-      case 0x85:
-      case 0x86:
-      case 0x87: {
-        uint8_t voice = opcode & 7;
-        disassembly = string_printf("voice_off       %hhu", voice);
-        break;
-      }
-
-      case 0x94:
-      case 0x96:
-      case 0x97:
-      case 0x98:
-      case 0x9A:
-      case 0x9B:
-      case 0x9C:
-      case 0x9E:
-      case 0x9F:
-      case 0xB8:
-      case 0xB9: {
-        bool is_extended = (opcode & 0x20);
-        uint8_t type = r.get_u8();
-        // B8/B9 always have zero duration (they set the value immediately)
-        uint8_t duration_flags = is_extended ? 0 : (opcode & 0x03);
-        // B8 = s8, B9 = s16... turn these into the same data_type constants as
-        // used by the 9x class of opcodes
-        uint8_t data_type = is_extended ? (8 + 4 * (opcode & 1)) : (opcode & 0x0C);
-        int16_t value = 0;
-        uint16_t duration = 0;
-        if (data_type == 4) {
-          value = r.get_u8();
-        } else if (data_type == 8) {
-          value = r.get_s8();
-        } else if (data_type == 12) {
-          value = r.get_s16b();
+    } else
+      switch (opcode) {
+        case 0x80: {
+          uint8_t wait_time = r.get_u8();
+          disassembly = string_printf("wait            %hhu", wait_time);
+          break;
         }
-        if (duration_flags == 2) {
-          duration = r.get_u8();
-        } else if (duration == 3) {
-          duration = r.get_u16b();
+        case 0x88: {
+          uint16_t wait_time = r.get_u16b();
+          disassembly = string_printf("wait            %hu", wait_time);
+          break;
         }
 
-        static const unordered_map<uint8_t, string> param_names({
-          {0x00, "volume"},
-          {0x01, "pitch_bend"},
-          {0x02, "reverb"},
-          {0x03, "panning"},
-        });
-        string param_name;
-        try {
-          param_name = param_names.at(type);
-        } catch (const out_of_range&) {
-          param_name=string_printf("[%02hhX]", type);
+        case 0x81:
+        case 0x82:
+        case 0x83:
+        case 0x84:
+        case 0x85:
+        case 0x86:
+        case 0x87: {
+          uint8_t voice = opcode & 7;
+          disassembly = string_printf("voice_off       %hhu", voice);
+          break;
         }
 
-        disassembly = string_printf("set_perf%s    %s=",
-            is_extended ? "_ext" : "    ", param_name.c_str());
-        if (data_type == 4) {
-          disassembly += string_printf("0x%02hhX (u8)", static_cast<uint8_t>(value));
-        } else if (data_type == 8) {
-          disassembly += string_printf("0x%02hhX (s8)", static_cast<int8_t>(value));
-        } else if (data_type == 12) {
-          disassembly += string_printf("0x%04hX (s16)", static_cast<int16_t>(value));
+        case 0x94:
+        case 0x96:
+        case 0x97:
+        case 0x98:
+        case 0x9A:
+        case 0x9B:
+        case 0x9C:
+        case 0x9E:
+        case 0x9F:
+        case 0xB8:
+        case 0xB9: {
+          bool is_extended = (opcode & 0x20);
+          uint8_t type = r.get_u8();
+          // B8/B9 always have zero duration (they set the value immediately)
+          uint8_t duration_flags = is_extended ? 0 : (opcode & 0x03);
+          // B8 = s8, B9 = s16... turn these into the same data_type constants as
+          // used by the 9x class of opcodes
+          uint8_t data_type = is_extended ? (8 + 4 * (opcode & 1)) : (opcode & 0x0C);
+          int16_t value = 0;
+          uint16_t duration = 0;
+          if (data_type == 4) {
+            value = r.get_u8();
+          } else if (data_type == 8) {
+            value = r.get_s8();
+          } else if (data_type == 12) {
+            value = r.get_s16b();
+          }
+          if (duration_flags == 2) {
+            duration = r.get_u8();
+          } else if (duration == 3) {
+            duration = r.get_u16b();
+          }
+
+          static const unordered_map<uint8_t, string> param_names({
+              {0x00, "volume"},
+              {0x01, "pitch_bend"},
+              {0x02, "reverb"},
+              {0x03, "panning"},
+          });
+          string param_name;
+          try {
+            param_name = param_names.at(type);
+          } catch (const out_of_range&) {
+            param_name = string_printf("[%02hhX]", type);
+          }
+
+          disassembly = string_printf("set_perf%s    %s=",
+              is_extended ? "_ext" : "    ", param_name.c_str());
+          if (data_type == 4) {
+            disassembly += string_printf("0x%02hhX (u8)", static_cast<uint8_t>(value));
+          } else if (data_type == 8) {
+            disassembly += string_printf("0x%02hhX (s8)", static_cast<int8_t>(value));
+          } else if (data_type == 12) {
+            disassembly += string_printf("0x%04hX (s16)", static_cast<int16_t>(value));
+          }
+          if (duration_flags == 2) {
+            disassembly += string_printf(", duration=0x%02hhX", static_cast<uint8_t>(duration));
+          } else if (duration == 3) {
+            disassembly += string_printf(", duration=0x%04hX", static_cast<uint16_t>(duration));
+          }
+
+          break;
         }
-        if (duration_flags == 2) {
-          disassembly += string_printf(", duration=0x%02hhX", static_cast<uint8_t>(duration));
-        } else if (duration == 3) {
-          disassembly += string_printf(", duration=0x%04hX", static_cast<uint16_t>(duration));
+
+        case 0xA4:
+        case 0xAC: {
+          uint8_t param = r.get_u8();
+          uint16_t value = (opcode & 0x08) ? r.get_u16b() : r.get_u8();
+
+          // guess: 07 as pitch bend semitones seems to make sense - some seqs set
+          // it to 0x0C (one octave) immediately before/after a pitch bend opcode
+          static const unordered_map<uint8_t, string> param_names({
+              {0x07, "pitch_bend_semitones"},
+              {0x20, "bank"},
+              {0x21, "insprog"},
+          });
+          string param_name;
+          try {
+            param_name = param_names.at(param);
+          } catch (const out_of_range&) {
+            param_name = string_printf("[%02hhX]", param);
+          }
+
+          string value_str = (opcode & 0x08) ? string_printf("0x%04hX", value) : string_printf("0x%02hhX", static_cast<uint8_t>(value));
+          disassembly = string_printf("set_param       %s, %s",
+              param_name.c_str(), value_str.c_str());
+          break;
         }
 
-        break;
-      }
-
-      case 0xA4:
-      case 0xAC: {
-        uint8_t param = r.get_u8();
-        uint16_t value = (opcode & 0x08) ? r.get_u16b() : r.get_u8();
-
-        // guess: 07 as pitch bend semitones seems to make sense - some seqs set
-        // it to 0x0C (one octave) immediately before/after a pitch bend opcode
-        static const unordered_map<uint8_t, string> param_names({
-          {0x07, "pitch_bend_semitones"},
-          {0x20, "bank"},
-          {0x21, "insprog"},
-        });
-        string param_name;
-        try {
-          param_name = param_names.at(param);
-        } catch (const out_of_range&) {
-          param_name=string_printf("[%02hhX]", param);
+        case 0xC1: {
+          uint8_t track_id = r.get_u8();
+          uint32_t offset = r.get_u24b();
+          disassembly = string_printf("start_track     %hhu, offset=0x%" PRIX32,
+              track_id, offset);
+          track_start_labels.emplace(offset, string_printf("track_%02hhX_start", track_id));
+          break;
         }
 
-        string value_str = (opcode & 0x08) ? string_printf("0x%04hX", value) :
-            string_printf("0x%02hhX", static_cast<uint8_t>(value));
-        disassembly = string_printf("set_param       %s, %s",
-            param_name.c_str(), value_str.c_str());
-        break;
-      }
+        case 0xC3:
+        case 0xC4:
+        case 0xC7:
+        case 0xC8: {
+          const char* opcode_name = (opcode > 0xC4) ? "jmp " : "call";
+          string conditional_str = (opcode & 1) ? "" : string_printf("cond=0x%02hhX, ", r.get_u8());
 
-      case 0xC1: {
-        uint8_t track_id = r.get_u8();
-        uint32_t offset = r.get_u24b();
-        disassembly = string_printf("start_track     %hhu, offset=0x%" PRIX32,
-            track_id, offset);
-        track_start_labels.emplace(offset, string_printf("track_%02hhX_start",
-            track_id));
-        break;
-      }
-
-      case 0xC3:
-      case 0xC4:
-      case 0xC7:
-      case 0xC8: {
-        const char* opcode_name = (opcode > 0xC4) ? "jmp " : "call";
-        string conditional_str = (opcode & 1) ? "" :
-            string_printf("cond=0x%02hhX, ", r.get_u8());
-
-        uint32_t offset = r.get_u24b();
-        disassembly = string_printf("%s            %soffset=0x%" PRIX32,
-            opcode_name, conditional_str.c_str(), offset);
-        break;
-      }
-
-      case 0xC5:
-        disassembly = "ret";
-        break;
-
-      case 0xC6: {
-        string conditional_str = string_printf("cond=0x%02hhX", r.get_u8());
-        disassembly = string_printf("ret             %s", conditional_str.c_str());
-        break;
-      }
-
-      case 0xE7: {
-        uint16_t arg = r.get_u16b();
-        disassembly = string_printf("sync_gpu        0x%04hX", arg);
-        break;
-      }
-
-      case 0xFD: {
-        uint16_t pulse_rate = r.get_u16b();
-        disassembly = string_printf("set_pulse_rate  %hu", pulse_rate);
-        break;
-      }
-
-      case 0xE0:
-      case 0xFE: {
-        uint16_t tempo = r.get_u16b();
-        uint64_t usec_pqn = 60000000 / tempo;
-        disassembly = string_printf("set_tempo       %hu /* usecs per quarter note = %"
-            PRIu64 " */", tempo, usec_pqn);
-        break;
-      }
-
-      case 0xFF: {
-        disassembly = "end_track";
-        break;
-      }
-
-      // everything below here are register opcodes
-
-      case 0xD0:
-      case 0xD1:
-      case 0xD4:
-      case 0xD5:
-      case 0xD6:
-      case 0xD7: {
-        static const unordered_map<uint8_t, const char*> opcode_names({
-          {0xD0, "read_port    "},
-          {0xD1, "write_port   "},
-          {0xD4, "write_port_pr"},
-          {0xD5, "write_port_ch"},
-          {0xD6, "read_port_pr "},
-          {0xD7, "read_port_ch "},
-        });
-        uint8_t port = r.get_u8();
-        uint8_t reg = r.get_u8();
-        uint8_t value = r.get_u8();
-        disassembly = string_printf("%s   r%hhu, %hhu, %hhu", opcode_names.at(opcode),
-            reg, port, value);
-        break;
-      }
-
-      case 0xD2:
-        disassembly = string_printf(".check_port_in  0x%hX", r.get_u16b());
-        break;
-
-      case 0xD3:
-        disassembly = string_printf(".check_port_ex  0x%hX", r.get_u16b());
-        break;
-
-      case 0xD8: {
-        uint8_t reg = r.get_u8();
-        int16_t val = r.get_s16b();
-        if (reg == 0x62) {
-          disassembly = string_printf("mov             r98, %hd /* set_pulse_rate */", val);
-        } else {
-          disassembly = string_printf("mov             r%hhu, 0x%hX", reg, val);
+          uint32_t offset = r.get_u24b();
+          disassembly = string_printf("%s            %soffset=0x%" PRIX32,
+              opcode_name, conditional_str.c_str(), offset);
+          break;
         }
-        break;
-      }
 
-      case 0xD9: {
-        uint8_t op = r.get_u8();
-        uint8_t dst_reg = r.get_u8();
-        uint8_t src_reg = r.get_u8();
+        case 0xC5:
+          disassembly = "ret";
+          break;
 
-        const char* opcode_name = ".unknown";
-        try {
-          opcode_name = register_opcode_names.at(op);
-        } catch (const out_of_range&) { }
-
-        disassembly = string_printf("%s             r%hhu, r%hhu", opcode_name,
-            dst_reg, src_reg);
-        break;
-      }
-
-      case 0xDA: {
-        uint8_t op = r.get_u8();
-        uint8_t dst_reg = r.get_u8();
-        int16_t val = r.get_s16b();
-
-        const char* opcode_name = ".unknown";
-        try {
-          opcode_name = register_opcode_names.at(op);
-        } catch (const out_of_range&) { }
-
-        disassembly = string_printf("%s            r%hhu, 0x%hX", opcode_name,
-            dst_reg, val);
-        break;
-      }
-
-      case 0xE2:
-        disassembly = string_printf("set_bank        0x%hX", r.get_u8());
-        break;
-      case 0xE3:
-        disassembly = string_printf("set_instrument  0x%hX", r.get_u8());
-        break;
-
-      case 0xFB: {
-        string s;
-        char b;
-        while ((b = r.get_u8())) {
-          s.push_back(b);
+        case 0xC6: {
+          string conditional_str = string_printf("cond=0x%02hhX", r.get_u8());
+          disassembly = string_printf("ret             %s", conditional_str.c_str());
+          break;
         }
-        disassembly = string_printf("debug_str       \"%s\"", s.c_str());
-        break;
-      }
 
-      // everything below here are unknown opcodes
+        case 0xE7: {
+          uint16_t arg = r.get_u16b();
+          disassembly = string_printf("sync_gpu        0x%04hX", arg);
+          break;
+        }
 
-      case 0xC2:
-      case 0xCD:
-      case 0xCF:
-      case 0xDB:
-      case 0xF1:
-      case 0xF4: {
-        uint8_t param = r.get_u8();
-        disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX",
-            opcode, param);
-        break;
-      }
+        case 0xFD: {
+          uint16_t pulse_rate = r.get_u16b();
+          disassembly = string_printf("set_pulse_rate  %hu", pulse_rate);
+          break;
+        }
 
-      case 0xA0:
-      case 0xA3:
-      case 0xA5:
-      case 0xA7:
-      case 0xCB:
-      case 0xCC:
-      case 0xE6:
-      case 0xF9: {
-        uint16_t param = r.get_u16b();
-        disassembly = string_printf(".unknown        0x%02hhX, 0x%04hX",
-            opcode, param);
-        break;
-      }
+        case 0xE0:
+        case 0xFE: {
+          uint16_t tempo = r.get_u16b();
+          uint64_t usec_pqn = 60000000 / tempo;
+          disassembly = string_printf("set_tempo       %hu /* usecs per quarter note = %" PRIu64 " */", tempo, usec_pqn);
+          break;
+        }
 
-      case 0xAD:
-      case 0xAF:
-      case 0xDD:
-      case 0xEF: {
-        uint32_t param = r.get_u24b();
-        disassembly = string_printf(".unknown        0x%02hhX, 0x%06" PRIX32,
-            opcode, param);
-        break;
-      }
+        case 0xFF: {
+          disassembly = "end_track";
+          break;
+        }
 
-      case 0xA9:
-      case 0xAA:
-      case 0xB4:
-      case 0xDF: {
-        uint32_t param = r.get_u32b();
-        disassembly = string_printf(".unknown        0x%02hhX, 0x%08" PRIX32,
-            opcode, param);
-        break;
-      }
+          // everything below here are register opcodes
 
-      case 0xB1: {
-        uint8_t param1 = r.get_u8();
-        if (param1 == 0x40) {
-          uint16_t param2 = r.get_u16b();
-          disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX, 0x%04hX",
-              opcode, param1, param2);
-        } else if (param1 == 0x80) {
-          uint32_t param2 = r.get_u32b();
-          disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX, 0x%08" PRIX32,
-              opcode, param1, param2);
-        } else {
+        case 0xD0:
+        case 0xD1:
+        case 0xD4:
+        case 0xD5:
+        case 0xD6:
+        case 0xD7: {
+          static const unordered_map<uint8_t, const char*> opcode_names({
+              {0xD0, "read_port    "},
+              {0xD1, "write_port   "},
+              {0xD4, "write_port_pr"},
+              {0xD5, "write_port_ch"},
+              {0xD6, "read_port_pr "},
+              {0xD7, "read_port_ch "},
+          });
+          uint8_t port = r.get_u8();
+          uint8_t reg = r.get_u8();
+          uint8_t value = r.get_u8();
+          disassembly = string_printf("%s   r%hhu, %hhu, %hhu", opcode_names.at(opcode),
+              reg, port, value);
+          break;
+        }
+
+        case 0xD2:
+          disassembly = string_printf(".check_port_in  0x%hX", r.get_u16b());
+          break;
+
+        case 0xD3:
+          disassembly = string_printf(".check_port_ex  0x%hX", r.get_u16b());
+          break;
+
+        case 0xD8: {
+          uint8_t reg = r.get_u8();
+          int16_t val = r.get_s16b();
+          if (reg == 0x62) {
+            disassembly = string_printf("mov             r98, %hd /* set_pulse_rate */", val);
+          } else {
+            disassembly = string_printf("mov             r%hhu, 0x%hX", reg, val);
+          }
+          break;
+        }
+
+        case 0xD9: {
+          uint8_t op = r.get_u8();
+          uint8_t dst_reg = r.get_u8();
+          uint8_t src_reg = r.get_u8();
+
+          const char* opcode_name = ".unknown";
+          try {
+            opcode_name = register_opcode_names.at(op);
+          } catch (const out_of_range&) {
+          }
+
+          disassembly = string_printf("%s             r%hhu, r%hhu", opcode_name,
+              dst_reg, src_reg);
+          break;
+        }
+
+        case 0xDA: {
+          uint8_t op = r.get_u8();
+          uint8_t dst_reg = r.get_u8();
+          int16_t val = r.get_s16b();
+
+          const char* opcode_name = ".unknown";
+          try {
+            opcode_name = register_opcode_names.at(op);
+          } catch (const out_of_range&) {
+          }
+
+          disassembly = string_printf("%s            r%hhu, 0x%hX", opcode_name,
+              dst_reg, val);
+          break;
+        }
+
+        case 0xE2:
+          disassembly = string_printf("set_bank        0x%hX", r.get_u8());
+          break;
+        case 0xE3:
+          disassembly = string_printf("set_instrument  0x%hX", r.get_u8());
+          break;
+
+        case 0xFB: {
+          string s;
+          char b;
+          while ((b = r.get_u8())) {
+            s.push_back(b);
+          }
+          disassembly = string_printf("debug_str       \"%s\"", s.c_str());
+          break;
+        }
+
+          // everything below here are unknown opcodes
+
+        case 0xC2:
+        case 0xCD:
+        case 0xCF:
+        case 0xDB:
+        case 0xF1:
+        case 0xF4: {
+          uint8_t param = r.get_u8();
           disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX",
-              opcode, param1);
+              opcode, param);
+          break;
         }
-        break;
-      }
 
-      case 0xF0: {
-        disassembly = string_printf("wait            %" PRIu64, read_variable_int(r));
-        break;
-      }
+        case 0xA0:
+        case 0xA3:
+        case 0xA5:
+        case 0xA7:
+        case 0xCB:
+        case 0xCC:
+        case 0xE6:
+        case 0xF9: {
+          uint16_t param = r.get_u16b();
+          disassembly = string_printf(".unknown        0x%02hhX, 0x%04hX",
+              opcode, param);
+          break;
+        }
 
-      default:
-        disassembly = string_printf(".unknown        0x%02hhX", opcode);
-    }
+        case 0xAD:
+        case 0xAF:
+        case 0xDD:
+        case 0xEF: {
+          uint32_t param = r.get_u24b();
+          disassembly = string_printf(".unknown        0x%02hhX, 0x%06" PRIX32,
+              opcode, param);
+          break;
+        }
+
+        case 0xA9:
+        case 0xAA:
+        case 0xB4:
+        case 0xDF: {
+          uint32_t param = r.get_u32b();
+          disassembly = string_printf(".unknown        0x%02hhX, 0x%08" PRIX32,
+              opcode, param);
+          break;
+        }
+
+        case 0xB1: {
+          uint8_t param1 = r.get_u8();
+          if (param1 == 0x40) {
+            uint16_t param2 = r.get_u16b();
+            disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX, 0x%04hX",
+                opcode, param1, param2);
+          } else if (param1 == 0x80) {
+            uint32_t param2 = r.get_u32b();
+            disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX, 0x%08" PRIX32,
+                opcode, param1, param2);
+          } else {
+            disassembly = string_printf(".unknown        0x%02hhX, 0x%02hhX",
+                opcode, param1);
+          }
+          break;
+        }
+
+        case 0xF0: {
+          disassembly = string_printf("wait            %" PRIu64, read_variable_int(r));
+          break;
+        }
+
+        default:
+          disassembly = string_printf(".unknown        0x%02hhX", opcode);
+      }
 
     if (disassembly.empty()) {
       throw runtime_error("disassembly failure");
@@ -556,8 +544,6 @@ void disassemble_bms(StringReader& r, int32_t default_bank = -1) {
     printf("%08zX: %s  %s\n", opcode_offset, data_str.c_str(), disassembly.c_str());
   }
 }
-
-
 
 void disassemble_midi(StringReader& r) {
   // read the header, check it, and disassemble it
@@ -616,7 +602,6 @@ void disassemble_midi(StringReader& r) {
         string note = name_for_note(key);
         printf("note_off     channel%hhu, %s, %hhu\n", channel, note.c_str(),
             vel);
-
       } else if ((status & 0xF0) == 0x90) { // note on
         uint8_t channel = status & 0x0F;
         uint8_t key = r.get_u8();
@@ -624,7 +609,6 @@ void disassemble_midi(StringReader& r) {
         string note = name_for_note(key);
         printf("note_on      channel%hhu, %s, %hhu\n", channel, note.c_str(),
             vel);
-
       } else if ((status & 0xF0) == 0xA0) { // change key pressure
         uint8_t channel = status & 0x0F;
         uint8_t key = r.get_u8();
@@ -632,7 +616,6 @@ void disassemble_midi(StringReader& r) {
         string note = name_for_note(key);
         printf("change_vel   channel%hhu, %s, %hhu\n", channel, note.c_str(),
             vel);
-
       } else if ((status & 0xF0) == 0xB0) { // controller change OR channel mode
         uint8_t channel = status & 0x0F;
         uint8_t controller = r.get_u8();
@@ -662,31 +645,26 @@ void disassemble_midi(StringReader& r) {
           printf("controller   channel%hhu, 0x%02hhX, 0x%02hhX\n", channel, controller,
               value);
         }
-
       } else if ((status & 0xF0) == 0xC0) { // program change
         uint8_t channel = status & 0x0F;
         uint8_t program_number = r.get_u8();
         printf("change_prog  channel%hhu, %hhu\n", channel, program_number);
-
       } else if ((status & 0xF0) == 0xD0) { // channel key pressure
         uint8_t channel = status & 0x0F;
         uint8_t vel = r.get_u8();
         printf("change_vel   channel%hhu, %hhu\n", channel, vel);
-
       } else if ((status & 0xF0) == 0xE0) { // pitch bend
         uint8_t channel = status & 0x0F;
         uint8_t lsb = r.get_u8();
         uint8_t msb = r.get_u8();
         uint16_t value = (msb << 7) | lsb; // yes, each is 7 bits, not 8
         printf("pitch_bend   channel%hhu, %hu\n", channel, value);
-
       } else if (status == 0xFF) { // meta event
         uint8_t type = r.get_u8();
         uint8_t size = r.get_u8();
 
         if ((type == 0x00) && (size == 0x02)) {
           printf("seq_number   %hu\n", r.get_u16b());
-
         } else if (type == 0x01) {
           string data = r.read(size);
           if (is_binary(data)) {
@@ -695,42 +673,32 @@ void disassemble_midi(StringReader& r) {
           } else {
             printf("text         \"%s\"\n", data.c_str());
           }
-
         } else if (type == 0x02) {
           string data = r.read(size);
           printf("copyright    \"%s\"\n", data.c_str());
-
         } else if (type == 0x03) {
           string data = r.read(size);
           printf("name         \"%s\"\n", data.c_str());
-
         } else if (type == 0x04) {
           string data = r.read(size);
           printf("ins_name     \"%s\"\n", data.c_str());
-
         } else if (type == 0x05) {
           string data = r.read(size);
           printf("lyric        \"%s\"\n", data.c_str());
-
         } else if (type == 0x06) {
           string data = r.read(size);
           printf("marker       \"%s\"\n", data.c_str());
-
         } else if (type == 0x07) {
           string data = r.read(size);
           printf("cue_point    \"%s\"\n", data.c_str());
-
         } else if ((type == 0x20) && (size == 1)) {
           uint8_t channel = r.get_u8();
           printf("channel_pfx  channel%hhu\n", channel);
-
         } else if ((type == 0x2F) && (size == 0)) {
           printf("end_track\n");
-
         } else if ((type == 0x51) && (size == 3)) {
           uint32_t usecs_per_qnote = r.get_u24b();
           printf("set_tempo    %" PRIu32 "\n", usecs_per_qnote);
-
         } else if ((type == 0x54) && (size == 5)) {
           uint8_t hours = r.get_u8();
           uint8_t minutes = r.get_u8();
@@ -739,7 +707,6 @@ void disassemble_midi(StringReader& r) {
           uint8_t frame_fraction = r.get_u8();
           printf("set_offset   %02hhu:%02hhu:%02hhu#%02hhu.%02hhu\n", hours,
               minutes, seconds, frames, frame_fraction);
-
         } else if ((type == 0x58) && (size == 4)) {
           uint8_t numer = r.get_u8();
           uint8_t denom = r.get_u8();
@@ -747,20 +714,17 @@ void disassemble_midi(StringReader& r) {
           uint8_t b = r.get_u8(); // 1/32 notes per 24 midi ticks
           printf("time_sig     %02hhu:%02hhu, midi_ticks=%02hhu, ratio=%hhu\n",
               numer, denom, ticks_per_metronome_tick, b);
-
         } else if ((type == 0x59) && (size == 2)) {
           uint8_t sharps = r.get_u8();
           uint8_t major = r.get_u8();
           printf("key_sig      sharps=%02hhu, %s\n", sharps,
               major ? "major" : "minor");
-
         } else if (size) { // unknown meta with data
           string data = format_data_string(r.read(size));
           printf(".meta        0x%hhX, %s\n", type, data.c_str());
         } else { // unknown meta without data
           printf(".meta        0x%hhX\n", type);
         }
-
       } else {
         throw runtime_error(string_printf("invalid status byte: %02hhX", status));
       }
@@ -771,8 +735,6 @@ void disassemble_midi(StringReader& r) {
     }
   }
 }
-
-
 
 struct Channel {
   float pitch_bend_semitone_range;
@@ -793,11 +755,20 @@ struct Channel {
   float panning_target;
   uint16_t panning_target_frames;
 
-  Channel() : pitch_bend_semitone_range(48.0), volume(1.0), volume_target(0),
-      volume_target_frames(0), pitch_bend(0), pitch_bend_target(0),
-      pitch_bend_target_frames(0), reverb(0), reverb_target(0),
-      reverb_target_frames(0), panning(0.5f), panning_target(0.5f),
-      panning_target_frames(0) { }
+  Channel()
+      : pitch_bend_semitone_range(48.0),
+        volume(1.0),
+        volume_target(0),
+        volume_target_frames(0),
+        pitch_bend(0),
+        pitch_bend_target(0),
+        pitch_bend_target_frames(0),
+        reverb(0),
+        reverb_target(0),
+        reverb_target_frames(0),
+        panning(0.5f),
+        panning_target(0.5f),
+        panning_target_frames(0) {}
 
   void attenuate() {
     if (this->volume_target_frames) {
@@ -819,15 +790,16 @@ struct Channel {
   }
 };
 
-
-
 class Voice {
 public:
-  Voice(size_t sample_rate, int8_t note, int8_t vel, bool decay_when_off,
-      shared_ptr<Channel> channel) : sample_rate(sample_rate), note(note),
-      vel(vel), channel(channel), decay_when_off(decay_when_off),
-      note_off_decay_total(this->sample_rate / 5),
-      note_off_decay_remaining(-1) { }
+  Voice(size_t sample_rate, int8_t note, int8_t vel, bool decay_when_off, shared_ptr<Channel> channel)
+      : sample_rate(sample_rate),
+        note(note),
+        vel(vel),
+        channel(channel),
+        decay_when_off(decay_when_off),
+        note_off_decay_total(this->sample_rate / 5),
+        note_off_decay_remaining(-1) {}
   virtual ~Voice() = default;
 
   virtual vector<float> render(size_t count, float freq_mult, float volume_bias) = 0;
@@ -868,7 +840,7 @@ public:
 class SilentVoice : public Voice {
 public:
   SilentVoice(size_t sample_rate, int8_t note, int8_t vel,
-      shared_ptr<Channel> channel) : Voice(sample_rate, note, vel, true, channel) { }
+      shared_ptr<Channel> channel) : Voice(sample_rate, note, vel, true, channel) {}
   virtual ~SilentVoice() = default;
 
   virtual vector<float> render(size_t count, float, float) {
@@ -879,9 +851,9 @@ public:
 
 class SineVoice : public Voice {
 public:
-  SineVoice(size_t sample_rate, int8_t note, int8_t vel,
-      shared_ptr<Channel> channel) : Voice(sample_rate, note, vel, true, channel),
-      offset(0) { }
+  SineVoice(size_t sample_rate, int8_t note, int8_t vel, shared_ptr<Channel> channel)
+      : Voice(sample_rate, note, vel, true, channel),
+        offset(0) {}
   virtual ~SineVoice() = default;
 
   virtual vector<float> render(size_t count, float, float volume_bias) {
@@ -908,13 +880,15 @@ class SampleVoice : public Voice {
 public:
   SampleVoice(size_t sample_rate, shared_ptr<const SoundEnvironment> env,
       shared_ptr<SampleCache<const Sound*>> cache, uint16_t bank_id, uint16_t instrument_id,
-      int8_t note, int8_t vel, bool decay_when_off, shared_ptr<Channel> channel) :
-      Voice(sample_rate, note, vel, decay_when_off, channel),
-      instrument_bank(&env->instrument_banks.at(bank_id)),
-      instrument(&this->instrument_bank->id_to_instrument.at(instrument_id)),
-      key_region(&this->instrument->region_for_key(note)),
-      vel_region(&this->key_region->region_for_velocity(vel)), src_ratio(1.0f),
-      offset(0), cache(cache) {
+      int8_t note, int8_t vel, bool decay_when_off, shared_ptr<Channel> channel)
+      : Voice(sample_rate, note, vel, decay_when_off, channel),
+        instrument_bank(&env->instrument_banks.at(bank_id)),
+        instrument(&this->instrument_bank->id_to_instrument.at(instrument_id)),
+        key_region(&this->instrument->region_for_key(note)),
+        vel_region(&this->key_region->region_for_velocity(vel)),
+        src_ratio(1.0f),
+        offset(0),
+        cache(cache) {
 
     if (!this->vel_region->sound) {
       throw out_of_range("instrument sound is missing");
@@ -941,8 +915,9 @@ public:
     if (base_note < 0) {
       base_note = this->vel_region->sound->base_note;
     }
-    float note_factor = this->vel_region->constant_pitch ? 1.0 :
-        (frequency_for_note(base_note) / frequency_for_note(this->note));
+    float note_factor = this->vel_region->constant_pitch
+        ? 1.0
+        : (frequency_for_note(base_note) / frequency_for_note(this->note));
 
     {
       float pitch_bend_factor = pow(2, (pitch_bend * pitch_bend_semitone_range) / 12.0) * freq_mult;
@@ -964,9 +939,9 @@ public:
         string key_low_str = name_for_note(this->key_region->key_low);
         string key_high_str = name_for_note(this->key_region->key_high);
         fprintf(stderr, "[%s:%" PRIX64 "] resampled note %02hhX in range "
-            "[%02hhX,%02hhX] [%s,%s] (base %02hhX from %s) (%g), with freq_mult %g, from "
-            "%zuHz to %zuHz (%g) with loop at [%zu,%zu]->[%zu,%zu] for an overall "
-            "ratio of %g; %zu samples were converted to %zu samples\n",
+                        "[%02hhX,%02hhX] [%s,%s] (base %02hhX from %s) (%g), with freq_mult %g, from "
+                        "%zuHz to %zuHz (%g) with loop at [%zu,%zu]->[%zu,%zu] for an overall "
+                        "ratio of %g; %zu samples were converted to %zu samples\n",
             this->vel_region->sound->source_filename.c_str(),
             this->vel_region->sound->sound_id,
             this->note,
@@ -1037,8 +1012,6 @@ public:
   shared_ptr<SampleCache<const Sound*>> cache;
 };
 
-
-
 class Renderer {
 protected:
   struct Track {
@@ -1060,9 +1033,13 @@ protected:
 
     unordered_map<uint8_t, int16_t> registers;
 
-    Track(int16_t id, shared_ptr<string> data, size_t start_offset, uint32_t bank = -1) :
-        id(id), r(data, start_offset), reading_wait_opcode(true), freq_mult(1),
-        bank(bank), instrument(-1) { }
+    Track(int16_t id, shared_ptr<string> data, size_t start_offset, uint32_t bank = -1)
+        : id(id),
+          r(data, start_offset),
+          reading_wait_opcode(true),
+          freq_mult(1),
+          bank(bank),
+          instrument(-1) {}
 
     void attenuate_perf() {
       for (auto& channel_it : this->channels) {
@@ -1076,7 +1053,7 @@ protected:
       auto v_it = this->voices.find(voice_id);
       if (v_it != this->voices.end()) {
         v_it->second->off();
-        this->voices_off.emplace(move(v_it->second));
+        this->voices_off.emplace(std::move(v_it->second));
         this->voices.erase(v_it);
       }
     }
@@ -1125,8 +1102,7 @@ protected:
       } catch (const out_of_range& e) {
         string key_str = name_for_note(key);
         if (debug_flags & DebugFlag::SHOW_MISSING_NOTES) {
-          fprintf(stderr, "warning: can\'t find sample (%s): bank=%" PRIX32
-              " instrument=%" PRIX32 " key=%02hhX=%s vel=%02hhX\n", e.what(),
+          fprintf(stderr, "warning: can\'t find sample (%s): bank=%" PRIX32 " instrument=%" PRIX32 " key=%02hhX=%s vel=%02hhX\n", e.what(),
               t->bank, t->instrument, key, key_str.c_str(), vel);
         }
         if (debug_flags & DebugFlag::PLAY_MISSING_NOTES) {
@@ -1152,20 +1128,20 @@ public:
       double freq_bias,
       double volume_bias,
       bool decay_when_off)
-    : sample_rate(sample_rate),
-      current_time(0),
-      samples_rendered(0),
-      tempo(0),
-      pulse_rate(0),
-      tempo_bias(tempo_bias),
-      freq_bias(freq_bias),
-      volume_bias(volume_bias),
-      env(env),
-      mute_tracks(mute_tracks),
-      solo_tracks(solo_tracks),
-      disable_tracks(disable_tracks),
-      decay_when_off(decay_when_off),
-      cache(new SampleCache<const Sound*>(resample_method)) { }
+      : sample_rate(sample_rate),
+        current_time(0),
+        samples_rendered(0),
+        tempo(0),
+        pulse_rate(0),
+        tempo_bias(tempo_bias),
+        freq_bias(freq_bias),
+        volume_bias(volume_bias),
+        env(env),
+        mute_tracks(mute_tracks),
+        solo_tracks(solo_tracks),
+        disable_tracks(disable_tracks),
+        decay_when_off(decay_when_off),
+        cache(new SampleCache<const Sound*>(resample_method)) {}
 
   virtual ~Renderer() = default;
 
@@ -1189,7 +1165,7 @@ public:
   vector<float> render_time_step(size_t queued_buffer_count = 0, size_t buffer_count = 0) {
     // run all opcodes that should execute on the current time step
     while (!this->next_event_to_track.empty() &&
-           (current_time == this->next_event_to_track.begin()->first)) {
+        (current_time == this->next_event_to_track.begin()->first)) {
       auto t_it = this->next_event_to_track.begin();
       size_t offset = t_it->second->r.where();
       try {
@@ -1351,8 +1327,8 @@ public:
       if (!short_status) {
         if (debug_flags & DebugFlag::COLOR_STATUS) {
           fprintf(stderr, "TIMESTEP: %sC D EF G A B%sC D EF G A B%sC D EF G A B%sC "
-              "D EF G A B%sC D EF G A B%sC D EF G A B%sC D EF G A B%sC D EF G A B%s"
-              "C D EF G A B%sC D EF G A B%sC D EF G%s @ SECONDS + %sBUF%s",
+                          "D EF G A B%sC D EF G A B%sC D EF G A B%sC D EF G A B%sC D EF G A B%s"
+                          "C D EF G A B%sC D EF G A B%sC D EF G%s @ SECONDS + %sBUF%s",
               field_magenta.c_str(), field_red.c_str(), field_yellow.c_str(),
               field_green.c_str(), field_cyan.c_str(), field_blue.c_str(),
               field_magenta.c_str(), field_red.c_str(), field_yellow.c_str(),
@@ -1360,8 +1336,8 @@ public:
               buffers_color->c_str(), white.c_str());
         } else {
           fprintf(stderr, "TIMESTEP: C D EF G A BC D EF G A BC D EF G A BC D EF G"
-              " A BC D EF G A BC D EF G A BC D EF G A BC D EF G A BC D EF G A BC "
-              "D EF G A BC D EF G @ SECONDS + BUF");
+                          " A BC D EF G A BC D EF G A BC D EF G A BC D EF G A BC D EF G A BC "
+                          "D EF G A BC D EF G @ SECONDS + BUF");
         }
       }
     }
@@ -1420,19 +1396,19 @@ public:
       double freq_bias,
       double volume_bias,
       bool decay_when_off)
-    : Renderer(
-        sample_rate,
-        resample_method,
-        env,
-        mute_tracks,
-        solo_tracks,
-        disable_tracks,
-        tempo_bias,
-        freq_bias,
-        volume_bias,
-        decay_when_off),
-      seq(seq),
-      seq_data(new string(seq->data)) {
+      : Renderer(
+            sample_rate,
+            resample_method,
+            env,
+            mute_tracks,
+            solo_tracks,
+            disable_tracks,
+            tempo_bias,
+            freq_bias,
+            volume_bias,
+            decay_when_off),
+        seq(seq),
+        seq_data(new string(seq->data)) {
     shared_ptr<Track> default_track(new Track(-1, this->seq_data, 0, this->seq->index));
     this->tracks.emplace(default_track);
     this->next_event_to_track.emplace(0, default_track);
@@ -1442,7 +1418,6 @@ public:
   virtual ~BMSRenderer() = default;
 
 protected:
-
   void execute_set_perf(shared_ptr<Track> t, uint8_t type, float value,
       uint16_t duration) {
     shared_ptr<Channel> c = t->channel(0);
@@ -1465,7 +1440,6 @@ protected:
               value);
         }
       }
-
     } else {
       if (type == 0x00) {
         c->volume = value;
@@ -1648,7 +1622,7 @@ protected:
             fprintf(stderr, "unimplemented condition: 0x%02hX\n", cond);
           }
 
-        // TODO: we should actually check the condition here
+          // TODO: we should actually check the condition here
         } else {
           if (is_call) {
             t->call_stack.emplace_back(t->r.where());
@@ -1668,7 +1642,7 @@ protected:
             fprintf(stderr, "unimplemented condition: 0x%02hX\n", cond);
           }
 
-        // TODO: we should actually check the condition here
+          // TODO: we should actually check the condition here
         } else {
           if (t->call_stack.empty()) {
             throw invalid_argument("return executed with empty call stack");
@@ -1685,7 +1659,8 @@ protected:
       }
 
       case 0xFB: { // debug string
-        while (t->r.get_u8());
+        while (t->r.get_u8())
+          ;
         break;
       }
 
@@ -1707,7 +1682,7 @@ protected:
         break;
       }
 
-      // everything below here are unknown opcodes
+        // everything below here are unknown opcodes
 
       case 0x8C:
       case 0xAE:
@@ -1829,19 +1804,19 @@ public:
       bool decay_when_off,
       uint8_t percussion_instrument,
       bool allow_program_change)
-    : Renderer(
-        sample_rate,
-        resample_method,
-        env,
-        mute_tracks,
-        solo_tracks,
-        disable_tracks,
-        tempo_bias,
-        freq_bias,
-        volume_bias,
-        decay_when_off),
-      midi_contents(midi_contents),
-      allow_program_change(allow_program_change) {
+      : Renderer(
+            sample_rate,
+            resample_method,
+            env,
+            mute_tracks,
+            solo_tracks,
+            disable_tracks,
+            tempo_bias,
+            freq_bias,
+            volume_bias,
+            decay_when_off),
+        midi_contents(midi_contents),
+        allow_program_change(allow_program_change) {
     for (uint8_t x = 0; x < 0x10; x++) {
       this->channel_instrument[x] = x;
     }
@@ -1895,7 +1870,6 @@ public:
           static_cast<int64_t>(frames_per_sec);
       this->tempo = 120 * this->tempo_bias;
       this->pulse_rate = ticks_per_sec / 2;
-
     } else {
       this->tempo = 120 * this->tempo_bias;
       this->pulse_rate = header.division;
@@ -1905,7 +1879,6 @@ public:
   virtual ~MIDIRenderer() = default;
 
 protected:
-
   virtual void execute_opcode(multimap<uint64_t, shared_ptr<Track>>::iterator track_it) {
     shared_ptr<Track> t = track_it->second;
 
@@ -1938,7 +1911,6 @@ protected:
       uint32_t voice_id = (static_cast<uint32_t>(channel) << 8) |
           static_cast<uint32_t>(key);
       t->voice_off(voice_id);
-
     } else if ((t->midi_status & 0xF0) == 0x90) { // note on
       uint8_t channel = t->midi_status & 0x0F;
       t->instrument = this->channel_instrument[channel];
@@ -1948,13 +1920,11 @@ protected:
       uint32_t voice_id = (static_cast<uint32_t>(channel) << 8) |
           static_cast<uint32_t>(key);
       this->voice_on(t, voice_id, key, vel, channel);
-
     } else if ((t->midi_status & 0xF0) == 0xA0) { // change key pressure
       // uint8_t channel = t->midi_status & 0x0F;
       t->r.get_u8(); // key
       t->r.get_u8(); // vel
       // TODO
-
     } else if ((t->midi_status & 0xF0) == 0xB0) { // controller change OR channel mode
       uint8_t channel = t->midi_status & 0x0F;
       uint8_t controller = t->r.get_u8();
@@ -1967,25 +1937,21 @@ protected:
         t->channel(channel)->panning = static_cast<float>(value) / 0x7F;
       }
       // TODO: implement more controller messages
-
     } else if ((t->midi_status & 0xF0) == 0xC0) { // program change
       uint8_t channel = t->midi_status & 0x0F;
       uint8_t program = t->r.get_u8();
       if (this->allow_program_change) {
         this->channel_instrument[channel] = program;
       }
-
     } else if ((t->midi_status & 0xF0) == 0xD0) { // channel key pressure
       // uint8_t channel = t->midi_status & 0x0F;
       t->r.get_u8(); // vel
       // TODO
-
     } else if ((t->midi_status & 0xF0) == 0xE0) { // pitch bend
       // uint8_t channel = t->midi_status & 0x0F;
       t->r.get_u8(); // lsb
       t->r.get_u8(); // msb
       // uint16_t value = (msb << 7) | lsb; // yes, each is 7 bits, not 8
-
     } else if (t->midi_status == 0xFF) { // meta event
       uint8_t type = t->r.get_u8();
       uint8_t size = t->r.get_u8();
@@ -1994,18 +1960,14 @@ protected:
         // note: we don't delete from this->tracks here because the track can
         // contain voices that are producing sound (After Dark does this)
         this->next_event_to_track.erase(track_it);
-
       } else if (type == 0x51) { // set tempo
         this->tempo = (60000000 / t->r.get_u24b()) * this->tempo_bias;
-
       } else { // anything else? just skip it
         t->r.go(t->r.where() + size);
       }
     }
   }
 };
-
-
 
 void print_usage(const char* argv0) {
   fprintf(stderr, "\
@@ -2031,9 +1993,9 @@ Output options (only one of these may be given):\n\
   --list: list the names of sequences in the loaded environment.\n\
   --disassemble: disassemble the sequence (default).\n"
 #ifndef WINDOWS // play not supported on windows
-"  --play: play the sequence to the default audio device using OpenAL streaming.\n"
+                  "  --play: play the sequence to the default audio device using OpenAL streaming.\n"
 #endif
-"  --output-filename=file.wav: write the synthesized audio to this file.\n\
+                  "  --output-filename=file.wav: write the synthesized audio to this file.\n\
 \n\
 Synthesis options:\n\
   --disable-track=N: disable track N entirely (can be given multiple times).\n\
@@ -2044,27 +2006,27 @@ Synthesis options:\n\
   --freq-bias=BIAS: play notes at this proportion of their original pitch.\n\
   --time-limit=N: stop after this many seconds (default 5 minutes).\n"
 #ifndef WINDOWS
-"      When --play is used, this option is ignored.\n"
+                  "      When --play is used, this option is ignored.\n"
 #endif
-"  --start-time=N: discard this many seconds of audio at the beginning.\n\
+                  "  --start-time=N: discard this many seconds of audio at the beginning.\n\
   --sample-rate=N: generate output at this sample rate (default 48000).\n\
   --resample-method=METHOD: use this method for resampling waveforms. Values\n\
       are sinc-best, sinc-medium, sinc-fast, hold, and linear. When generating\n\
       a WAV output file, the default method is sinc-best.\n"
 #ifndef WINDOWS
-"      When playing, the default method is linear.\n\
+                  "      When playing, the default method is linear.\n\
   --play-buffers=N: generate this many steps of audio in advance of the play\n\
       position (default 128). If play lags, especially during pitch bends, try\n\
       increasing this value.\n"
 #endif
-"\n\
+                  "\n\
 Logging options:\n\
   --silent: don't print any status information.\n\
   --verbose: print extra debugging events.\n"
 #ifndef WINDOWS
-"  --no-color: don\'t use terminal escape codes for color in the output.\n"
+                  "  --no-color: don\'t use terminal escape codes for color in the output.\n"
 #endif
-"  --short-status: only show one line of status information.\n\
+                  "  --short-status: only show one line of status information.\n\
   --long-status: show status history (default unless writing an output file).\n\
 \n\
 Debugging options:\n\
@@ -2074,7 +2036,8 @@ Debugging options:\n\
       of also tapering off the volume of the note.\n\
   --play-missing-notes: for notes that have no associated instrument/sample,\n\
       play a sine wave instead.\n\
-", argv0);
+",
+      argv0);
 }
 
 static double parse_fraction(const string& arg) {
@@ -2153,8 +2116,7 @@ int main(int argc, char** argv) {
       int16_t channel_id = stoull(tokens[0], NULL, 0);
       im.filename = tokens[1];
       im.base_note = (tokens.size() > 2) ? stoul(tokens[2], NULL, 0) : -1;
-      midi_instrument_metadata.emplace(channel_id, move(im));
-
+      midi_instrument_metadata.emplace(channel_id, std::move(im));
     } else if (!strcmp(argv[x], "--verbose")) {
       debug_flags = 0xFFFFFFFFFFFFFFFF;
     } else if (!strncmp(argv[x], "--debug-flags=", 14)) {
@@ -2171,7 +2133,6 @@ int main(int argc, char** argv) {
       debug_flags |= DebugFlag::PLAY_MISSING_NOTES;
     } else if (!strcmp(argv[x], "--quiet")) {
       debug_flags = 0;
-
     } else if (!strcmp(argv[x], "--resample-method=sinc-best")) {
       resample_method = SRC_SINC_BEST_QUALITY;
       resample_method_set = true;
@@ -2187,7 +2148,6 @@ int main(int argc, char** argv) {
     } else if (!strcmp(argv[x], "--resample-method=linear")) {
       resample_method = SRC_LINEAR;
       resample_method_set = true;
-
     } else if (!strncmp(argv[x], "--default-bank=", 15)) {
       default_bank = atoi(&argv[x][15]);
     } else if (!strncmp(argv[x], "--tempo-bias=", 13)) {
@@ -2286,12 +2246,12 @@ int main(int argc, char** argv) {
   shared_ptr<string> midi_contents;
   if (midi) {
     midi_contents.reset(new string(load_file(filename)));
-
   } else {
     if (env.get()) {
       try {
         seq.reset(new SequenceProgram(env->sequence_programs.at(filename)));
-      } catch (const out_of_range&) { }
+      } catch (const out_of_range&) {
+      }
     }
     if (!seq.get()) {
       try {
@@ -2342,13 +2302,16 @@ int main(int argc, char** argv) {
     if (env_json.get()) {
       try {
         percussion_instrument = env_json->as_dict().at("percussion_instrument")->as_int();
-      } catch (const out_of_range&) { }
+      } catch (const out_of_range&) {
+      }
       try {
         allow_program_change = env_json->as_dict().at("allow_program_change")->as_bool();
-      } catch (const out_of_range&) { }
+      } catch (const out_of_range&) {
+      }
       try {
         tempo_bias *= env_json->as_dict().at("tempo_bias")->as_float();
-      } catch (const out_of_range&) { }
+      } catch (const out_of_range&) {
+      }
     }
     r.reset(new MIDIRenderer(
         midi_contents,

@@ -11,8 +11,6 @@
 #include <unordered_map>
 #include <vector>
 
-
-
 struct Sound {
   mutable std::string afc_data;
   bool afc_large_frames;

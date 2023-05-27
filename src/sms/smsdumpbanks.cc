@@ -2,10 +2,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <map>
+#include <phosg-audio/File.hh>
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
 #include <phosg/Strings.hh>
-#include <phosg-audio/File.hh>
 #include <vector>
 
 #include "aaf.hh"
@@ -18,8 +19,6 @@
 
 using namespace std;
 
-
-
 string name_for_note(uint8_t note) {
   if (note >= 0x80) {
     return "invalid-note";
@@ -29,15 +28,12 @@ string name_for_note(uint8_t note) {
   return string_printf("%s%hhu", names[note % 12], static_cast<uint8_t>(note / 12));
 }
 
-
-
 string base_filename_for_sound(const Sound& s) {
   return string_printf("sample-%s-%" PRIX32 "-%08" PRIX64 "-%08" PRIX32
-      "-%08" PRIX32, s.source_filename.c_str(), s.source_offset,
+                       "-%08" PRIX32,
+      s.source_filename.c_str(), s.source_offset,
       s.sound_id, s.aw_file_index, s.wave_table_index);
 }
-
-
 
 int main(int argc, char** argv) {
   if (argc != 3) {
@@ -86,6 +82,8 @@ int main(int argc, char** argv) {
     string filename = string_printf("%s/metadata-sf.txt", argv[2]);
     auto f = fopen_unique(filename.c_str(), "wt");
 
+    map<string, bool> filenames;
+
     fprintf(f.get(), "[Samples]\n\n");
     for (const auto& bank_it : env.sample_banks) {
       for (const Sound& s : bank_it.second) {
@@ -95,7 +93,9 @@ int main(int argc, char** argv) {
         SampleRate=%zu\n\
         Key=%hhu\n\
         FineTune=0\n\
-        Type=1\n\n", sound_basename.c_str(), s.sample_rate, s.base_note);
+        Type=1\n\n",
+            sound_basename.c_str(), s.sample_rate, s.base_note);
+        filenames.emplace(sound_basename, false);
       }
     }
 
@@ -126,6 +126,7 @@ int main(int argc, char** argv) {
             Z_Modulator=(NoteOnVelocity,ReverseDirection,Unipolar,Linear), initialFilterFc, 0, (NoteOnVelocity,ReverseDirection,Unipolar,Switch), 0\n\n",
                   basename.c_str(), key_region.key_low, key_region.key_high,
                   vel_region.vel_low, vel_region.vel_high, base_note);
+              filenames[basename] = true;
             }
           }
         }
@@ -164,6 +165,15 @@ Product=\n\
 Copyright=\n\
 Editor=\n\
 Comments=\n");
+
+    size_t num_unused = 0;
+    for (const auto& it : filenames) {
+      fprintf(stderr, "[check] %s %s.wav\n", it.second ? "used" : "UNUSED", it.first.c_str());
+      if (!it.second) {
+        num_unused++;
+      }
+    }
+    fprintf(stderr, "[check] %zu/%zu unused\n", num_unused, filenames.size());
   }
 
   // export samples

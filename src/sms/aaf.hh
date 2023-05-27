@@ -8,12 +8,10 @@
 #include <phosg/Filesystem.hh>
 #include <phosg/JSON.hh>
 #include <phosg/Strings.hh>
-#include <vector>
 #include <string>
+#include <vector>
 
 #include "instrument.hh"
-
-
 
 struct SequenceProgram {
   uint32_t index;

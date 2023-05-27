@@ -7,8 +7,6 @@
 
 using namespace std;
 
-
-
 struct AFSHeader {
   uint32_t magic;
   uint32_t num_files;
@@ -17,8 +15,6 @@ struct AFSHeader {
     uint32_t size;
   } entries[0];
 };
-
-
 
 int main(int argc, char* argv[]) {
   if (argc != 2) {

@@ -1,21 +1,20 @@
 #include <errno.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
+#include <phosg/Encoding.hh>
+#include <phosg/Filesystem.hh>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <phosg/Encoding.hh>
-#include <phosg/Filesystem.hh>
 
 #pragma pack(1)
 
 using namespace std;
-
 
 struct RCFHeader {
   char ident[0x20];
@@ -35,7 +34,6 @@ struct RCFIndexEntry {
   be_uint32_t size;
 };
 
-
 vector<string> parse_names_index(const string& data, size_t offset) {
   // For some reason this isn't reverse-endian... weird
   uint32_t num_names = *reinterpret_cast<const uint32_t*>(&data[offset]);
@@ -50,7 +48,6 @@ vector<string> parse_names_index(const string& data, size_t offset) {
 
   return ret;
 }
-
 
 unordered_map<string, RCFIndexEntry> get_index(const string& data, size_t offset) {
   RCFIndexHeader header;
@@ -73,7 +70,6 @@ unordered_map<string, RCFIndexEntry> get_index(const string& data, size_t offset
 
   return ret;
 }
-
 
 int main(int argc, char* argv[]) {
 
