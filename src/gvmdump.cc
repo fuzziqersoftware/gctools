@@ -61,8 +61,8 @@ enum class GVRDataFormat : uint8_t {
 };
 
 struct GVRHeader {
-  be_uint32_t magic;
-  // See command in GVMFileHeader about header_size - data_size behaves the same
+  be_uint32_t magic; // 'GVRT'
+  // See comment in GVMFileHeader about header_size - data_size behaves the same
   // way here.
   le_uint32_t data_size;
   be_uint16_t unknown;
@@ -72,7 +72,76 @@ struct GVRHeader {
   be_uint16_t height;
 } __attribute__((packed));
 
-Image decode_gvr(const string& data) {
+struct GVPHeader {
+  be_uint32_t magic; // 'GVPL'
+  // See comment in GVMFileHeader about header_size - data_size behaves the same
+  // way here.
+  le_uint32_t data_size;
+  uint8_t unknown_a1;
+  uint8_t entry_format; // 0 = A8, 1 = RGB565, 2 = RGB5A3
+  uint8_t unknown_a2[4];
+  be_uint16_t num_entries;
+} __attribute__((packed));
+
+uint32_t decode_rgb5a3(uint16_t c) {
+  if (c & 0x8000) { // RGB555
+    //                 1rrrrrgggggbbbbb
+    // rrrrrrrrggggggggbbbbbbbbaaaaaaaa
+    return ((c << 17) & 0xF8000000) | ((c << 12) & 0x07000000) | // R
+        ((c << 14) & 0x00F80000) | ((c << 9) & 0x00070000) | // G
+        ((c << 11) & 0x0000F800) | ((c << 6) & 0x00000700) | // B
+        0x000000FF; // A
+  } else { // ARGB3444
+    //                 0aaarrrrggggbbbb
+    // rrrrrrrrggggggggbbbbbbbbaaaaaaaa
+    return ((c << 20) & 0xF0000000) | // R high
+        ((c << 16) & 0x0FF00000) | // R low and G high
+        ((c << 12) & 0x000FF000) | // G low and B high
+        ((c << 8) & 0x00000F00) | // B low
+        ((c >> 7) & 0x000000E0) | ((c >> 10) & 0x0000001C) | ((c >> 13) & 0x00000003); // A
+  }
+}
+
+uint32_t decode_rgb565(uint16_t c) {
+  //                 rrrrrggggggbbbbb
+  // rrrrrrrrggggggggbbbbbbbbaaaaaaaa
+  return ((c << 16) & 0xF8000000) | ((c << 11) & 0x07000000) | // R
+      ((c << 13) & 0x00FC0000) | ((c << 7) & 0x00030000) | // G
+      ((c << 11) & 0x0000F800) | ((c << 6) & 0x00000700) | // B
+      0x000000FF; // A
+}
+
+vector<uint32_t> decode_gvp(const string& data) {
+  StringReader r(data.data(), data.size());
+  auto header = r.get<GVPHeader>();
+  if (header.magic != 0x4756504C) {
+    throw runtime_error("GVPL signature is missing");
+  }
+
+  vector<uint32_t> ret;
+  ret.reserve(header.num_entries);
+  while (ret.size() < header.num_entries) {
+    switch (header.entry_format) {
+      case 0: {
+        uint8_t a = r.get_u8();
+        ret.emplace_back((a << 24) | (a << 16) | (a << 8) | a);
+        break;
+      }
+      case 1:
+        ret.emplace_back(decode_rgb565(r.get_u16b()));
+        break;
+      case 2:
+        ret.emplace_back(decode_rgb5a3(r.get_u16b()));
+        break;
+      default:
+        throw runtime_error("unknown color table entry format");
+    }
+  }
+
+  return ret;
+}
+
+Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullptr) {
   if (data.size() < sizeof(GVRHeader)) {
     throw runtime_error("data too small for header");
   }
@@ -92,11 +161,12 @@ Image decode_gvr(const string& data) {
   // immediately follows the header and precedes the data
   if ((header.data_format == GVRDataFormat::INDEXED_4) ||
       (header.data_format == GVRDataFormat::INDEXED_8)) {
-    if (header.format_flags & GVRDataFlag::HAS_INTERNAL_COLOR_TABLE) {
-      throw logic_error("internal color tables not implemented");
-    }
     if (header.format_flags & GVRDataFlag::HAS_EXTERNAL_COLOR_TABLE) {
-      throw logic_error("external color tables not implemented");
+      if (!clut) {
+        throw runtime_error("a color table is required");
+      }
+    } else if (header.format_flags & GVRDataFlag::HAS_INTERNAL_COLOR_TABLE) {
+      throw logic_error("internal color tables not implemented");
     }
   }
 
@@ -131,33 +201,55 @@ Image decode_gvr(const string& data) {
 
   Image result(header.width, header.height, true);
   switch (header.data_format) {
-    case GVRDataFormat::RGB5A3: {
+    case GVRDataFormat::RGB5A3:
       // 4x4 blocks of pixels
       for (size_t y = 0; y < header.height; y += 4) {
         for (size_t x = 0; x < header.width; x += 4) {
           for (size_t yy = 0; yy < 4; yy++) {
             for (size_t xx = 0; xx < 4; xx++) {
-              uint16_t pixel = r.get_u16b();
-              if (pixel & 0x8000) { // RGB555
-                result.write_pixel(x + xx, y + yy,
-                    ((pixel >> 7) & 0xF8) | ((pixel >> 12) & 7),
-                    ((pixel >> 2) & 0xF8) | ((pixel >> 7) & 7),
-                    ((pixel << 3) & 0xF8) | ((pixel >> 2) & 7), 0xFF);
-              } else { // ARGB3444
-                result.write_pixel(x + xx, y + yy,
-                    ((pixel >> 4) & 0xF0) | ((pixel >> 8) & 0x0F),
-                    ((pixel >> 0) & 0xF0) | ((pixel >> 4) & 0x0F),
-                    ((pixel << 4) & 0xF0) | ((pixel >> 0) & 0x0F),
-                    ((pixel >> 7) & 0xE0) | ((pixel >> 10) & 0x1C) | ((pixel >> 13) & 0x03));
-              }
+              result.write_pixel(x + xx, y + yy, decode_rgb5a3(r.get_u16b()));
             }
           }
         }
       }
       break;
-    }
 
-    case GVRDataFormat::DXT1: {
+    case GVRDataFormat::INDEXED_4:
+      if (!clut) {
+        throw runtime_error("a color table is required");
+      }
+      // 4x4 blocks of pixels
+      for (size_t y = 0; y < header.height; y += 8) {
+        for (size_t x = 0; x < header.width; x += 8) {
+          for (size_t yy = 0; yy < 8; yy++) {
+            for (size_t xx = 0; xx < 8; xx += 2) {
+              uint8_t indexes = r.get_u8();
+              result.write_pixel(x + xx, y + yy, clut->at((indexes >> 4) & 0x0F));
+              result.write_pixel(x + xx + 1, y + yy, clut->at(indexes & 0x0F));
+            }
+          }
+        }
+      }
+      break;
+
+    case GVRDataFormat::INDEXED_8:
+      if (!clut) {
+        throw runtime_error("a color table is required");
+      }
+      // 4x4 blocks of pixels
+      for (size_t y = 0; y < header.height; y += 4) {
+        for (size_t x = 0; x < header.width; x += 8) {
+          for (size_t yy = 0; yy < 4; yy++) {
+            for (size_t xx = 0; xx < 8; xx++) {
+              uint8_t index = r.get_u8();
+              result.write_pixel(x + xx, y + yy, clut->at(index));
+            }
+          }
+        }
+      }
+      break;
+
+    case GVRDataFormat::DXT1:
       for (size_t y = 0; y < header.height; y += 8) {
         for (size_t x = 0; x < header.width; x += 8) {
           for (size_t yy = 0; yy < 8; yy += 4) {
@@ -209,7 +301,7 @@ Image decode_gvr(const string& data) {
         }
       }
       break;
-    }
+
     default:
       throw logic_error(string_printf(
           "unimplemented data format: %02hhX",
@@ -220,8 +312,8 @@ Image decode_gvr(const string& data) {
 }
 
 int main(int argc, char* argv[]) {
-  if (argc != 2) {
-    fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
+  if (argc < 2 || argc > 3) {
+    fprintf(stderr, "Usage: %s <filename.gvm|gvr> [color_table.gvp]\n", argv[0]);
     return 1;
   }
 
@@ -231,6 +323,12 @@ int main(int argc, char* argv[]) {
     return 2;
   }
 
+  vector<uint32_t> clut;
+  if (argc == 3) {
+    string clut_data = load_file(argv[2]);
+    clut = decode_gvp(clut_data);
+  }
+
   uint32_t magic = *reinterpret_cast<const be_uint32_t*>(data.data());
   if ((magic == 0x47565254) || (magic == 0x47424958)) { // GVRT or GBIX
     if (magic == 0x47424958) { // GBIX
@@ -238,7 +336,7 @@ int main(int argc, char* argv[]) {
       data = data.substr(gbix_size + 8); // strip off GBIX header
     }
     try {
-      Image decoded = decode_gvr(data);
+      Image decoded = decode_gvr(data, clut.empty() ? nullptr : &clut);
       decoded.save(string(argv[1]) + ".bmp", Image::Format::WINDOWS_BITMAP);
     } catch (const exception& e) {
       fprintf(stderr, "failed to decode gvr: %s\n", e.what());
@@ -276,7 +374,7 @@ int main(int argc, char* argv[]) {
 
       string gvr_contents = data.substr(offset, gvr->data_size + 8);
       try {
-        Image decoded = decode_gvr(gvr_contents);
+        Image decoded = decode_gvr(gvr_contents, clut.empty() ? nullptr : &clut);
         decoded.save(filename + ".bmp", Image::Format::WINDOWS_BITMAP);
         printf("> %04zu = %08zX:%08X => %s.bmp\n",
             x + 1, offset, gvr->data_size + 8, filename.c_str());
