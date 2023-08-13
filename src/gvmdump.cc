@@ -249,6 +249,37 @@ Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullptr) {
       }
       break;
 
+    case GVRDataFormat::INTENSITY_4:
+      // 4x4 blocks of pixels
+      for (size_t y = 0; y < header.height; y += 8) {
+        for (size_t x = 0; x < header.width; x += 8) {
+          for (size_t yy = 0; yy < 8; yy++) {
+            for (size_t xx = 0; xx < 8; xx += 2) {
+              uint8_t v = r.get_u8();
+              uint8_t v1 = (v & 0xF0) | (v >> 4);
+              uint8_t v2 = (v & 0x0F) | (v << 4);
+              result.write_pixel(x + xx, y + yy, (v1 << 24) | (v1 << 16) | (v1 << 8) | 0xFF);
+              result.write_pixel(x + xx + 1, y + yy, (v2 << 24) | (v2 << 16) | (v2 << 8) | 0xFF);
+            }
+          }
+        }
+      }
+      break;
+
+    case GVRDataFormat::INTENSITY_8:
+      // 4x4 blocks of pixels
+      for (size_t y = 0; y < header.height; y += 4) {
+        for (size_t x = 0; x < header.width; x += 8) {
+          for (size_t yy = 0; yy < 4; yy++) {
+            for (size_t xx = 0; xx < 8; xx++) {
+              uint8_t v = r.get_u8();
+              result.write_pixel(x + xx, y + yy, (v << 24) | (v << 16) | (v << 8) | 0xFF);
+            }
+          }
+        }
+      }
+      break;
+
     case GVRDataFormat::DXT1:
       for (size_t y = 0; y < header.height; y += 8) {
         for (size_t x = 0; x < header.width; x += 8) {
