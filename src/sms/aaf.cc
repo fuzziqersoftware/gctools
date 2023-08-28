@@ -728,9 +728,7 @@ SoundEnvironment create_midi_sound_environment(
   return env;
 }
 
-SoundEnvironment create_json_sound_environment(
-    shared_ptr<const JSONObject> instruments_json,
-    const string& directory) {
+SoundEnvironment create_json_sound_environment(const JSON& instruments_json, const string& directory) {
   SoundEnvironment env;
 
   // create instrument bank 0 and sample bank 0
@@ -739,30 +737,20 @@ SoundEnvironment create_json_sound_environment(
 
   // create instruments
   size_t sound_id = 1;
-  for (const auto& inst_json : instruments_json->as_list()) {
-    int64_t id = inst_json->as_dict().at("id")->as_int();
+  for (const auto& inst_json : instruments_json.as_list()) {
+    int64_t id = inst_json->at("id").as_int();
     auto& inst = inst_bank.id_to_instrument.emplace(piecewise_construct, forward_as_tuple(id), forward_as_tuple(id)).first->second;
 
     // fprintf(stderr, "[create_json_sound_environment] creating instrument %" PRId64 "\n", id);
 
-    for (const auto& rgn_json : inst_json->as_dict().at("regions")->as_list()) {
-      auto& rgn_dict = rgn_json->as_dict();
-      int64_t key_low = rgn_dict.at("key_low")->as_int();
-      int64_t key_high = rgn_dict.at("key_high")->as_int();
-      int64_t base_note = rgn_dict.at("base_note")->as_int();
-      string filename = directory + "/" + rgn_dict.at("filename")->as_string();
+    for (const auto& rgn_json : inst_json->at("regions").as_list()) {
+      int64_t key_low = rgn_json->at("key_low").as_int();
+      int64_t key_high = rgn_json->at("key_high").as_int();
+      int64_t base_note = rgn_json->at("base_note").as_int();
+      string filename = directory + "/" + rgn_json->at("filename").as_string();
 
-      double freq_mult = 1;
-      try {
-        freq_mult = rgn_dict.at("freq_mult")->as_float();
-      } catch (const out_of_range&) {
-      }
-
-      bool constant_pitch = false;
-      try {
-        constant_pitch = rgn_dict.at("constant_pitch")->as_bool();
-      } catch (const out_of_range&) {
-      }
+      double freq_mult = rgn_json->get_float("freq_mult", 1.0);
+      bool constant_pitch = rgn_json->get_bool("constant_pitch", false);
 
       WAVContents wav;
       try {

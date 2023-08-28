@@ -2181,10 +2181,10 @@ int main(int argc, char** argv) {
   (void)resample_method_set; // suppress warning about unused variable
 #endif
 
-  shared_ptr<JSONObject> env_json;
+  JSON env_json;
   string env_json_dir;
   if (!env_json_filename.empty()) {
-    env_json = JSONObject::parse(load_file(env_json_filename));
+    env_json = JSON::parse(load_file(env_json_filename));
 
     size_t slash_pos = env_json_filename.rfind('/');
     if (slash_pos == string::npos) {
@@ -2194,9 +2194,9 @@ int main(int argc, char** argv) {
     }
 
     if (filename.empty()) {
-      filename = env_json_dir + "/" + env_json->as_dict().at("sequence_filename")->as_string();
+      filename = env_json_dir + "/" + env_json.at("sequence_filename").as_string();
     }
-    if (env_json->as_dict().at("sequence_type")->as_string() != "MIDI") {
+    if (env_json.at("sequence_type").as_string() != "MIDI") {
       fprintf(stderr, "JSON environments may only contain MIDI sequences\n");
       return 1;
     }
@@ -2210,9 +2210,9 @@ int main(int argc, char** argv) {
 
   // load the sound environment from the AAF, the CLI, or the JSON
   shared_ptr<const SoundEnvironment> env;
-  if (env_json.get()) {
+  if (!env_json.is_null()) {
     env.reset(new SoundEnvironment(create_json_sound_environment(
-        env_json->as_dict().at("instruments"), env_json_dir)));
+        env_json.at("instruments"), env_json_dir)));
   } else if (aaf_directory) {
     env.reset(new SoundEnvironment(load_sound_environment(aaf_directory)));
   } else if (midi) {
@@ -2299,19 +2299,10 @@ int main(int argc, char** argv) {
     // midi has some extra params; get them from the json if possible
     uint8_t percussion_instrument = 0;
     bool allow_program_change = true;
-    if (env_json.get()) {
-      try {
-        percussion_instrument = env_json->as_dict().at("percussion_instrument")->as_int();
-      } catch (const out_of_range&) {
-      }
-      try {
-        allow_program_change = env_json->as_dict().at("allow_program_change")->as_bool();
-      } catch (const out_of_range&) {
-      }
-      try {
-        tempo_bias *= env_json->as_dict().at("tempo_bias")->as_float();
-      } catch (const out_of_range&) {
-      }
+    if (!env_json.is_null()) {
+      percussion_instrument = env_json.get_int("percussion_instrument", 0);
+      allow_program_change = env_json.get_bool("allow_program_change", true);
+      tempo_bias *= env_json.get_float("tempo_bias", 1.0);
     }
     r.reset(new MIDIRenderer(
         midi_contents,
