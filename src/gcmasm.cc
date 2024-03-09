@@ -50,6 +50,25 @@ struct GCMHeader {
   // 2440: char apploader_date[16];
 } __attribute__((packed));
 
+const int TGC_HEADER_SIZE = 0x8000;
+
+struct TGCHeader {
+  be_uint32_t magic;
+  be_uint32_t unknown1;
+  be_uint32_t header_size;
+  be_uint32_t unknown2;
+  be_uint32_t fst_offset;
+  be_uint32_t fst_size;
+  be_uint32_t fst_max_size;
+  be_uint32_t dol_offset;
+  be_uint32_t dol_size;
+  be_uint32_t file_area;
+  be_uint32_t file_area_size;
+  be_uint32_t banner_offset;
+  be_uint32_t banner_size;
+  be_uint32_t file_offset_base;
+} __attribute__((packed));
+
 struct ApploaderHeader {
   char date[0x10];
   be_uint32_t entrypoint;
@@ -219,6 +238,7 @@ struct HeaderParams {
   int16_t stream_buffer_size = -1;
   const char* internal_name = nullptr;
   int64_t region_code = -1;
+  bool tgc = false;
 };
 
 void compile_image(
@@ -312,16 +332,45 @@ void compile_image(
   } else if (!header_bin) {
     header->region_code = 1;
   }
-  fwritex(out, header_data);
-  log_info("Header written");
 
-  fseek(out, apploader_offset, SEEK_SET);
+  size_t gcm_offset;
+  if (header_params.tgc) {
+    gcm_offset = TGC_HEADER_SIZE;
+
+    string tgc_header_data;
+    tgc_header_data.resize(TGC_HEADER_SIZE, '\0');
+
+    TGCHeader* tgc_header = reinterpret_cast<TGCHeader*>(tgc_header_data.data());
+    tgc_header->magic = 0xAE0F38A2;
+    tgc_header->header_size = TGC_HEADER_SIZE;
+    tgc_header->unknown2 = 0x00100000;
+    tgc_header->fst_offset = header->fst_offset + TGC_HEADER_SIZE;
+    tgc_header->fst_size = header->fst_size;
+    tgc_header->fst_max_size = header->fst_size;
+    tgc_header->dol_offset = header->dol_offset + TGC_HEADER_SIZE;
+    tgc_header->dol_size = default_dol->size;
+    tgc_header->file_area = TGC_HEADER_SIZE;
+    tgc_header->file_area_size = fst_offset - TGC_HEADER_SIZE;
+    tgc_header->file_offset_base = 0;
+
+    fseek(out, 0, SEEK_SET);
+    fwritex(out, tgc_header_data);
+    log_info("TGC header written");
+  } else {
+    gcm_offset = 0;
+  }
+
+  fseek(out, gcm_offset, SEEK_SET);
+  fwritex(out, header_data);
+  log_info("GCM header written");
+
+  fseek(out, apploader_offset + gcm_offset, SEEK_SET);
   fwritex(out, apploader_bin->data());
   log_info("Apploader written");
-  fseek(out, default_dol_offset, SEEK_SET);
+  fseek(out, default_dol_offset + gcm_offset, SEEK_SET);
   fwritex(out, default_dol->data());
   log_info("default.dol written");
-  fseek(out, fst_offset, SEEK_SET);
+  fseek(out, fst_offset + gcm_offset, SEEK_SET);
   fst.write(out);
   log_info("FST written");
 
@@ -330,7 +379,7 @@ void compile_image(
       write_files_data(out, *it.second);
     }
     for (const auto& it : dir.files) {
-      fseek(out, it.second->image_offset, SEEK_SET);
+      fseek(out, it.second->image_offset + gcm_offset, SEEK_SET);
       fwritex(out, it.second->data());
       log_info("%s written", it.second->name.c_str());
     }
@@ -365,6 +414,8 @@ Options:\n\
       Set internal name.\n\
   --region=REGIONCODE\n\
       Set region code (0=JP, 1=NA, 2=EU, 3=region-free, 4=KR).\n\
+  --tgc\n\
+      Repack as TGC instead of GCM.\n\
 ");
 }
 
@@ -398,6 +449,8 @@ int main(int argc, char* argv[]) {
       header_params.internal_name = &argv[x][7];
     } else if (!strncmp(argv[x], "--region=", 9)) {
       header_params.region_code = strtoul(&argv[x][9], nullptr, 0);
+    } else if (!strncmp(argv[x], "--tgc", 5)) {
+      header_params.tgc = true;
     } else if (!dir_path) {
       dir_path = argv[x];
     } else if (out_path.empty()) {
