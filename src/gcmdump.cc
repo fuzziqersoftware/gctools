@@ -54,7 +54,7 @@ struct TGCHeader {
   be_uint32_t dol_offset;
   be_uint32_t dol_size;
   be_uint32_t file_area;
-  be_uint32_t unknown3; // 10
+  be_uint32_t file_area_size;
   be_uint32_t banner_offset;
   be_uint32_t banner_size;
   be_uint32_t file_offset_base;
