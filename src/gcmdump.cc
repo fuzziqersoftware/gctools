@@ -228,10 +228,11 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  uint32_t fst_offset, fst_size, dol_offset;
+  uint32_t gcm_offset, fst_offset, fst_size, dol_offset;
   int32_t base_offset;
   if (format == Format::GCM) {
     fprintf(stderr, "format: gcm (%s)\n", header.gcm.name);
+    gcm_offset = 0;
     fst_offset = header.gcm.fst_offset;
     fst_size = header.gcm.fst_size;
     base_offset = 0;
@@ -239,6 +240,7 @@ int main(int argc, char* argv[]) {
 
   } else if (format == Format::TGC) {
     fprintf(stderr, "format: tgc\n");
+    gcm_offset = header.tgc.header_size;
     fst_offset = header.tgc.fst_offset;
     fst_size = header.tgc.fst_size;
     base_offset = header.tgc.file_area - header.tgc.file_offset_base;
@@ -263,14 +265,14 @@ int main(int argc, char* argv[]) {
   }
 
   if (target_filenames.empty() || target_filenames.count("__gcm_header__.bin")) {
-    save_file("__gcm_header__.bin", preadx(fd, 0x2440, 0));
+    save_file("__gcm_header__.bin", preadx(fd, 0x2440, gcm_offset));
   }
 
   if (target_filenames.empty() || target_filenames.count("apploader.bin")) {
-    string data = preadx(fd, sizeof(ApploaderHeader), 0x2440);
+    string data = preadx(fd, sizeof(ApploaderHeader), gcm_offset + 0x2440);
     const auto* header = reinterpret_cast<const ApploaderHeader*>(data.data());
     data += preadx(
-        fd, header->size + header->trailer_size, 0x2440 + sizeof(ApploaderHeader));
+        fd, header->size + header->trailer_size, gcm_offset + 0x2440 + sizeof(ApploaderHeader));
     save_file("apploader.bin", data);
   }
 
