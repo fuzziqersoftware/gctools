@@ -183,8 +183,8 @@ struct Directory {
   }
 };
 
-size_t allocate_image_offset(size_t offset, size_t size) {
-  return (offset + size + 0xFF) & 0xFFFFFF00;
+size_t align(size_t offset, size_t alignment) {
+  return (offset + alignment - 1) & ~(alignment - 1);
 }
 
 size_t allocate_image_offsets(Directory& dir, size_t min_offset) {
@@ -192,8 +192,10 @@ size_t allocate_image_offsets(Directory& dir, size_t min_offset) {
     min_offset = allocate_image_offsets(*it.second, min_offset);
   }
   for (auto& it : dir.files) {
-    it.second->image_offset = min_offset;
-    min_offset = allocate_image_offset(min_offset, it.second->size);
+    // Streaming audio files in particular must be 32 KiB aligned, but we don't
+    // attempt to detect those so we align everything to 32 KiB.
+    it.second->image_offset = align(min_offset, 0x8000);
+    min_offset = it.second->image_offset + it.second->size;
   }
   return min_offset;
 }
@@ -271,11 +273,10 @@ void compile_image(
   }
 
   size_t apploader_offset = 0x2440;
-  size_t default_dol_offset = (apploader_offset + apploader_bin->size + 0xFF) & 0xFFFFFF00;
-  size_t file_data_start_offset = (default_dol_offset + default_dol->size + 0xFF) & 0xFFFFFF00;
+  size_t default_dol_offset = align(apploader_offset + apploader_bin->size, 0x100);
+  size_t file_data_start_offset = align(default_dol_offset + default_dol->size, 0x100);
 
-  size_t fst_offset = (allocate_image_offsets(root_dir, file_data_start_offset) + 0xFF) & 0xFFFFFF00;
-  fst_offset = (fst_offset + 0xFF) & 0xFFFFFF00;
+  size_t fst_offset = align(allocate_image_offsets(root_dir, file_data_start_offset), 0x100);
 
   auto fst = generate_fst(root_dir);
 
