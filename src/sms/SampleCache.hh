@@ -41,7 +41,7 @@ public:
       double src_ratio) {
     try {
       return this->at(k, src_ratio);
-    } catch (const out_of_range&) {
+    } catch (const std::out_of_range&) {
       auto data = ::resample(
           input_samples,
           num_channels,
