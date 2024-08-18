@@ -16,48 +16,48 @@ using namespace std;
 
 struct ApploaderHeader {
   char date[0x10];
-  be_uint32_t entrypoint;
-  be_uint32_t size;
-  be_uint32_t trailer_size;
-  be_uint32_t unknown_a1;
+  phosg::be_uint32_t entrypoint;
+  phosg::be_uint32_t size;
+  phosg::be_uint32_t trailer_size;
+  phosg::be_uint32_t unknown_a1;
   // Apploader code follows immediately (loaded to 0x81200000)
 } __attribute__((packed));
 
 struct GCMHeader {
-  be_uint32_t game_id;
-  be_uint16_t company_id;
+  phosg::be_uint32_t game_id;
+  phosg::be_uint16_t company_id;
   uint8_t disk_id;
   uint8_t version;
   uint8_t audio_streaming;
   uint8_t stream_buffer_size;
   uint8_t unused1[0x0E];
-  be_uint32_t wii_magic;
-  be_uint32_t gc_magic;
+  phosg::be_uint32_t wii_magic;
+  phosg::be_uint32_t gc_magic;
   char name[0x03E0];
-  be_uint32_t debug_offset;
-  be_uint32_t debug_addr;
+  phosg::be_uint32_t debug_offset;
+  phosg::be_uint32_t debug_addr;
   uint8_t unused2[0x18];
-  be_uint32_t dol_offset;
-  be_uint32_t fst_offset;
-  be_uint32_t fst_size;
-  be_uint32_t fst_max_size;
+  phosg::be_uint32_t dol_offset;
+  phosg::be_uint32_t fst_offset;
+  phosg::be_uint32_t fst_size;
+  phosg::be_uint32_t fst_max_size;
 } __attribute__((packed));
 
 struct TGCHeader {
-  be_uint32_t magic;
-  be_uint32_t unknown1;
-  be_uint32_t header_size;
-  be_uint32_t unknown2;
-  be_uint32_t fst_offset;
-  be_uint32_t fst_size;
-  be_uint32_t fst_max_size;
-  be_uint32_t dol_offset;
-  be_uint32_t dol_size;
-  be_uint32_t file_area;
-  be_uint32_t file_area_size;
-  be_uint32_t banner_offset;
-  be_uint32_t banner_size;
-  be_uint32_t file_offset_base;
+  phosg::be_uint32_t magic;
+  phosg::be_uint32_t unknown1;
+  phosg::be_uint32_t header_size;
+  phosg::be_uint32_t unknown2;
+  phosg::be_uint32_t fst_offset;
+  phosg::be_uint32_t fst_size;
+  phosg::be_uint32_t fst_max_size;
+  phosg::be_uint32_t dol_offset;
+  phosg::be_uint32_t dol_size;
+  phosg::be_uint32_t file_area;
+  phosg::be_uint32_t file_area_size;
+  phosg::be_uint32_t banner_offset;
+  phosg::be_uint32_t banner_size;
+  phosg::be_uint32_t file_offset_base;
 } __attribute__((packed));
 
 union ImageHeader {
@@ -67,31 +67,31 @@ union ImageHeader {
 
 struct DOLHeader {
   // Sections 0-6 are text; the rest (7-17) are data
-  be_uint32_t section_offset[18];
-  be_uint32_t section_address[18];
-  be_uint32_t section_size[18];
-  be_uint32_t bss_address;
-  be_uint32_t bss_size;
-  be_uint32_t entry_point;
-  be_uint32_t unused[7];
+  phosg::be_uint32_t section_offset[18];
+  phosg::be_uint32_t section_address[18];
+  phosg::be_uint32_t section_size[18];
+  phosg::be_uint32_t bss_address;
+  phosg::be_uint32_t bss_size;
+  phosg::be_uint32_t entry_point;
+  phosg::be_uint32_t unused[7];
 } __attribute__((packed));
 
 struct FSTRootEntry {
-  be_uint32_t dir_flag_string_offset;
-  be_uint32_t parent_offset;
-  be_uint32_t num_entries;
+  phosg::be_uint32_t dir_flag_string_offset;
+  phosg::be_uint32_t parent_offset;
+  phosg::be_uint32_t num_entries;
 } __attribute__((packed));
 
 struct FSTDirEntry {
-  be_uint32_t dir_flag_string_offset;
-  be_uint32_t parent_offset;
-  be_uint32_t next_offset;
+  phosg::be_uint32_t dir_flag_string_offset;
+  phosg::be_uint32_t parent_offset;
+  phosg::be_uint32_t next_offset;
 } __attribute__((packed));
 
 struct FSTFileEntry {
-  be_uint32_t dir_flag_string_offset;
-  be_uint32_t file_offset;
-  be_uint32_t file_size;
+  phosg::be_uint32_t dir_flag_string_offset;
+  phosg::be_uint32_t file_offset;
+  phosg::be_uint32_t file_size;
 } __attribute__((packed));
 
 union FSTEntry {
@@ -129,12 +129,17 @@ uint32_t dol_file_size(const DOLHeader* dol) {
   return max_offset;
 }
 
-void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
-    int start, int end, int64_t base_offset,
+void parse_until(
+    phosg::scoped_fd& fd,
+    const FSTEntry* fst,
+    const char* string_table,
+    int start,
+    int end,
+    int64_t base_offset,
     const unordered_set<string>& target_filenames) {
 
   int x;
-  string pwd = getcwd();
+  string pwd = phosg::getcwd();
   pwd += '/';
   size_t pwd_end = pwd.size();
   for (x = start; x < end; x++) {
@@ -172,7 +177,7 @@ void parse_until(scoped_fd& fd, const FSTEntry* fst, const char* string_table,
           target_filenames.count(&string_table[fst[x].string_offset()])) {
         string filename = sanitize_filename(&string_table[fst[x].string_offset()]);
         try {
-          save_file(filename, preadx(fd, fst[x].file.file_size, fst[x].file.file_offset + base_offset));
+          phosg::save_file(filename, preadx(fd, fst[x].file.file_size, fst[x].file.file_offset + base_offset));
         } catch (const exception& e) {
           fprintf(stderr, "!!! failed to write file: %s\n", e.what());
         }
@@ -213,10 +218,10 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  scoped_fd fd(filename, O_RDONLY);
+  phosg::scoped_fd fd(filename, O_RDONLY);
 
   ImageHeader header;
-  readx(fd, &header, sizeof(ImageHeader));
+  phosg::readx(fd, &header, sizeof(ImageHeader));
   if (format == Format::UNKNOWN) {
     if (header.gcm.gc_magic == 0xC2339F3D) {
       format = Format::GCM;
@@ -254,34 +259,34 @@ int main(int argc, char* argv[]) {
   // if there are target filenames and default.dol isn't specified, don't
   // extract it
   if (target_filenames.empty() || target_filenames.count("default.dol")) {
-    string dol_data = preadx(fd, sizeof(DOLHeader), dol_offset);
+    string dol_data = phosg::preadx(fd, sizeof(DOLHeader), dol_offset);
     uint32_t dol_size = dol_file_size(reinterpret_cast<const DOLHeader*>(
         dol_data.data()));
 
-    dol_data += preadx(fd, dol_size - sizeof(DOLHeader),
+    dol_data += phosg::preadx(fd, dol_size - sizeof(DOLHeader),
         dol_offset + sizeof(DOLHeader));
 
-    save_file("default.dol", dol_data);
+    phosg::save_file("default.dol", dol_data);
   }
 
   if (target_filenames.empty() || target_filenames.count("__gcm_header__.bin")) {
-    save_file("__gcm_header__.bin", preadx(fd, 0x2440, gcm_offset));
+    phosg::save_file("__gcm_header__.bin", preadx(fd, 0x2440, gcm_offset));
   }
 
   if (target_filenames.empty() || target_filenames.count("apploader.bin")) {
-    string data = preadx(fd, sizeof(ApploaderHeader), gcm_offset + 0x2440);
+    string data = phosg::preadx(fd, sizeof(ApploaderHeader), gcm_offset + 0x2440);
     const auto* header = reinterpret_cast<const ApploaderHeader*>(data.data());
-    data += preadx(
+    data += phosg::preadx(
         fd, header->size + header->trailer_size, gcm_offset + 0x2440 + sizeof(ApploaderHeader));
-    save_file("apploader.bin", data);
+    phosg::save_file("apploader.bin", data);
   }
 
-  string fst_data = preadx(fd, fst_size, fst_offset);
+  string fst_data = phosg::preadx(fd, fst_size, fst_offset);
   const FSTEntry* fst = reinterpret_cast<const FSTEntry*>(fst_data.data());
 
   // if there are target filenames and fst.bin isn't specified, don't extract it
   if (target_filenames.empty() || target_filenames.count("fst.bin")) {
-    save_file("fst.bin", fst_data);
+    phosg::save_file("fst.bin", fst_data);
   }
 
   int num_entries = fst[0].root.num_entries;

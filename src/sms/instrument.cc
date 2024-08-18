@@ -69,43 +69,43 @@ InstrumentBank::InstrumentBank(uint32_t id)
 struct ibnk_inst_inst_vel_region {
   uint8_t vel_high;
   uint8_t unknown1[3];
-  be_uint16_t sample_bank_id;
-  be_uint16_t sample_num;
-  be_float volume_mult;
-  be_float freq_mult;
+  phosg::be_uint16_t sample_bank_id;
+  phosg::be_uint16_t sample_num;
+  phosg::be_float volume_mult;
+  phosg::be_float freq_mult;
 };
 
 struct ibnk_inst_inst_key_region {
   uint8_t key_high;
   uint8_t unknown1[3];
-  be_uint32_t vel_region_count;
-  be_uint32_t vel_region_offsets[0];
+  phosg::be_uint32_t vel_region_count;
+  phosg::be_uint32_t vel_region_offsets[0];
 };
 
 struct ibnk_inst_inst_header {
-  be_uint32_t magic;
-  be_uint32_t unknown;
-  be_float freq_mult;
-  be_float volume_mult;
-  be_uint32_t osc_offsets[2];
-  be_uint32_t eff_offsets[2];
-  be_uint32_t sen_offsets[2];
-  be_uint32_t key_region_count;
-  be_uint32_t key_region_offsets[0];
+  phosg::be_uint32_t magic;
+  phosg::be_uint32_t unknown;
+  phosg::be_float freq_mult;
+  phosg::be_float volume_mult;
+  phosg::be_uint32_t osc_offsets[2];
+  phosg::be_uint32_t eff_offsets[2];
+  phosg::be_uint32_t sen_offsets[2];
+  phosg::be_uint32_t key_region_count;
+  phosg::be_uint32_t key_region_offsets[0];
 };
 
 struct ibnk_inst_per2_key_region {
-  be_float freq_mult;
-  be_float volume_mult;
-  be_uint32_t unknown2[2];
-  be_uint32_t vel_region_count;
-  be_uint32_t vel_region_offsets[0];
+  phosg::be_float freq_mult;
+  phosg::be_float volume_mult;
+  phosg::be_uint32_t unknown2[2];
+  phosg::be_uint32_t vel_region_count;
+  phosg::be_uint32_t vel_region_offsets[0];
 };
 
 struct ibnk_inst_per2_header {
-  be_uint32_t magic;
-  be_uint32_t unknown1[0x21];
-  be_uint32_t key_region_offsets[100];
+  phosg::be_uint32_t magic;
+  phosg::be_uint32_t unknown1[0x21];
+  phosg::be_uint32_t key_region_offsets[100];
 };
 
 struct ibnk_inst_perc_header {
@@ -113,81 +113,81 @@ struct ibnk_inst_perc_header {
   // number. there don't appear to be any size/count fields in the structure.
   // another guess: the key region format appears to match the per2 key region
   // format; assume they're the same
-  be_uint32_t magic;
-  be_uint32_t key_region_offsets[0x7F];
+  phosg::be_uint32_t magic;
+  phosg::be_uint32_t key_region_offsets[0x7F];
 };
 
 struct ibnk_inst_percnew_header {
-  be_uint32_t magic; // 'Perc'
-  be_uint32_t count;
-  be_uint32_t pmap_offsets[0];
+  phosg::be_uint32_t magic; // 'Perc'
+  phosg::be_uint32_t count;
+  phosg::be_uint32_t pmap_offsets[0];
 };
 
 struct ibnk_inst_instnew_vel_region {
   uint8_t vel_high;
   uint8_t unused[3];
-  be_uint16_t sample_bank_id;
-  be_uint16_t sample_num;
-  be_float volume_mult;
-  be_float freq_mult;
+  phosg::be_uint16_t sample_bank_id;
+  phosg::be_uint16_t sample_num;
+  phosg::be_float volume_mult;
+  phosg::be_float freq_mult;
 };
 
 struct ibnk_inst_instnew_key_region {
   uint8_t key_high;
   uint8_t unused[3];
-  be_uint32_t vel_region_count;
+  phosg::be_uint32_t vel_region_count;
 };
 
 struct ibnk_inst_instnew_header {
-  be_uint32_t magic; // 'Inst'
-  be_uint32_t osc;
-  be_uint32_t inst_id;
+  phosg::be_uint32_t magic; // 'Inst'
+  phosg::be_uint32_t osc;
+  phosg::be_uint32_t inst_id;
   // TODO: this appears to control the instrument format somehow. usually it's
   // zero but if it's a small number, it appears to specify the number of 32-bit
   // fields following it (of unknown purpose) before the key region count. for
   // example, Twilight Princess has an instrument that looks like this:
   // 496E7374 00000001 00000021 00000002 000014D8 00001518 00000003 3D000000 ...
   // (the 3D is probably key_high for the first key region)
-  be_uint32_t unknown1;
-  be_uint32_t key_region_count;
+  phosg::be_uint32_t unknown1;
+  phosg::be_uint32_t key_region_count;
 };
 
 struct ibnk_inst_instnew_footer {
-  be_float volume_mult;
-  be_float freq_mult;
+  phosg::be_float volume_mult;
+  phosg::be_float freq_mult;
 };
 
 struct ibnk_inst_pmap_header {
-  be_uint32_t magic;
-  be_float volume_mult;
-  be_float freq_mult;
-  be_uint32_t unknown[2];
-  be_uint32_t vel_region_count;
+  phosg::be_uint32_t magic;
+  phosg::be_float volume_mult;
+  phosg::be_float freq_mult;
+  phosg::be_uint32_t unknown[2];
+  phosg::be_uint32_t vel_region_count;
   ibnk_inst_instnew_vel_region vel_regions[0];
 };
 
 struct ibnk_bank_header {
-  be_uint32_t magic; // 'BANK'
-  be_uint32_t inst_offsets[245];
+  phosg::be_uint32_t magic; // 'BANK'
+  phosg::be_uint32_t inst_offsets[245];
 };
 
 struct ibnk_list_header {
-  be_uint32_t magic; // 'LIST'
-  be_uint32_t size;
-  be_uint32_t count;
-  be_uint32_t inst_offsets[0];
+  phosg::be_uint32_t magic; // 'LIST'
+  phosg::be_uint32_t size;
+  phosg::be_uint32_t count;
+  phosg::be_uint32_t inst_offsets[0];
 };
 
 struct ibnk_header {
-  be_uint32_t magic; // 'IBNK'
-  be_uint32_t size;
-  be_uint32_t bank_id;
-  be_uint32_t unknown1[5];
+  phosg::be_uint32_t magic; // 'IBNK'
+  phosg::be_uint32_t size;
+  phosg::be_uint32_t bank_id;
+  phosg::be_uint32_t unknown1[5];
 };
 
 struct ibnk_chunk_header {
-  be_uint32_t magic;
-  be_uint32_t size;
+  phosg::be_uint32_t magic;
+  phosg::be_uint32_t size;
 };
 
 Instrument ibnk_inst_decode(const void* vdata, size_t offset, size_t inst_id) {
@@ -199,7 +199,7 @@ Instrument ibnk_inst_decode(const void* vdata, size_t offset, size_t inst_id) {
   if (!memcmp(inst_data, "INST", 4)) {
     const ibnk_inst_inst_header* inst = reinterpret_cast<const ibnk_inst_inst_header*>(inst_data);
 
-    const be_float default_mult = 1.0;
+    const phosg::be_float default_mult = 1.0;
     // TODO: Use this in the appropriate places
     // float freq_mult = (inst->freq_mult == 0.0) ? default_mult : inst->freq_mult;
     float volume_mult = (inst->volume_mult == 0.0) ? default_mult : inst->volume_mult;
@@ -317,7 +317,7 @@ Instrument ibnk_inst_decode(const void* vdata, size_t offset, size_t inst_id) {
   }
 
   // old-style PERC and PER2 instruments (Luigi's Mansion / Pikmin era)
-  const be_uint32_t* offset_table = nullptr;
+  const phosg::be_uint32_t* offset_table = nullptr;
   uint32_t count = 0;
   if (!memcmp(inst_data, "PERC", 4)) {
     const ibnk_inst_perc_header* perc = reinterpret_cast<const ibnk_inst_perc_header*>(inst_data);
@@ -330,7 +330,7 @@ Instrument ibnk_inst_decode(const void* vdata, size_t offset, size_t inst_id) {
     count = 0x64;
 
   } else {
-    throw invalid_argument(string_printf("unknown instrument format at %08zX: %.4s (%08X)",
+    throw invalid_argument(phosg::string_printf("unknown instrument format at %08zX: %.4s (%08X)",
         offset, inst_data, *reinterpret_cast<const uint32_t*>(inst_data)));
   }
 
@@ -437,11 +437,11 @@ InstrumentBank ibnk_decode(const void* vdata) {
       offset += list_header->size + sizeof(ibnk_list_header);
 
     } else if (!memcmp(&chunk_header->magic, "BANK", 4)) {
-      throw runtime_error(string_printf("IBNK contains BANK at %08zX but it is not first",
+      throw runtime_error(phosg::string_printf("IBNK contains BANK at %08zX but it is not first",
           offset));
 
     } else {
-      throw runtime_error(string_printf("unknown IBNK chunk type at %08zX: %.4s",
+      throw runtime_error(phosg::string_printf("unknown IBNK chunk type at %08zX: %.4s",
           offset, reinterpret_cast<const char*>(&chunk_header->magic)));
     }
   }

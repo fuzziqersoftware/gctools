@@ -89,7 +89,7 @@ int8_t sign_extend_nybble(int8_t x) {
 void disassemble_mod(FILE* stream, shared_ptr<const Module> mod);
 
 shared_ptr<Module> parse_mod(const string& data) {
-  StringReader r(data.data(), data.size());
+  phosg::StringReader r(data.data(), data.size());
 
   // Check for other known file type signatures, but don't let them prevent
   // attempting to load the file
@@ -144,10 +144,10 @@ shared_ptr<Module> parse_mod(const string& data) {
   }
 
   mod->name = r.read(0x14);
-  strip_trailing_zeroes(mod->name);
+  phosg::strip_trailing_zeroes(mod->name);
 
   if (flags & Flags::SHOW_LOADING_DEBUG) {
-    string escaped_name = escape_quotes(mod->name);
+    string escaped_name = phosg::escape_quotes(mod->name);
     fprintf(stderr, "Loader[%zX]: name is \"%s\"\n",
         r.where(), escaped_name.c_str());
   }
@@ -157,7 +157,7 @@ shared_ptr<Module> parse_mod(const string& data) {
     auto& i = mod->instruments[x];
     i.index = x;
     i.name = r.read(0x16);
-    strip_trailing_zeroes(i.name);
+    phosg::strip_trailing_zeroes(i.name);
     i.num_samples = static_cast<uint32_t>(r.get_u16b()) << 1;
     i.finetune = sign_extend_nybble(r.get_u8());
     i.volume = r.get_u8();
@@ -232,7 +232,7 @@ shared_ptr<Module> parse_mod(const string& data) {
       fprintf(stderr, "Warning: sound data is missing for instrument %zu\n",
           i.index + 1);
     }
-    i.sample_data = convert_samples_s8_to_f32(i.original_sample_data);
+    i.sample_data = phosg_audio::convert_samples_s8_to_f32(i.original_sample_data);
     if (flags & Flags::SHOW_LOADING_DEBUG) {
       fprintf(stderr, "Loader[%zX]: loaded samples for instrument %zu\n",
           r.where(), i.index + 1);
@@ -243,7 +243,7 @@ shared_ptr<Module> parse_mod(const string& data) {
 }
 
 shared_ptr<Module> load_mod(const string& filename) {
-  return parse_mod(load_file(filename));
+  return parse_mod(phosg::load_file(filename));
 }
 
 static const map<uint16_t, const char*> note_name_for_period({
@@ -315,12 +315,12 @@ void disassemble_pattern_row(
     uint8_t pattern_num,
     uint8_t y) {
 
-  static const TerminalFormat track_colors[5] = {
-      TerminalFormat::FG_RED,
-      TerminalFormat::FG_CYAN,
-      TerminalFormat::FG_YELLOW,
-      TerminalFormat::FG_GREEN,
-      TerminalFormat::FG_MAGENTA,
+  static const phosg::TerminalFormat track_colors[5] = {
+      phosg::TerminalFormat::FG_RED,
+      phosg::TerminalFormat::FG_CYAN,
+      phosg::TerminalFormat::FG_YELLOW,
+      phosg::TerminalFormat::FG_GREEN,
+      phosg::TerminalFormat::FG_MAGENTA,
   };
   bool use_color = flags & Flags::TERMINAL_COLOR;
 
@@ -334,19 +334,19 @@ void disassemble_pattern_row(
 
     if (!instrument_num && !period && !effect) {
       if (use_color) {
-        print_color_escape(stream, TerminalFormat::NORMAL, TerminalFormat::END);
+        print_color_escape(stream, phosg::TerminalFormat::NORMAL, phosg::TerminalFormat::END);
       }
       fputs("  |            ", stream);
     } else {
       if (use_color) {
-        print_color_escape(stream, TerminalFormat::NORMAL, TerminalFormat::END);
+        print_color_escape(stream, phosg::TerminalFormat::NORMAL, phosg::TerminalFormat::END);
       }
       fputs("  |", stream);
       if (use_color) {
         if (instrument_num || period) {
-          print_color_escape(stream, track_colors[z % 5], TerminalFormat::BOLD, TerminalFormat::END);
+          print_color_escape(stream, track_colors[z % 5], phosg::TerminalFormat::BOLD, phosg::TerminalFormat::END);
         } else {
-          print_color_escape(stream, TerminalFormat::NORMAL, TerminalFormat::END);
+          print_color_escape(stream, phosg::TerminalFormat::NORMAL, phosg::TerminalFormat::END);
         }
       }
 
@@ -372,7 +372,7 @@ void disassemble_pattern_row(
     }
   }
   if (use_color) {
-    print_color_escape(stream, TerminalFormat::NORMAL, TerminalFormat::END);
+    print_color_escape(stream, phosg::TerminalFormat::NORMAL, phosg::TerminalFormat::END);
   }
 }
 
@@ -383,7 +383,7 @@ void print_mod_text(FILE* stream, shared_ptr<const Module> mod) {
     if (i.name.empty() && i.sample_data.empty()) {
       continue;
     }
-    string escaped_name = escape_quotes(i.name);
+    string escaped_name = phosg::escape_quotes(i.name);
     fprintf(stream, "  [%02zu] %s\n", i.index + 1, escaped_name.c_str());
   }
 }
@@ -397,7 +397,7 @@ void disassemble_mod(FILE* stream, shared_ptr<const Module> mod) {
 
   for (const auto& i : mod->instruments) {
     fputc('\n', stream);
-    string escaped_name = escape_quotes(i.name);
+    string escaped_name = phosg::escape_quotes(i.name);
     fprintf(stream, "Instrument %zu: %s\n", i.index + 1, escaped_name.c_str());
     fprintf(stream, "  Fine-tune: %c%d/8 semitones\n",
         (i.finetune < 0) ? '-' : '+', (i.finetune < 0) ? -i.finetune : i.finetune);
@@ -406,7 +406,7 @@ void disassemble_mod(FILE* stream, shared_ptr<const Module> mod) {
     fprintf(stream, "  Data: (%zu samples)\n", i.sample_data.size());
 
     if (flags & Flags::SHOW_SAMPLE_DATA) {
-      print_data(stream, i.original_sample_data.data(), i.original_sample_data.size());
+      phosg::print_data(stream, i.original_sample_data.data(), i.original_sample_data.size());
     }
 
     if (flags & Flags::SHOW_SAMPLE_WAVEFORMS) {
@@ -422,11 +422,11 @@ void disassemble_mod(FILE* stream, shared_ptr<const Module> mod) {
         uint16_t offset = (static_cast<int16_t>(sample) + 0x80) / 2;
         line_data[offset] = '*';
         if (((sample == -0x80) || (sample == 0x7F)) && (flags & Flags::TERMINAL_COLOR)) {
-          print_color_escape(stream, TerminalFormat::FG_RED, TerminalFormat::BOLD, TerminalFormat::END);
+          print_color_escape(stream, phosg::TerminalFormat::FG_RED, phosg::TerminalFormat::BOLD, phosg::TerminalFormat::END);
         }
         fprintf(stream, "  ins %02zu +%04zX [%s]%s\n", i.index + 1, z, line_data.c_str(), suffix);
         if (((sample == -0x80) || (sample == 0x7F)) && (flags & Flags::TERMINAL_COLOR)) {
-          print_color_escape(stream, TerminalFormat::NORMAL, TerminalFormat::END);
+          print_color_escape(stream, phosg::TerminalFormat::NORMAL, phosg::TerminalFormat::END);
         }
         line_data[offset] = ' ';
       }
@@ -470,7 +470,7 @@ void export_mod_instruments(
           i.index + 1,
           i.name.c_str());
     } else {
-      string escaped_name = escape_quotes(i.name);
+      string escaped_name = phosg::escape_quotes(i.name);
       fprintf(stderr, "... (%zu) \"%s\" -> %zu samples, +%hhdft, %02hhX vol, loop [%hux%hu]\n",
           i.index + 1,
           escaped_name.c_str(),
@@ -480,16 +480,16 @@ void export_mod_instruments(
           i.loop_start_samples,
           i.loop_length_samples);
 
-      string output_filename_u8 = string_printf("%s_%zu.u8.wav", output_prefix, i.index + 1);
+      string output_filename_u8 = phosg::string_printf("%s_%zu.u8.wav", output_prefix, i.index + 1);
       vector<uint8_t> u8_sample_data;
       u8_sample_data.reserve(i.num_samples);
       for (int8_t sample : i.original_sample_data) {
         u8_sample_data.emplace_back(static_cast<uint8_t>(sample) - 0x80);
       }
-      save_wav(output_filename_u8.c_str(), u8_sample_data, 16574, 1);
+      phosg_audio::save_wav(output_filename_u8.c_str(), u8_sample_data, 16574, 1);
 
-      string output_filename_f32 = string_printf("%s_%zu.f32.wav", output_prefix, i.index + 1);
-      save_wav(output_filename_f32.c_str(), i.sample_data, 16574, 1);
+      string output_filename_f32 = phosg::string_printf("%s_%zu.f32.wav", output_prefix, i.index + 1);
+      phosg_audio::save_wav(output_filename_f32.c_str(), i.sample_data, 16574, 1);
     }
   }
 }
@@ -565,7 +565,7 @@ protected:
               static_cast<double>(this->divisions_per_minute * this->ticks_per_division) / 60),
           samples_per_tick(static_cast<double>(this->sample_rate * 60) / (this->divisions_per_minute * this->ticks_per_division)) {}
     string str() const {
-      return string_printf("%zukHz %zubpm %zut/d => %lgd/m %lgt/sec %lgsmp/t",
+      return phosg::string_printf("%zukHz %zubpm %zut/d => %lgd/m %lgt/sec %lgsmp/t",
           this->sample_rate,
           this->beats_per_minute,
           this->ticks_per_division,
@@ -811,7 +811,7 @@ protected:
         this->pos.division_index);
     uint64_t time_usecs = (this->pos.total_output_samples * 1000000) /
         (2 * this->opts->output_sample_rate);
-    string time_str = format_duration(time_usecs);
+    string time_str = phosg::format_duration(time_usecs);
     fprintf(stderr, "  |  %3zu/%-2zu @ %ss\n",
         this->timing.beats_per_minute, this->timing.ticks_per_division,
         time_str.c_str());
@@ -1582,7 +1582,7 @@ public:
 class MODPlayer : public MODSynthesizer {
 protected:
   uint8_t sample_bits;
-  AudioStream stream;
+  phosg_audio::AudioStream stream;
 
   int get_al_format(uint8_t sample_bits) {
     if (sample_bits == 8) {
@@ -1590,7 +1590,7 @@ protected:
     } else if (sample_bits == 16) {
       return AL_FORMAT_STEREO16;
     } else if (sample_bits == 32) {
-      return format_for_name("stereo-f32");
+      return phosg_audio::format_for_name("stereo-f32");
     } else {
       throw logic_error("unsupported sample bit width");
     }
@@ -1611,10 +1611,10 @@ public:
   virtual void on_tick_samples_ready(vector<float>&& samples) {
     this->stream.check_buffers();
     if (this->sample_bits == 8) {
-      auto converted_samples = convert_samples_f32_to_u8(samples);
+      auto converted_samples = phosg_audio::convert_samples_f32_to_u8(samples);
       this->stream.add_frames(converted_samples.data(), converted_samples.size() / 2);
     } else if (this->sample_bits == 16) {
-      auto converted_samples = convert_samples_f32_to_s16(samples);
+      auto converted_samples = phosg_audio::convert_samples_f32_to_s16(samples);
       this->stream.add_frames(converted_samples.data(), converted_samples.size() / 2);
     } else if (this->sample_bits == 32) {
       this->stream.add_frames(samples.data(), samples.size() / 2);
@@ -1949,7 +1949,7 @@ int main(int argc, char** argv) {
       disassemble_mod(stdout, mod);
       break;
     case Behavior::DISASSEMBLE_DIRECTORY: {
-      auto files = list_directory(input_filename);
+      auto files = phosg::list_directory(input_filename);
       size_t num_disassembled = 0;
       for (const auto& filename : files) {
         string path = string(input_filename) + "/" + filename;
@@ -1991,17 +1991,17 @@ int main(int argc, char** argv) {
         }
         if (sample_bits == 8) {
           fprintf(stderr, "Converting to 8-bit unsigned PCM\n");
-          auto converted_result = convert_samples_f32_to_u8(result);
+          auto converted_result = phosg_audio::convert_samples_f32_to_u8(result);
           fprintf(stderr, "... %s\n", output_filename.c_str());
-          save_wav(output_filename.c_str(), converted_result, opts->output_sample_rate, 2);
+          phosg_audio::save_wav(output_filename.c_str(), converted_result, opts->output_sample_rate, 2);
         } else if (sample_bits == 16) {
           fprintf(stderr, "Converting to 16-bit signed PCM\n");
-          auto converted_result = convert_samples_f32_to_s16(result);
+          auto converted_result = phosg_audio::convert_samples_f32_to_s16(result);
           fprintf(stderr, "... %s\n", output_filename.c_str());
-          save_wav(output_filename.c_str(), converted_result, opts->output_sample_rate, 2);
+          phosg_audio::save_wav(output_filename.c_str(), converted_result, opts->output_sample_rate, 2);
         } else if (sample_bits == 32) {
           fprintf(stderr, "... %s\n", output_filename.c_str());
-          save_wav(output_filename.c_str(), result, opts->output_sample_rate, 2);
+          phosg_audio::save_wav(output_filename.c_str(), result, opts->output_sample_rate, 2);
         } else {
           throw logic_error("unsupported sample bit width");
         }
@@ -2010,12 +2010,12 @@ int main(int argc, char** argv) {
     }
     case Behavior::PLAY: {
       print_mod_text(stderr, mod);
-      init_al();
+      phosg_audio::init_al();
       MODPlayer player(mod, opts, sample_bits, num_play_buffers);
       fprintf(stderr, "Synthesis:\n");
       player.run();
       player.drain();
-      exit_al();
+      phosg_audio::exit_al();
       break;
     }
     default:

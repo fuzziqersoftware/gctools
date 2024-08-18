@@ -3,7 +3,6 @@
 
 #include <string>
 
-
 struct PRSDataLog {
   std::string data;
   int size;

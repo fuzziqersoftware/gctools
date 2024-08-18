@@ -18,20 +18,20 @@ using namespace std;
 
 struct RCFHeader {
   char ident[0x20];
-  be_uint32_t unknown;
-  be_uint32_t index_offset;
+  phosg::be_uint32_t unknown;
+  phosg::be_uint32_t index_offset;
 };
 
 struct RCFIndexHeader {
-  be_uint32_t count;
-  be_uint32_t names_offset;
-  be_uint32_t unknown[2];
+  phosg::be_uint32_t count;
+  phosg::be_uint32_t names_offset;
+  phosg::be_uint32_t unknown[2];
 };
 
 struct RCFIndexEntry {
-  be_uint32_t crc32;
-  be_uint32_t offset;
-  be_uint32_t size;
+  phosg::be_uint32_t crc32;
+  phosg::be_uint32_t offset;
+  phosg::be_uint32_t size;
 };
 
 vector<string> parse_names_index(const string& data, size_t offset) {
@@ -78,7 +78,7 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  string data = load_file(argv[1]);
+  string data = phosg::load_file(argv[1]);
   RCFHeader header;
   memcpy(&header, data.data(), sizeof(RCFHeader));
   if (strcmp(header.ident, "RADCORE CEMENT LIBRARY")) {
@@ -91,10 +91,9 @@ int main(int argc, char* argv[]) {
   for (const auto& it : index) {
     const string& name = it.first;
     const auto& entry = it.second;
-    printf("... %08X %08X %08X %s\n", entry.crc32.load(), entry.offset.load(),
-        entry.size.load(), name.c_str());
+    printf("... %08X %08X %08X %s\n", entry.crc32.load(), entry.offset.load(), entry.size.load(), name.c_str());
 
-    save_file(name, data.substr(entry.offset, entry.size));
+    phosg::save_file(name, data.substr(entry.offset, entry.size));
   }
 
   return 0;

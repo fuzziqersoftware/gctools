@@ -1,6 +1,6 @@
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 
 #include <phosg/Encoding.hh>
@@ -8,17 +8,15 @@
 
 using namespace std;
 
-
 struct Yay0Header {
   char magic[4]; // 'Yay0'
-  be_uint32_t uncompressed_size;
-  be_uint32_t count_offset;
-  be_uint32_t data_offset;
-} __attribute__ ((packed));
-
+  phosg::be_uint32_t uncompressed_size;
+  phosg::be_uint32_t count_offset;
+  phosg::be_uint32_t data_offset;
+} __attribute__((packed));
 
 string yay0_decompress(const void* in_data, size_t in_size, size_t max_out_size) {
-  StringReader r(in_data, in_size);
+  phosg::StringReader r(in_data, in_size);
   Yay0Header header = r.get<Yay0Header>();
   if (header.magic[0] != 'Y' || header.magic[1] != 'a' ||
       header.magic[2] != 'y' || header.magic[3] != '0') {
@@ -36,11 +34,11 @@ string yay0_decompress(const void* in_data, size_t in_size, size_t max_out_size)
   string ret;
   ret.reserve(total_size);
 
-  StringReader control_stream_r = r;
+  phosg::StringReader control_stream_r = r;
   control_stream_r.go(sizeof(Yay0Header));
-  StringReader count_stream_r = r;
+  phosg::StringReader count_stream_r = r;
   count_stream_r.go(header.count_offset);
-  StringReader data_stream_r = r;
+  phosg::StringReader data_stream_r = r;
   data_stream_r.go(header.data_offset);
 
   uint8_t control_bits_remaining = 0;
@@ -79,7 +77,7 @@ string yay0_decompress(const void* in_data, size_t in_size, size_t max_out_size)
     }
 
     control_byte <<= 1;
-    control_bits_remaining--;    
+    control_bits_remaining--;
   }
 
   return ret;

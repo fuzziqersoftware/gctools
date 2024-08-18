@@ -23,14 +23,12 @@ string name_for_note(uint8_t note) {
   if (note >= 0x80) {
     return "invalid-note";
   }
-  const char* names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A",
-      "A#", "B"};
-  return string_printf("%s%hhu", names[note % 12], static_cast<uint8_t>(note / 12));
+  const char* names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+  return phosg::string_printf("%s%hhu", names[note % 12], static_cast<uint8_t>(note / 12));
 }
 
 string base_filename_for_sound(const Sound& s) {
-  return string_printf("sample-%s-%" PRIX32 "-%08" PRIX64 "-%08" PRIX32
-                       "-%08" PRIX32,
+  return phosg::string_printf("sample-%s-%" PRIX32 "-%08" PRIX64 "-%08" PRIX32 "-%08" PRIX32,
       s.source_filename.c_str(), s.source_offset,
       s.sound_id, s.aw_file_index, s.wave_table_index);
 }
@@ -47,9 +45,8 @@ int main(int argc, char** argv) {
   for (const auto& ibank_it : env.instrument_banks) {
     const auto& ibank = ibank_it.second;
 
-    string filename = string_printf("%s/bank-%" PRIu32 ".txt", argv[2],
-        ibank_it.first);
-    auto f = fopen_unique(filename.c_str(), "wt");
+    string filename = phosg::string_printf("%s/bank-%" PRIu32 ".txt", argv[2], ibank_it.first);
+    auto f = phosg::fopen_unique(filename.c_str(), "wt");
 
     for (const auto& inst_it : ibank.id_to_instrument) {
       fprintf(f.get(), "instrument %" PRIu32 " (0x%" PRIX32 "):\n",
@@ -79,8 +76,8 @@ int main(int argc, char** argv) {
 
   // generate soundfont text file
   {
-    string filename = string_printf("%s/metadata-sf.txt", argv[2]);
-    auto f = fopen_unique(filename.c_str(), "wt");
+    string filename = phosg::string_printf("%s/metadata-sf.txt", argv[2]);
+    auto f = phosg::fopen_unique(filename.c_str(), "wt");
 
     map<string, bool> filenames;
 
@@ -103,7 +100,7 @@ int main(int argc, char** argv) {
     for (const auto& ibank_it : env.instrument_banks) {
       const auto& ibank = ibank_it.second;
       for (const auto& inst_it : ibank.id_to_instrument) {
-        string instrument_name = string_printf("inst_%08" PRIX32 "_%08" PRIX32, ibank.id, inst_it.first);
+        string instrument_name = phosg::string_printf("inst_%08" PRIX32 "_%08" PRIX32, ibank.id, inst_it.first);
         fprintf(f.get(), "    InstrumentName=%s\n\n", instrument_name.c_str());
         for (const auto& key_region : inst_it.second.key_regions) {
           for (const auto& vel_region : key_region.vel_regions) {
@@ -137,7 +134,7 @@ int main(int argc, char** argv) {
     for (const auto& ibank_it : env.instrument_banks) {
       const auto& ibank = ibank_it.second;
       for (const auto& inst_it : ibank.id_to_instrument) {
-        string instrument_name = string_printf("inst_%08" PRIX32 "_%08" PRIX32, ibank.id, inst_it.first);
+        string instrument_name = phosg::string_printf("inst_%08" PRIX32 "_%08" PRIX32, ibank.id, inst_it.first);
         fprintf(f.get(), "\
     PresetName=preset_%s\n\
         Bank=%" PRIu32 "\n\
@@ -186,16 +183,15 @@ Comments=\n");
         continue;
       }
       string basename = base_filename_for_sound(s);
-      string filename = string_printf("%s/%s.wav", argv[2], basename.c_str());
-      save_wav(filename.c_str(), samples, s.sample_rate, s.num_channels);
+      string filename = phosg::string_printf("%s/%s.wav", argv[2], basename.c_str());
+      phosg_audio::save_wav(filename.c_str(), samples, s.sample_rate, s.num_channels);
     }
   }
 
   // export sequences
   for (const auto& s : env.sequence_programs) {
-    string fn = string_printf("%s/sequence-%" PRIu32 "-%s.bms", argv[2],
-        s.second.index, s.first.c_str());
-    save_file(fn, s.second.data);
+    string fn = phosg::string_printf("%s/sequence-%" PRIu32 "-%s.bms", argv[2], s.second.index, s.first.c_str());
+    phosg::save_file(fn, s.second.data);
   }
 
   return 0;

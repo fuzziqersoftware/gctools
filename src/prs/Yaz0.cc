@@ -1,28 +1,26 @@
-//#include <stdio.h>
-#include <string.h>
+// #include <stdio.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 
-#include <stdexcept>
-#include <phosg/Filesystem.hh>
 #include <phosg/Encoding.hh>
+#include <phosg/Filesystem.hh>
+#include <stdexcept>
 
 #include "PRSDataLog.hh"
 
 using namespace std;
 
-
 struct Yaz0Header {
   char magic[4]; // Yaz0
-  be_uint32_t uncompressed_size; // total size of uncompressed data
+  phosg::be_uint32_t uncompressed_size; // total size of uncompressed data
   char padding[8];
-} __attribute__ ((packed));
-
+} __attribute__((packed));
 
 size_t yaz0_decompress_stream(FILE* in, FILE* out, size_t max_out_size) {
   Yaz0Header header;
-  freadx(in, &header, sizeof(Yaz0Header));
+  phosg::freadx(in, &header, sizeof(Yaz0Header));
   if (header.magic[0] != 'Y' || header.magic[1] != 'a' ||
       header.magic[2] != 'z' || header.magic[3] != '0') {
     throw runtime_error("input is not Yaz0-compressed");
@@ -44,7 +42,7 @@ size_t yaz0_decompress_stream(FILE* in, FILE* out, size_t max_out_size) {
 
   while (bytes_written < total_size) {
     if (control_bits_remaining == 0) {
-      control_byte = fgetcx(in);
+      control_byte = phosg::fgetcx(in);
       control_bits_remaining = 8;
     }
 

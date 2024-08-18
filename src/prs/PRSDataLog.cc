@@ -4,11 +4,10 @@
 
 #include "PRSDataLog.hh"
 
-
 PRSDataLog::PRSDataLog()
-  : data(0x8000, '\0'),
-    size(0),
-    offset(0) { }
+    : data(0x8000, '\0'),
+      size(0),
+      offset(0) {}
 
 void PRSDataLog::add(uint8_t v) {
   if (this->size == 0x8000) {

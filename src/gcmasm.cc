@@ -24,28 +24,28 @@ enum RegionCode {
 };
 
 struct GCMHeader {
-  be_uint32_t game_id = 0;
-  be_uint16_t company_id = 0;
+  phosg::be_uint32_t game_id = 0;
+  phosg::be_uint16_t company_id = 0;
   uint8_t disc_id = 0;
   uint8_t version = 0;
   uint8_t audio_streaming = 1;
   uint8_t stream_buffer_size = 0;
   uint8_t unused1[0x0E];
-  be_uint32_t wii_magic = 0;
-  be_uint32_t gc_magic = 0xC2339F3D;
+  phosg::be_uint32_t wii_magic = 0;
+  phosg::be_uint32_t gc_magic = 0xC2339F3D;
   char name[0x60];
   uint8_t unknown_a1[0x0380];
-  be_uint32_t debug_offset = 0;
-  be_uint32_t debug_addr = 0;
+  phosg::be_uint32_t debug_offset = 0;
+  phosg::be_uint32_t debug_addr = 0;
   uint8_t unused2[0x18];
-  be_uint32_t dol_offset = 0;
-  be_uint32_t fst_offset = 0;
-  be_uint32_t fst_size = 0;
-  be_uint32_t fst_max_size = 0; // == fst_size for single-disc games
-  be_uint32_t unknown_a2[5];
-  be_uint32_t memory_size; // == 0x01800000 for GameCube games
-  be_uint32_t unknown_a3[4];
-  be_uint32_t region_code; // RegionCode enum
+  phosg::be_uint32_t dol_offset = 0;
+  phosg::be_uint32_t fst_offset = 0;
+  phosg::be_uint32_t fst_size = 0;
+  phosg::be_uint32_t fst_max_size = 0; // == fst_size for single-disc games
+  phosg::be_uint32_t unknown_a2[5];
+  phosg::be_uint32_t memory_size; // == 0x01800000 for GameCube games
+  phosg::be_uint32_t unknown_a3[4];
+  phosg::be_uint32_t region_code; // RegionCode enum
   // 458: be_uint32_t region_code;
   // 2440: char apploader_date[16];
 } __attribute__((packed));
@@ -53,28 +53,28 @@ struct GCMHeader {
 const int TGC_HEADER_SIZE = 0x8000;
 
 struct TGCHeader {
-  be_uint32_t magic;
-  be_uint32_t unknown1;
-  be_uint32_t header_size;
-  be_uint32_t unknown2;
-  be_uint32_t fst_offset;
-  be_uint32_t fst_size;
-  be_uint32_t fst_max_size;
-  be_uint32_t dol_offset;
-  be_uint32_t dol_size;
-  be_uint32_t file_area;
-  be_uint32_t file_area_size;
-  be_uint32_t banner_offset;
-  be_uint32_t banner_size;
-  be_uint32_t file_offset_base;
+  phosg::be_uint32_t magic;
+  phosg::be_uint32_t unknown1;
+  phosg::be_uint32_t header_size;
+  phosg::be_uint32_t unknown2;
+  phosg::be_uint32_t fst_offset;
+  phosg::be_uint32_t fst_size;
+  phosg::be_uint32_t fst_max_size;
+  phosg::be_uint32_t dol_offset;
+  phosg::be_uint32_t dol_size;
+  phosg::be_uint32_t file_area;
+  phosg::be_uint32_t file_area_size;
+  phosg::be_uint32_t banner_offset;
+  phosg::be_uint32_t banner_size;
+  phosg::be_uint32_t file_offset_base;
 } __attribute__((packed));
 
 struct ApploaderHeader {
   char date[0x10];
-  be_uint32_t entrypoint;
-  be_uint32_t size;
-  be_uint32_t trailer_size;
-  be_uint32_t unknown_a1;
+  phosg::be_uint32_t entrypoint;
+  phosg::be_uint32_t size;
+  phosg::be_uint32_t trailer_size;
+  phosg::be_uint32_t unknown_a1;
   // Apploader code follows immediately (loaded to 0x81200000)
 } __attribute__((packed));
 
@@ -88,23 +88,23 @@ struct FSTEntry {
   // string table where the file's name begins. (This offset is relative to the
   // start of the string table, which is immediately after the last entry.) This
   // field is ignored (and always zero) for the root entry.
-  be_uint32_t dir_flag_string_offset;
+  phosg::be_uint32_t dir_flag_string_offset;
 
   // For the root entry, this field is unused and should be zero. For directory
   // entries, this is the entry number of the parent directory. For file
   // entries, this is the offset in bytes in the disc image where the file's
   // data begins.
   union {
-    be_uint32_t parent_entry_num;
-    be_uint32_t file;
+    phosg::be_uint32_t parent_entry_num;
+    phosg::be_uint32_t file;
   } __attribute__((packed)) offset;
   // For the root entry, this is the total number of entries in the FST,
   // including the root entry. For directory entries, this is the entry number
   // of the first entry after this one that is NOT within the directory. For
   // file entries, this is the file's size in bytes.
   union {
-    be_uint32_t end_entry_num;
-    be_uint32_t file;
+    phosg::be_uint32_t end_entry_num;
+    phosg::be_uint32_t file;
   } __attribute__((packed)) size;
 
   bool is_dir() const {
@@ -119,7 +119,7 @@ static_assert(sizeof(FSTEntry) == 0x0C);
 
 struct FST {
   vector<FSTEntry> entries;
-  StringWriter strings;
+  phosg::StringWriter strings;
 
   size_t add_string(const string& s) {
     size_t offset = strings.size();
@@ -133,8 +133,8 @@ struct FST {
   }
 
   void write(FILE* f) const {
-    fwritex(f, this->entries.data(), sizeof(FSTEntry) * this->entries.size());
-    fwritex(f, this->strings.str());
+    phosg::fwritex(f, this->entries.data(), sizeof(FSTEntry) * this->entries.size());
+    phosg::fwritex(f, this->strings.str());
     while (ftell(f) & 0xFF) {
       fputc(0, f);
     }
@@ -149,13 +149,13 @@ struct File {
 
   explicit File(const string& src_path)
       : src_path(src_path),
-        name(basename(this->src_path)),
-        size(stat(this->src_path).st_size) {
-    log_info("Add file: %s (as %s)", this->src_path.c_str(), this->name.c_str());
+        name(phosg::basename(this->src_path)),
+        size(phosg::stat(this->src_path).st_size) {
+    phosg::log_info("Add file: %s (as %s)", this->src_path.c_str(), this->name.c_str());
   }
 
   string data() const {
-    return load_file(this->src_path);
+    return phosg::load_file(this->src_path);
   }
 };
 
@@ -167,19 +167,19 @@ struct Directory {
 
   explicit Directory(const string& src_path)
       : src_path(src_path),
-        name(basename(this->src_path)) {
-    log_info("Add directory: %s (as %s)", this->src_path.c_str(), this->name.c_str());
-    for (const string& item : list_directory(src_path)) {
+        name(phosg::basename(this->src_path)) {
+    phosg::log_info("Add directory: %s (as %s)", this->src_path.c_str(), this->name.c_str());
+    for (const string& item : phosg::list_directory(src_path)) {
       string item_path = src_path + "/" + item;
-      if (isdir(item_path)) {
+      if (phosg::isdir(item_path)) {
         this->directories.emplace(item, new Directory(item_path));
-      } else if (isfile(item_path)) {
+      } else if (phosg::isfile(item_path)) {
         this->files.emplace(item, new File(item_path));
       } else {
         throw runtime_error("non-file, non-directory object in tree: " + item_path);
       }
     }
-    log_info("End directory: %s (as %s)", this->src_path.c_str(), this->name.c_str());
+    phosg::log_info("End directory: %s (as %s)", this->src_path.c_str(), this->name.c_str());
   }
 };
 
@@ -246,7 +246,7 @@ struct HeaderParams {
 void compile_image(
     FILE* out, const string& in_path, const HeaderParams& header_params) {
   Directory root_dir(in_path);
-  log_info("All files collected");
+  phosg::log_info("All files collected");
 
   auto default_dol_it = root_dir.files.find("default.dol");
   if (default_dol_it == root_dir.files.end()) {
@@ -254,7 +254,7 @@ void compile_image(
   }
   shared_ptr<File> default_dol = default_dol_it->second;
   root_dir.files.erase(default_dol_it);
-  log_info("default.dol found");
+  phosg::log_info("default.dol found");
 
   auto apploader_bin_it = root_dir.files.find("apploader.bin");
   if (apploader_bin_it == root_dir.files.end()) {
@@ -262,14 +262,14 @@ void compile_image(
   }
   shared_ptr<File> apploader_bin = apploader_bin_it->second;
   root_dir.files.erase(apploader_bin_it);
-  log_info("apploader.bin found");
+  phosg::log_info("apploader.bin found");
 
   shared_ptr<File> header_bin;
   auto header_bin_it = root_dir.files.find("__gcm_header__.bin");
   if ((header_bin_it != root_dir.files.end()) && (header_bin_it->second->size == 0x2440)) {
     header_bin = header_bin_it->second;
     root_dir.files.erase(header_bin_it);
-    log_info("__gcm_header__.bin found");
+    phosg::log_info("__gcm_header__.bin found");
   }
 
   size_t apploader_offset = 0x2440;
@@ -282,8 +282,8 @@ void compile_image(
 
   {
     size_t file_size = fst_offset + fst.bytes();
-    string size_str = format_size(fst_offset + fst.bytes());
-    log_info("File size: %zu bytes (%s)", file_size, size_str.c_str());
+    string size_str = phosg::format_size(fst_offset + fst.bytes());
+    phosg::log_info("File size: %zu bytes (%s)", file_size, size_str.c_str());
   }
 
   string header_data;
@@ -355,25 +355,25 @@ void compile_image(
     tgc_header->file_offset_base = 0;
 
     fseek(out, 0, SEEK_SET);
-    fwritex(out, tgc_header_data);
-    log_info("TGC header written");
+    phosg::fwritex(out, tgc_header_data);
+    phosg::log_info("TGC header written");
   } else {
     gcm_offset = 0;
   }
 
   fseek(out, gcm_offset, SEEK_SET);
-  fwritex(out, header_data);
-  log_info("GCM header written");
+  phosg::fwritex(out, header_data);
+  phosg::log_info("GCM header written");
 
   fseek(out, apploader_offset + gcm_offset, SEEK_SET);
-  fwritex(out, apploader_bin->data());
-  log_info("Apploader written");
+  phosg::fwritex(out, apploader_bin->data());
+  phosg::log_info("Apploader written");
   fseek(out, default_dol_offset + gcm_offset, SEEK_SET);
-  fwritex(out, default_dol->data());
-  log_info("default.dol written");
+  phosg::fwritex(out, default_dol->data());
+  phosg::log_info("default.dol written");
   fseek(out, fst_offset + gcm_offset, SEEK_SET);
   fst.write(out);
-  log_info("FST written");
+  phosg::log_info("FST written");
 
   function<void(FILE*, const Directory&)> write_files_data = [&](FILE* out, const Directory& dir) -> void {
     for (const auto& it : dir.directories) {
@@ -381,13 +381,13 @@ void compile_image(
     }
     for (const auto& it : dir.files) {
       fseek(out, it.second->image_offset + gcm_offset, SEEK_SET);
-      fwritex(out, it.second->data());
-      log_info("%s written", it.second->name.c_str());
+      phosg::fwritex(out, it.second->data());
+      phosg::log_info("%s written", it.second->name.c_str());
     }
   };
   write_files_data(out, root_dir);
 
-  log_info("Complete");
+  phosg::log_info("Complete");
 }
 
 void print_usage() {
@@ -434,8 +434,8 @@ int main(int argc, char* argv[]) {
       if (strlen(argv[x]) != 16) {
         throw runtime_error("incorrect game ID length");
       }
-      header_params.game_id = *reinterpret_cast<const be_uint32_t*>(&argv[x][10]);
-      header_params.company_id = *reinterpret_cast<const be_uint16_t*>(&argv[x][14]);
+      header_params.game_id = *reinterpret_cast<const phosg::be_uint32_t*>(&argv[x][10]);
+      header_params.company_id = *reinterpret_cast<const phosg::be_uint16_t*>(&argv[x][14]);
     } else if (!strncmp(argv[x], "--disc-id=", 10)) {
       header_params.disc_id = strtoul(&argv[x][10], nullptr, 0);
     } else if (!strncmp(argv[x], "--version=", 10)) {
@@ -457,7 +457,7 @@ int main(int argc, char* argv[]) {
     } else if (out_path.empty()) {
       out_path = argv[x];
     } else {
-      throw runtime_error(string_printf("excess command line argument: %s", argv[x]));
+      throw runtime_error(phosg::string_printf("excess command line argument: %s", argv[x]));
     }
   }
 
@@ -467,13 +467,13 @@ int main(int argc, char* argv[]) {
 
   if (out_path.empty()) {
     out_path = dir_path;
-    while (ends_with(out_path, "/")) {
+    while (phosg::ends_with(out_path, "/")) {
       out_path.resize(out_path.size() - 1);
     }
     out_path += ".gcm";
   }
 
-  auto out = fopen_unique(out_path, "wb");
+  auto out = phosg::fopen_unique(out_path, "wb");
   compile_image(out.get(), dir_path, header_params);
 
   return 0;

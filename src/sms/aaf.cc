@@ -28,13 +28,13 @@ struct wave_table_entry {
   uint8_t type;
   uint8_t base_note;
   uint8_t unknown2;
-  be_uint32_t flags2;
-  be_uint32_t offset;
-  be_uint32_t size;
-  be_uint32_t loop_flag; // 0xFFFFFFFF means has a loop
-  be_uint32_t loop_start;
-  be_uint32_t loop_end;
-  be_uint32_t unknown3[4];
+  phosg::be_uint32_t flags2;
+  phosg::be_uint32_t offset;
+  phosg::be_uint32_t size;
+  phosg::be_uint32_t loop_flag; // 0xFFFFFFFF means has a loop
+  phosg::be_uint32_t loop_start;
+  phosg::be_uint32_t loop_end;
+  phosg::be_uint32_t unknown3[4];
 
   uint32_t sample_rate() const {
     return (this->flags2 >> 9) & 0x0000FFFF;
@@ -43,48 +43,48 @@ struct wave_table_entry {
 
 struct aw_file_entry {
   char filename[112];
-  be_uint32_t wav_count;
-  be_uint32_t wav_entry_offsets[0];
+  phosg::be_uint32_t wav_count;
+  phosg::be_uint32_t wav_entry_offsets[0];
 };
 
 struct winf_header {
-  be_uint32_t magic; // 'WINF'
-  be_uint32_t aw_file_count;
-  be_uint32_t aw_file_entry_offsets[0];
+  phosg::be_uint32_t magic; // 'WINF'
+  phosg::be_uint32_t aw_file_count;
+  phosg::be_uint32_t aw_file_entry_offsets[0];
 };
 
 struct cdf_record {
-  be_uint16_t aw_file_index;
-  be_uint16_t sound_id;
-  be_uint32_t unknown1[13];
+  phosg::be_uint16_t aw_file_index;
+  phosg::be_uint16_t sound_id;
+  phosg::be_uint32_t unknown1[13];
 };
 
 struct cdf_header {
-  be_uint32_t magic; // 'C-DF'
-  be_uint32_t record_count;
-  be_uint32_t record_offsets[0];
+  phosg::be_uint32_t magic; // 'C-DF'
+  phosg::be_uint32_t record_count;
+  phosg::be_uint32_t record_offsets[0];
 };
 
 struct scne_header {
-  be_uint32_t magic; // 'SCNE'
-  be_uint32_t unknown1[2];
-  be_uint32_t cdf_offset;
+  phosg::be_uint32_t magic; // 'SCNE'
+  phosg::be_uint32_t unknown1[2];
+  phosg::be_uint32_t cdf_offset;
 };
 
 struct wbct_header {
-  be_uint32_t magic; // 'WBCT'
-  be_uint32_t unknown1;
-  be_uint32_t scne_count;
-  be_uint32_t scne_offsets[0];
+  phosg::be_uint32_t magic; // 'WBCT'
+  phosg::be_uint32_t unknown1;
+  phosg::be_uint32_t scne_count;
+  phosg::be_uint32_t scne_offsets[0];
 };
 
 struct wsys_header {
-  be_uint32_t magic; // 'WSYS'
-  be_uint32_t size;
-  be_uint32_t wsys_id;
-  be_uint32_t unknown1;
-  be_uint32_t winf_offset;
-  be_uint32_t wbct_offset;
+  phosg::be_uint32_t magic; // 'WSYS'
+  phosg::be_uint32_t size;
+  phosg::be_uint32_t wsys_id;
+  phosg::be_uint32_t unknown1;
+  phosg::be_uint32_t winf_offset;
+  phosg::be_uint32_t wbct_offset;
 };
 
 pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
@@ -154,18 +154,16 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
     // try both Banks and Waves subdirectories
     static const vector<string> directory_names({"Banks", "Waves"});
     for (const auto& directory_name : directory_names) {
-      string aw_filename = string_printf("%s/%s/%s", base_directory,
-          directory_name.c_str(), entry->filename);
+      string aw_filename = phosg::string_printf("%s/%s/%s", base_directory, directory_name.c_str(), entry->filename);
       try {
-        aw_file_contents = load_file(aw_filename.c_str());
+        aw_file_contents = phosg::load_file(aw_filename.c_str());
         break;
-      } catch (const cannot_open_file&) {
+      } catch (const phosg::cannot_open_file&) {
         continue;
       }
     }
     if (aw_file_contents.empty()) {
-      throw runtime_error(string_printf("%s does not exist in any checked subdirectory",
-          entry->filename));
+      throw runtime_error(phosg::string_printf("%s does not exist in any checked subdirectory", entry->filename));
     }
 
     for (size_t y = 0; y < entry->wav_count; y++) {
@@ -216,7 +214,7 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
 
         size_t num_samples = wav_entry->size / 2; // 16-bit samples
         ret_snd.decoded_samples.reserve(num_samples);
-        const be_int16_t* samples = reinterpret_cast<const be_int16_t*>(
+        const phosg::be_int16_t* samples = reinterpret_cast<const phosg::be_int16_t*>(
             aw_file_contents.data() + wav_entry->offset);
         for (size_t z = 0; z < num_samples; z++) {
           int16_t sample = samples[z];
@@ -225,7 +223,7 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
         }
         ret_snd.num_channels = is_stereo ? 2 : 1;
       } else {
-        throw runtime_error(string_printf("unknown wav entry type: 0x%" PRIX32, wav_entry->type));
+        throw runtime_error(phosg::string_printf("unknown wav entry type: 0x%" PRIX32, wav_entry->type));
       }
     }
   }
@@ -235,17 +233,17 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
 
 struct barc_entry {
   char name[14];
-  be_uint16_t unknown1;
-  be_uint32_t unknown2[2];
-  be_uint32_t offset;
-  be_uint32_t size;
+  phosg::be_uint16_t unknown1;
+  phosg::be_uint32_t unknown2[2];
+  phosg::be_uint32_t offset;
+  phosg::be_uint32_t size;
 };
 
 struct barc_header {
-  be_uint32_t magic; // 'BARC'
-  be_uint32_t unknown1; // '----'
-  be_uint32_t unknown2;
-  be_uint32_t entry_count;
+  phosg::be_uint32_t magic; // 'BARC'
+  phosg::be_uint32_t unknown1; // '----'
+  phosg::be_uint32_t unknown2;
+  phosg::be_uint32_t entry_count;
   char archive_filename[0x10];
   barc_entry entries[0];
 
@@ -268,9 +266,9 @@ unordered_map<string, SequenceProgram> barc_decode(const void* vdata,
     throw invalid_argument("BARC data too small for header");
   }
 
-  string sequence_archive_filename = string_printf("%s/Seqs/%s", base_directory,
+  string sequence_archive_filename = phosg::string_printf("%s/Seqs/%s", base_directory,
       barc->archive_filename);
-  scoped_fd sequence_archive_fd(sequence_archive_filename.c_str(), O_RDONLY);
+  phosg::scoped_fd sequence_archive_fd(sequence_archive_filename.c_str(), O_RDONLY);
 
   unordered_map<string, SequenceProgram> ret;
   for (size_t x = 0; x < barc->entry_count; x++) {
@@ -280,12 +278,12 @@ unordered_map<string, SequenceProgram> barc_decode(const void* vdata,
     lseek(sequence_archive_fd, e.offset, SEEK_SET);
     string data = readx(sequence_archive_fd, e.size);
 #else
-    string data = preadx(sequence_archive_fd, e.size, e.offset);
+    string data = phosg::preadx(sequence_archive_fd, e.size, e.offset);
 #endif
     size_t suffix = 0;
     string effective_name = e.name;
     while (ret.count(effective_name)) {
-      effective_name = string_printf("%s@%zu", e.name, ++suffix);
+      effective_name = phosg::string_printf("%s@%zu", e.name, ++suffix);
     }
     ret.emplace(piecewise_construct, forward_as_tuple(effective_name),
         forward_as_tuple(x, std::move(data)));
@@ -414,15 +412,15 @@ SoundEnvironment aaf_decode(const void* vdata, size_t size, const char* base_dir
   SoundEnvironment ret;
   while (offset < size) {
     uint32_t chunk_offset, chunk_size, chunk_id;
-    uint32_t chunk_type = *reinterpret_cast<const be_uint32_t*>(data + offset);
+    uint32_t chunk_type = *reinterpret_cast<const phosg::be_uint32_t*>(data + offset);
 
     switch (chunk_type) {
       case 1:
       case 5:
       case 6:
       case 7:
-        chunk_offset = *reinterpret_cast<const be_uint32_t*>(data + offset + 4);
-        chunk_size = *reinterpret_cast<const be_uint32_t*>(data + offset + 8);
+        chunk_offset = *reinterpret_cast<const phosg::be_uint32_t*>(data + offset + 4);
+        chunk_size = *reinterpret_cast<const phosg::be_uint32_t*>(data + offset + 8);
         // unused int32 after size apparently?
         offset += 0x10;
         break;
@@ -431,14 +429,14 @@ SoundEnvironment aaf_decode(const void* vdata, size_t size, const char* base_dir
       case 3:
         offset += 0x04;
         while (offset < size) {
-          chunk_offset = *reinterpret_cast<const be_uint32_t*>(data + offset);
+          chunk_offset = *reinterpret_cast<const phosg::be_uint32_t*>(data + offset);
           if (chunk_offset == 0) {
             offset += 0x04;
             break;
           }
 
-          chunk_size = *reinterpret_cast<const be_uint32_t*>(data + offset + 4);
-          chunk_id = *reinterpret_cast<const be_uint32_t*>(data + offset + 8);
+          chunk_size = *reinterpret_cast<const phosg::be_uint32_t*>(data + offset + 4);
+          chunk_id = *reinterpret_cast<const phosg::be_uint32_t*>(data + offset + 8);
           if (chunk_type == 2) {
             auto ibnk = ibnk_decode(data + chunk_offset);
             // this is the index of the related wsys block
@@ -457,8 +455,8 @@ SoundEnvironment aaf_decode(const void* vdata, size_t size, const char* base_dir
         break;
 
       case 4:
-        chunk_offset = *reinterpret_cast<const be_uint32_t*>(data + offset + 4);
-        chunk_size = *reinterpret_cast<const be_uint32_t*>(data + offset + 8);
+        chunk_offset = *reinterpret_cast<const phosg::be_uint32_t*>(data + offset + 4);
+        chunk_size = *reinterpret_cast<const phosg::be_uint32_t*>(data + offset + 8);
         ret.sequence_programs = barc_decode(data + chunk_offset, chunk_size, base_directory);
         offset += 0x10;
         break;
@@ -468,7 +466,7 @@ SoundEnvironment aaf_decode(const void* vdata, size_t size, const char* base_dir
         break;
 
       default:
-        throw invalid_argument(string_printf(
+        throw invalid_argument(phosg::string_printf(
             "unknown chunk type %.4s (%08X)",
             reinterpret_cast<char*>(&chunk_type), chunk_type));
     }
@@ -480,7 +478,7 @@ SoundEnvironment aaf_decode(const void* vdata, size_t size, const char* base_dir
 
 SoundEnvironment baa_decode(const void* vdata, size_t size, const char* base_directory) {
   const uint8_t* data = reinterpret_cast<const uint8_t*>(vdata);
-  const be_uint32_t* data_fields = reinterpret_cast<const be_uint32_t*>(vdata);
+  const phosg::be_uint32_t* data_fields = reinterpret_cast<const phosg::be_uint32_t*>(vdata);
   size_t field_offset = 1;
 
   if (size < 8) {
@@ -538,7 +536,7 @@ SoundEnvironment baa_decode(const void* vdata, size_t size, const char* base_dir
         uint32_t offset = data_fields[field_offset++];
         uint32_t end_offset = data_fields[field_offset++];
         ret.sequence_programs.emplace(piecewise_construct,
-            forward_as_tuple(string_printf("seq%" PRIu32, id)),
+            forward_as_tuple(phosg::string_printf("seq%" PRIu32, id)),
             forward_as_tuple(id, string(reinterpret_cast<const char*>(data + offset), end_offset - offset)));
         break;
       }
@@ -559,8 +557,8 @@ SoundEnvironment baa_decode(const void* vdata, size_t size, const char* base_dir
         break;
 
       default:
-        be_uint32_t chunk_type_be = chunk_type;
-        throw invalid_argument(string_printf(
+        phosg::be_uint32_t chunk_type_be = chunk_type;
+        throw invalid_argument(phosg::string_printf(
             "unknown chunk type %.4s (%08X)",
             reinterpret_cast<char*>(&chunk_type_be), chunk_type));
     }
@@ -571,15 +569,15 @@ SoundEnvironment baa_decode(const void* vdata, size_t size, const char* base_dir
 }
 
 struct bx_header {
-  be_uint32_t wsys_table_offset;
-  be_uint32_t wsys_count;
-  be_uint32_t ibnk_table_offset;
-  be_uint32_t ibnk_count;
+  phosg::be_uint32_t wsys_table_offset;
+  phosg::be_uint32_t wsys_count;
+  phosg::be_uint32_t ibnk_table_offset;
+  phosg::be_uint32_t ibnk_count;
 };
 
 struct bx_table_entry {
-  be_uint32_t offset;
-  be_uint32_t size;
+  phosg::be_uint32_t offset;
+  phosg::be_uint32_t size;
 };
 
 SoundEnvironment bx_decode(const void* vdata, size_t,
@@ -630,12 +628,12 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
   // default.dol in a hex editor and copy the resulting data (through the end of
   // the sequence names) to sequence.barc in the Seqs directory
   {
-    string filename = string_printf("%s/Banks/pikibank.bx", base_directory);
-    if (isfile(filename)) {
-      string data = load_file(filename);
+    string filename = phosg::string_printf("%s/Banks/pikibank.bx", base_directory);
+    if (phosg::isfile(filename)) {
+      string data = phosg::load_file(filename);
       auto env = bx_decode(data.data(), data.size(), base_directory);
 
-      data = load_file(string_printf("%s/Seqs/sequence.barc", base_directory));
+      data = phosg::load_file(phosg::string_printf("%s/Seqs/sequence.barc", base_directory));
       env.sequence_programs = barc_decode(data.data(), data.size(), base_directory);
 
       return env;
@@ -650,8 +648,8 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
     for (const auto& filename : filenames) {
       string data;
       try {
-        data = load_file(base_directory + filename);
-      } catch (const cannot_open_file&) {
+        data = phosg::load_file(base_directory + filename);
+      } catch (const phosg::cannot_open_file&) {
         continue;
       }
       return aaf_decode(data.data(), data.size(), base_directory);
@@ -667,8 +665,8 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
     for (const auto& filename : filenames) {
       string data;
       try {
-        data = load_file(base_directory + filename);
-      } catch (const cannot_open_file&) {
+        data = phosg::load_file(base_directory + filename);
+      } catch (const phosg::cannot_open_file&) {
         continue;
       }
       return baa_decode(data.data(), data.size(), base_directory);
@@ -698,7 +696,7 @@ SoundEnvironment create_midi_sound_environment(
     sample_bank.emplace_back();
     Sound& s = sample_bank.back();
 
-    auto wav = load_wav(it.second.filename.c_str());
+    auto wav = phosg_audio::load_wav(it.second.filename.c_str());
     s.decoded_samples = wav.samples;
     s.num_channels = wav.num_channels;
     s.sample_rate = wav.sample_rate;
@@ -728,7 +726,7 @@ SoundEnvironment create_midi_sound_environment(
   return env;
 }
 
-SoundEnvironment create_json_sound_environment(const JSON& instruments_json, const string& directory) {
+SoundEnvironment create_json_sound_environment(const phosg::JSON& instruments_json, const string& directory) {
   SoundEnvironment env;
 
   // create instrument bank 0 and sample bank 0
@@ -752,9 +750,9 @@ SoundEnvironment create_json_sound_environment(const JSON& instruments_json, con
       double freq_mult = rgn_json->get_float("freq_mult", 1.0);
       bool constant_pitch = rgn_json->get_bool("constant_pitch", false);
 
-      WAVContents wav;
+      phosg_audio::WAVContents wav;
       try {
-        wav = load_wav(filename.c_str());
+        wav = phosg_audio::load_wav(filename.c_str());
       } catch (const exception& e) {
         fprintf(stderr, "[create_json_sound_environment] creating region %02" PRIX64 ":%02" PRIX64 "@%02" PRIX64 " -> %s (%zu) for instrument %" PRId64 " failed: %s\n",
             key_low, key_high, base_note, filename.c_str(), sound_id, id, e.what());

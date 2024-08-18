@@ -8,11 +8,11 @@
 using namespace std;
 
 struct AFSHeader {
-  uint32_t magic;
-  uint32_t num_files;
+  phosg::le_uint32_t magic;
+  phosg::le_uint32_t num_files;
   struct {
-    uint32_t offset;
-    uint32_t size;
+    phosg::le_uint32_t offset;
+    phosg::le_uint32_t size;
   } entries[0];
 };
 
@@ -22,7 +22,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  string data = load_file(argv[1]);
+  string data = phosg::load_file(argv[1]);
 
   const AFSHeader* header = reinterpret_cast<const AFSHeader*>(data.data());
   if (header->magic != 0x00534641) {
@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
       throw runtime_error("file size exceeds archive boundary");
     }
 
-    string output_filename = string_printf("%s-%zu", argv[1], x);
+    string output_filename = phosg::string_printf("%s-%zu", argv[1], x);
     save_file(
         output_filename,
         data.data() + header->entries[x].offset,

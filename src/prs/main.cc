@@ -1,25 +1,23 @@
 #include <inttypes.h>
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 
 #include <phosg/Filesystem.hh>
 #include <string>
 
 #include "PRS.hh"
-#include "Yaz0.hh"
 #include "Yay0.hh"
+#include "Yaz0.hh"
 
 using namespace std;
-
 
 enum class Format {
   PRS,
   YAZ0,
   YAY0,
 };
-
 
 void print_help() {
   fprintf(stderr, "\
@@ -48,7 +46,6 @@ Options:\n\
       Use Nintendo\'s Yay0 format (decompress only).\n\
 \n");
 }
-
 
 int main(int argc, char* argv[]) {
   FILE* in = stdin;
@@ -85,12 +82,12 @@ int main(int argc, char* argv[]) {
     // that we can't use fseek here because in could be a pipe.
     while (start_offset > 0) {
       size_t bytes_to_read = (start_offset > 0x4000) ? 0x4000 : start_offset;
-      freadx(in, bytes_to_read);
+      phosg::freadx(in, bytes_to_read);
       start_offset -= bytes_to_read;
     }
     while (raw_bytes > 0) {
-      string data = freadx(in, (raw_bytes > 0x4000) ? 0x4000 : raw_bytes);
-      fwritex(out, data);
+      string data = phosg::freadx(in, (raw_bytes > 0x4000) ? 0x4000 : raw_bytes);
+      phosg::fwritex(out, data);
       raw_bytes -= data.size();
     }
 
@@ -99,9 +96,9 @@ int main(int argc, char* argv[]) {
     } else if (format == Format::YAZ0) {
       bytes_written = yaz0_decompress_stream(in, out, 0);
     } else if (format == Format::YAY0) {
-      string in_data = read_all(in);
+      string in_data = phosg::read_all(in);
       string out_data = yay0_decompress(in_data.data(), in_data.size());
-      fwritex(out, out_data);
+      phosg::fwritex(out, out_data);
       bytes_written = out_data.size();
     }
 

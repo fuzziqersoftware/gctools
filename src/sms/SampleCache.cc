@@ -27,8 +27,7 @@ vector<float> resample(
 
   int error = src_simple(&data, resample_method, num_channels);
   if (error) {
-    throw runtime_error(string_printf("src_simple failed (ratio=%g): %s",
-        src_ratio, src_strerror(error)));
+    throw runtime_error(phosg::string_printf("src_simple failed (ratio=%g): %s", src_ratio, src_strerror(error)));
   }
 
   output_samples.resize(data.output_frames_gen * num_channels);

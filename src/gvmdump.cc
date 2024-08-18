@@ -16,18 +16,18 @@
 using namespace std;
 
 struct GVMFileEntry {
-  be_uint16_t file_num;
+  phosg::be_uint16_t file_num;
   char name[28];
-  be_uint32_t unknown[2];
+  phosg::be_uint32_t unknown[2];
 } __attribute__((packed));
 
 struct GVMFileHeader {
-  be_uint32_t magic; // 'GVMH'
+  phosg::be_uint32_t magic; // 'GVMH'
   // Note: Add 8 to this value (it doesn't include magic and size). Also, yes,
   // it really is little-endian.
-  le_uint32_t header_size;
-  be_uint16_t flags;
-  be_uint16_t num_files;
+  phosg::le_uint32_t header_size;
+  phosg::be_uint16_t flags;
+  phosg::be_uint16_t num_files;
   GVMFileEntry entries[0];
 } __attribute__((packed));
 
@@ -61,26 +61,26 @@ enum class GVRDataFormat : uint8_t {
 };
 
 struct GVRHeader {
-  be_uint32_t magic; // 'GVRT'
+  phosg::be_uint32_t magic; // 'GVRT'
   // See comment in GVMFileHeader about header_size - data_size behaves the same
   // way here.
-  le_uint32_t data_size;
-  be_uint16_t unknown;
+  phosg::le_uint32_t data_size;
+  phosg::be_uint16_t unknown;
   uint8_t format_flags; // High 4 bits are pixel format, low 4 are data flags
   GVRDataFormat data_format;
-  be_uint16_t width;
-  be_uint16_t height;
+  phosg::be_uint16_t width;
+  phosg::be_uint16_t height;
 } __attribute__((packed));
 
 struct GVPHeader {
-  be_uint32_t magic; // 'GVPL'
+  phosg::be_uint32_t magic; // 'GVPL'
   // See comment in GVMFileHeader about header_size - data_size behaves the same
   // way here.
-  le_uint32_t data_size;
+  phosg::le_uint32_t data_size;
   uint8_t unknown_a1;
   uint8_t entry_format; // 0 = A8, 1 = RGB565, 2 = RGB5A3
   uint8_t unknown_a2[4];
-  be_uint16_t num_entries;
+  phosg::be_uint16_t num_entries;
 } __attribute__((packed));
 
 uint32_t decode_rgb5a3(uint16_t c) {
@@ -112,7 +112,7 @@ uint32_t decode_rgb565(uint16_t c) {
 }
 
 vector<uint32_t> decode_gvp(const string& data) {
-  StringReader r(data.data(), data.size());
+  phosg::StringReader r(data.data(), data.size());
   auto header = r.get<GVPHeader>();
   if (header.magic != 0x4756504C) {
     throw runtime_error("GVPL signature is missing");
@@ -141,12 +141,12 @@ vector<uint32_t> decode_gvp(const string& data) {
   return ret;
 }
 
-Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullptr) {
+phosg::Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullptr) {
   if (data.size() < sizeof(GVRHeader)) {
     throw runtime_error("data too small for header");
   }
 
-  StringReader r(data.data(), data.size());
+  phosg::StringReader r(data.data(), data.size());
   GVRHeader header = r.get<GVRHeader>();
   if (header.magic != 0x47565254) {
     throw runtime_error("GVRT signature is missing");
@@ -199,7 +199,7 @@ Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullptr) {
     throw runtime_error("width/height must be multiples of 4 for dxt1 format");
   }
 
-  Image result(header.width, header.height, true);
+  phosg::Image result(header.width, header.height, true);
   switch (header.data_format) {
     case GVRDataFormat::RGB5A3:
       // 4x4 blocks of pixels
@@ -334,7 +334,7 @@ Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullptr) {
       break;
 
     default:
-      throw logic_error(string_printf(
+      throw logic_error(phosg::string_printf(
           "unimplemented data format: %02hhX",
           static_cast<uint8_t>(header.data_format)));
   }
@@ -348,7 +348,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  string data = load_file(argv[1]);
+  string data = phosg::load_file(argv[1]);
   if (data.size() < 8) {
     fprintf(stderr, "file is too small\n");
     return 2;
@@ -356,19 +356,19 @@ int main(int argc, char* argv[]) {
 
   vector<uint32_t> clut;
   if (argc == 3) {
-    string clut_data = load_file(argv[2]);
+    string clut_data = phosg::load_file(argv[2]);
     clut = decode_gvp(clut_data);
   }
 
-  uint32_t magic = *reinterpret_cast<const be_uint32_t*>(data.data());
+  uint32_t magic = *reinterpret_cast<const phosg::be_uint32_t*>(data.data());
   if ((magic == 0x47565254) || (magic == 0x47424958)) { // GVRT or GBIX
     if (magic == 0x47424958) { // GBIX
       uint32_t gbix_size = *reinterpret_cast<const uint32_t*>(data.data() + 4);
       data = data.substr(gbix_size + 8); // strip off GBIX header
     }
     try {
-      Image decoded = decode_gvr(data, clut.empty() ? nullptr : &clut);
-      decoded.save(string(argv[1]) + ".bmp", Image::Format::WINDOWS_BITMAP);
+      phosg::Image decoded = decode_gvr(data, clut.empty() ? nullptr : &clut);
+      decoded.save(string(argv[1]) + ".bmp", phosg::Image::Format::WINDOWS_BITMAP);
     } catch (const exception& e) {
       fprintf(stderr, "failed to decode gvr: %s\n", e.what());
       return 2;
@@ -391,7 +391,7 @@ int main(int argc, char* argv[]) {
       filename += '_';
       for (const char* ch = gvm->entries[x].name; *ch; ch++) {
         if (*ch < 0x20 || *ch > 0x7E) {
-          filename += string_printf("_x%02hhX", *ch);
+          filename += phosg::string_printf("_x%02hhX", *ch);
         } else {
           filename += *ch;
         }
@@ -405,8 +405,8 @@ int main(int argc, char* argv[]) {
 
       string gvr_contents = data.substr(offset, gvr->data_size + 8);
       try {
-        Image decoded = decode_gvr(gvr_contents, clut.empty() ? nullptr : &clut);
-        decoded.save(filename + ".bmp", Image::Format::WINDOWS_BITMAP);
+        phosg::Image decoded = decode_gvr(gvr_contents, clut.empty() ? nullptr : &clut);
+        decoded.save(filename + ".bmp", phosg::Image::Format::WINDOWS_BITMAP);
         printf("> %04zu = %08zX:%08X => %s.bmp\n",
             x + 1, offset, gvr->data_size + 8, filename.c_str());
       } catch (const exception& e) {
@@ -415,7 +415,7 @@ int main(int argc, char* argv[]) {
 
       printf("> %04zu = %08zX:%08X => %s\n",
           x + 1, offset, gvr->data_size + 8, filename.c_str());
-      save_file(filename, gvr_contents);
+      phosg::save_file(filename, gvr_contents);
       offset += (gvr->data_size + 8);
     }
 

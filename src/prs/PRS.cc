@@ -1,11 +1,11 @@
 #include <errno.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 
-#include <stdexcept>
 #include <phosg/Filesystem.hh>
 #include <phosg/Strings.hh>
+#include <stdexcept>
 
 #include "PRSDataLog.hh"
 
@@ -18,10 +18,10 @@ struct PRSCompressionOutput {
   uint8_t bitpos;
 
   PRSCompressionOutput(FILE* out)
-    : forward_log(),
-      out(out),
-      bytes_written(1),
-      bitpos(0) {
+      : forward_log(),
+        out(out),
+        bytes_written(1),
+        bitpos(0) {
     this->forward_log.add(0);
   }
 
@@ -34,7 +34,7 @@ struct PRSCompressionOutput {
   void save_control() {
     if (this->bitpos >= 8) {
       this->bitpos = 0;
-      fwritex(this->out, this->forward_log.data.data(), this->forward_log.size);
+      phosg::fwritex(this->out, this->forward_log.data.data(), this->forward_log.size);
       this->forward_log.size = 0;
       this->forward_log.add(0);
       this->bytes_written++;
@@ -59,7 +59,7 @@ struct PRSCompressionOutput {
     }
     this->put_static_data(0);
     this->put_static_data(0);
-    fwritex(this->out, this->forward_log.data.data(), this->forward_log.size);
+    phosg::fwritex(this->out, this->forward_log.data.data(), this->forward_log.size);
   }
 
   void put_raw_byte(uint8_t value) {
@@ -124,7 +124,7 @@ int64_t prs_compress_stream(FILE* src, FILE* dst, size_t size) {
     ssize_t this_offset;
     for (this_offset = -3;
          (this_offset >= -static_cast<ssize_t>(reverse_log.size)) &&
-           (this_offset > -0x1FF0) && (best_size < 255);
+         (this_offset > -0x1FF0) && (best_size < 255);
          this_offset--) {
 
       // Try to expand the current match as much as possible. Note that we only
@@ -132,10 +132,10 @@ int64_t prs_compress_stream(FILE* src, FILE* dst, size_t size) {
       // the bytes before it all already match
       ssize_t this_size = 1;
       while ((reverse_log.data[reverse_log.size + this_offset + this_size - 1] ==
-               forward_log.data[forward_log.offset + this_size - 1]) &&
-             (this_size < 256) &&
-             ((this_offset + this_size) < 0) &&
-             (this_size <= (forward_log.size - forward_log.offset))) {
+                 forward_log.data[forward_log.offset + this_size - 1]) &&
+          (this_size < 256) &&
+          ((this_offset + this_size) < 0) &&
+          (this_size <= (forward_log.size - forward_log.offset))) {
         this_size++;
       }
       this_size--;
@@ -164,7 +164,7 @@ int64_t prs_compress_stream(FILE* src, FILE* dst, size_t size) {
     }
 
     if (forward_log.offset > forward_log.size || forward_log.offset < 0) {
-      throw logic_error(string_printf(
+      throw logic_error(phosg::string_printf(
           "warning: forward_log has invalid offset (%d %d)\n",
           forward_log.offset, forward_log.size));
     }
@@ -173,8 +173,6 @@ int64_t prs_compress_stream(FILE* src, FILE* dst, size_t size) {
 
   return pc.bytes_written;
 }
-
-
 
 int64_t prs_decompress_stream(FILE* in, FILE* out, size_t stop_after_size) {
   PRSDataLog log;
@@ -187,18 +185,18 @@ int64_t prs_decompress_stream(FILE* in, FILE* out, size_t stop_after_size) {
   unsigned long x, t;
   unsigned long out_size = 0;
 
-  currentbyte = fgetcx(in);
+  currentbyte = phosg::fgetcx(in);
 
   for (;;) {
     bitpos--;
     if (bitpos == 0) {
-      currentbyte = fgetcx(in);
+      currentbyte = phosg::fgetcx(in);
       bitpos = 8;
     }
     flag = currentbyte & 1;
     currentbyte = currentbyte >> 1;
     if (flag) {
-      uint8_t ch = fgetcx(in);
+      uint8_t ch = phosg::fgetcx(in);
       fputc(ch, out);
       out_size++;
       if (stop_after_size && (out_size >= stop_after_size)) {
@@ -209,14 +207,14 @@ int64_t prs_decompress_stream(FILE* in, FILE* out, size_t stop_after_size) {
     }
     bitpos--;
     if (bitpos == 0) {
-      currentbyte = fgetcx(in);
+      currentbyte = phosg::fgetcx(in);
       bitpos = 8;
     }
     flag = currentbyte & 1;
     currentbyte = currentbyte >> 1;
     if (flag) {
-      r3 = fgetcx(in);
-      uint8_t high_byte = fgetcx(in);
+      r3 = phosg::fgetcx(in);
+      uint8_t high_byte = phosg::fgetcx(in);
       offset = ((high_byte & 0xFF) << 8) | (r3 & 0xFF);
       if (offset == 0) {
         return out_size;
@@ -225,7 +223,7 @@ int64_t prs_decompress_stream(FILE* in, FILE* out, size_t stop_after_size) {
       r5 = (offset >> 3) | 0xFFFFE000;
       if (r3 == 0) {
         flag = 0;
-        r3 = fgetcx(in);
+        r3 = phosg::fgetcx(in);
         r3 = (r3 & 0xFF) + 1;
       } else {
         r3 += 2;
@@ -235,7 +233,7 @@ int64_t prs_decompress_stream(FILE* in, FILE* out, size_t stop_after_size) {
       for (x = 0; x < 2; x++) {
         bitpos--;
         if (bitpos == 0) {
-          currentbyte = fgetcx(in);
+          currentbyte = phosg::fgetcx(in);
           bitpos = 8;
         }
         flag = currentbyte & 1;
@@ -243,7 +241,7 @@ int64_t prs_decompress_stream(FILE* in, FILE* out, size_t stop_after_size) {
         offset = r3 << 1;
         r3 = offset | flag;
       }
-      offset = fgetcx(in);
+      offset = phosg::fgetcx(in);
       r3 += 2;
       r5 = offset | 0xFFFFFF00;
     }

@@ -16,20 +16,20 @@ using namespace std;
 template <typename U32T>
 struct GSLEntry {
   char name[0x20];
-  be_int32_t unknown;
+  phosg::be_int32_t unknown;
   U32T size;
-  be_int32_t unknown2[2];
+  phosg::be_int32_t unknown2[2];
 } __attribute__((packed));
 
-struct GSLEntryBE : GSLEntry<be_uint32_t> {};
-struct GSLEntryLE : GSLEntry<le_uint32_t> {};
+struct GSLEntryBE : GSLEntry<phosg::be_uint32_t> {};
+struct GSLEntryLE : GSLEntry<phosg::le_uint32_t> {};
 
 template <typename EntryT, size_t EntryCount>
 void extract_gsl_t(const char* filename) {
-  auto f = fopen_unique(filename, "rb");
+  auto f = phosg::fopen_unique(filename, "rb");
 
   array<EntryT, EntryCount> entries;
-  freadx(f.get(), entries.data(), sizeof(EntryT) * entries.size());
+  phosg::freadx(f.get(), entries.data(), sizeof(EntryT) * entries.size());
 
   for (const auto& entry : entries) {
     if (!entry.name[0]) {
@@ -42,9 +42,9 @@ void extract_gsl_t(const char* filename) {
     // File data is aligned on 2KB boundaries
     fseek(f.get(), (ftell(f.get()) + 0x7FF) & (~0x7FF), SEEK_SET);
 
-    save_file(
-        string_printf("%s-%s", filename, entry.name),
-        freadx(f.get(), size));
+    phosg::save_file(
+        phosg::string_printf("%s-%s", filename, entry.name),
+        phosg::freadx(f.get(), size));
   }
 }
 
