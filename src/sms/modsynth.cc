@@ -1338,8 +1338,8 @@ protected:
         double loop_start_offset = -1.0;
         double loop_end_offset = -1.0;
         for (size_t tick_output_offset = 0;
-             tick_output_offset < tick_samples.size();
-             tick_output_offset += 2, division_output_offset += 2) {
+            tick_output_offset < tick_samples.size();
+            tick_output_offset += 2, division_output_offset += 2) {
 
           // Advance to the appropriate segment if there is one
           bool changed_segment = false;
@@ -1528,8 +1528,8 @@ public:
       }
       this->show_current_division();
       for (this->pos.divisions_to_delay++;
-           this->pos.divisions_to_delay > 0;
-           this->pos.divisions_to_delay--) {
+          this->pos.divisions_to_delay > 0;
+          this->pos.divisions_to_delay--) {
         this->render_current_division_audio();
       }
       uint8_t old_partition_index = this->pos.partition_index;
@@ -1727,6 +1727,8 @@ Options for --render and --play:\n\
       Apply DC offsets on all volume changes, not just those that occur as a\n\
       result of a Cxx effect. This makes some songs sound better but others\n\
       sound worse.\n\
+  --nonlinear-volume\n\
+      Use superlinear volume scaling for the Cxx effect.\n\
   --solo-track=N\n\
       Mute all the tracks except this one. The first track is numbered 0; most\n\
       MODs have tracks 0-3. May be given multiple times.\n\
