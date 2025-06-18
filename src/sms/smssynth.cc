@@ -792,20 +792,24 @@ struct Channel {
 class Voice {
 public:
   Voice(size_t sample_rate, int8_t note, int8_t vel, bool decay_when_off, shared_ptr<Channel> channel)
+     : Voice(sample_rate, note, vel, decay_when_off, 0.2f, channel) {}
+  Voice(size_t sample_rate, int8_t note, int8_t vel, bool decay_when_off, float decay_seconds, shared_ptr<Channel> channel)
       : sample_rate(sample_rate),
         note(note),
         vel(vel),
         channel(channel),
         decay_when_off(decay_when_off),
-        note_off_decay_total(this->sample_rate / 5),
+        note_off_decay_total(static_cast<ssize_t>(round(
+          static_cast<double>(decay_seconds) * static_cast<double>(this->sample_rate)
+        ))),
         note_off_decay_remaining(-1) {}
   virtual ~Voice() = default;
 
   virtual vector<float> render(size_t count, float freq_mult, float volume_bias) = 0;
 
   void off() {
-    // TODO: for now we use a constant release time of 1/5 second; we probably
-    // should get this from the AAF somewhere but I don't know where
+    // TODO: for now we use a constant release time of 1/5 second except in SMS SONG resources;
+    // we probably should get this from the AAF somewhere but I don't know where
     this->note_off_decay_remaining = this->note_off_decay_total;
   }
 
@@ -879,8 +883,8 @@ class SampleVoice : public Voice {
 public:
   SampleVoice(size_t sample_rate, shared_ptr<const SoundEnvironment> env,
       shared_ptr<SampleCache<const Sound*>> cache, uint16_t bank_id, uint16_t instrument_id,
-      int8_t note, int8_t vel, bool decay_when_off, shared_ptr<Channel> channel)
-      : Voice(sample_rate, note, vel, decay_when_off, channel),
+      int8_t note, int8_t vel, bool decay_when_off, float decay_seconds, shared_ptr<Channel> channel)
+      : Voice(sample_rate, note, vel, decay_when_off, decay_seconds, channel),
         instrument_bank(&env->instrument_banks.at(bank_id)),
         instrument(&this->instrument_bank->id_to_instrument.at(instrument_id)),
         key_region(&this->instrument->region_for_key(note)),
@@ -1084,6 +1088,7 @@ protected:
   unordered_set<int16_t> solo_tracks;
   unordered_set<int16_t> disable_tracks;
   bool decay_when_off;
+  float decay_seconds;
 
   shared_ptr<SampleCache<const Sound*>> cache;
 
@@ -1096,7 +1101,7 @@ protected:
     if (this->env) {
       try {
         SampleVoice* v = new SampleVoice(this->sample_rate, this->env,
-            this->cache, t->bank, t->instrument, key, vel, this->decay_when_off, c);
+            this->cache, t->bank, t->instrument, key, vel, this->decay_when_off, this->decay_seconds, c);
         t->voices[voice_id].reset(v);
       } catch (const out_of_range& e) {
         string key_str = phosg_audio::name_for_note(key);
@@ -1140,6 +1145,7 @@ public:
         solo_tracks(solo_tracks),
         disable_tracks(disable_tracks),
         decay_when_off(decay_when_off),
+        decay_seconds(0.2f),
         cache(new SampleCache<const Sound*>(resample_method)) {}
 
   virtual ~Renderer() = default;
@@ -1801,6 +1807,7 @@ public:
       double freq_bias,
       double volume_bias,
       bool decay_when_off,
+      float decay_seconds,
       uint8_t percussion_instrument,
       bool allow_program_change)
       : Renderer(
@@ -1822,6 +1829,7 @@ public:
     if (percussion_instrument) {
       this->channel_instrument[9] = percussion_instrument;
     }
+    this->decay_seconds = decay_seconds;
 
     phosg::StringReader r(this->midi_contents);
 
@@ -2296,10 +2304,12 @@ int main(int argc, char** argv) {
   } else {
     // midi has some extra params; get them from the json if possible
     uint8_t percussion_instrument = 0;
+    float decay_seconds = 0.2f;
     bool allow_program_change = true;
     if (!env_json.is_null()) {
       percussion_instrument = env_json.get_int("percussion_instrument", 0);
       allow_program_change = env_json.get_bool("allow_program_change", true);
+      decay_seconds = env_json.get_float("note_decay", 12.0f) / 60.0f;
       tempo_bias *= env_json.get_float("tempo_bias", 1.0);
     }
     r.reset(new MIDIRenderer(
@@ -2314,6 +2324,7 @@ int main(int argc, char** argv) {
         freq_bias,
         volume_bias,
         decay_when_off,
+        decay_seconds,
         percussion_instrument,
         allow_program_change));
   }
