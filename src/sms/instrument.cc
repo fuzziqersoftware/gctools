@@ -6,7 +6,7 @@
 
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
-#include <phosg/Strings.hh>
+#include <format>
 #include <vector>
 
 #include "afc.hh"
@@ -330,8 +330,9 @@ Instrument ibnk_inst_decode(const void* vdata, size_t offset, size_t inst_id) {
     count = 0x64;
 
   } else {
-    throw invalid_argument(phosg::string_printf("unknown instrument format at %08zX: %.4s (%08X)",
-        offset, inst_data, *reinterpret_cast<const uint32_t*>(inst_data)));
+    throw invalid_argument(format("unknown instrument format at {:08X}: {:.4} ({:08X})",
+        offset, string_view(reinterpret_cast<const char*>(inst_data), 4),
+            *reinterpret_cast<const uint32_t*>(inst_data)));
   }
 
   for (uint32_t x = 0; x < count; x++) {
@@ -437,11 +438,11 @@ InstrumentBank ibnk_decode(const void* vdata) {
       offset += list_header->size + sizeof(ibnk_list_header);
 
     } else if (!memcmp(&chunk_header->magic, "BANK", 4)) {
-      throw runtime_error(phosg::string_printf("IBNK contains BANK at %08zX but it is not first",
+      throw runtime_error(format("IBNK contains BANK at {:08X} but it is not first",
           offset));
 
     } else {
-      throw runtime_error(phosg::string_printf("unknown IBNK chunk type at %08zX: %.4s",
+      throw runtime_error(format("unknown IBNK chunk type at {:08X}: {:.4}",
           offset, reinterpret_cast<const char*>(&chunk_header->magic)));
     }
   }

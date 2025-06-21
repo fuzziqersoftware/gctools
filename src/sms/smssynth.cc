@@ -12,8 +12,8 @@
 #include <phosg-audio/Stream.hh>
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
-#include <phosg/Strings.hh>
 #include <phosg/Time.hh>
+#include <format>
 #include <string>
 #include <unordered_map>
 
@@ -132,7 +132,7 @@ void disassemble_set_perf(
   } else if (type == 0x03) {
     param_name = "panning";
   } else {
-    param_name = phosg::string_printf("[%02hhX]", type);
+    param_name = format("[{:02X}]", type);
   }
 
   printf("%08zX: set_perf        %s=", opcode_offset, param_name.c_str());
@@ -190,18 +190,18 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
       uint8_t voice = r.get_u8(); // between 1 and 8 inclusive
       uint8_t vel = r.get_u8();
       string note_name = phosg_audio::name_for_note(opcode);
-      disassembly = phosg::string_printf("note            note=%s, voice=%hhu, vel=0x%02hhX",
-          note_name.c_str(), voice, vel);
+      disassembly = format("note            note={}, voice={}, vel=0x{:02X}",
+        note_name, voice, vel);
     } else
       switch (opcode) {
         case 0x80: {
           uint8_t wait_time = r.get_u8();
-          disassembly = phosg::string_printf("wait            %hhu", wait_time);
+          disassembly = format("wait            {}", wait_time);
           break;
         }
         case 0x88: {
           uint16_t wait_time = r.get_u16b();
-          disassembly = phosg::string_printf("wait            %hu", wait_time);
+          disassembly = format("wait            {}", wait_time);
           break;
         }
 
@@ -213,7 +213,7 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
         case 0x86:
         case 0x87: {
           uint8_t voice = opcode & 7;
-          disassembly = phosg::string_printf("voice_off       %hhu", voice);
+          disassembly = format("voice_off       {}", voice);
           break;
         }
 
@@ -260,24 +260,23 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
           try {
             param_name = param_names.at(type);
           } catch (const out_of_range&) {
-            param_name = phosg::string_printf("[%02hhX]", type);
+            param_name = format("[{:02X}]", type);
           }
 
-          disassembly = phosg::string_printf("set_perf%s    %s=",
-              is_extended ? "_ext" : "    ", param_name.c_str());
+          disassembly = format("set_perf{}    {}=",
+             is_extended ? "_ext" : "    ", param_name);
           if (data_type == 4) {
-            disassembly += phosg::string_printf("0x%02hhX (u8)", static_cast<uint8_t>(value));
+            disassembly += format("0x{:02X} (u8)", static_cast<uint8_t>(value));
           } else if (data_type == 8) {
-            disassembly += phosg::string_printf("0x%02hhX (s8)", static_cast<int8_t>(value));
+            disassembly += format("0x{:02X} (s8)", static_cast<int8_t>(value));
           } else if (data_type == 12) {
-            disassembly += phosg::string_printf("0x%04hX (s16)", static_cast<int16_t>(value));
+            disassembly += format("0x{:04X} (s16)", static_cast<int16_t>(value));
           }
           if (duration_flags == 2) {
-            disassembly += phosg::string_printf(", duration=0x%02hhX", static_cast<uint8_t>(duration));
+            disassembly += format(", duration=0x{:02X}", static_cast<uint8_t>(duration));
           } else if (duration == 3) {
-            disassembly += phosg::string_printf(", duration=0x%04hX", static_cast<uint16_t>(duration));
+            disassembly += format(", duration=0x{:04X}", static_cast<uint16_t>(duration));
           }
-
           break;
         }
 
@@ -297,21 +296,21 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
           try {
             param_name = param_names.at(param);
           } catch (const out_of_range&) {
-            param_name = phosg::string_printf("[%02hhX]", param);
+            param_name = format("[{:02X}]", param);
           }
 
-          string value_str = (opcode & 0x08) ? phosg::string_printf("0x%04hX", value) : phosg::string_printf("0x%02hhX", static_cast<uint8_t>(value));
-          disassembly = phosg::string_printf("set_param       %s, %s",
-              param_name.c_str(), value_str.c_str());
+          string value_str = (opcode & 0x08) ? format("0x{:04X}", value) : format("0x{:02X}", static_cast<uint8_t>(value));
+          disassembly = format("set_param       {}, {}",
+              param_name, value_str);
           break;
         }
 
         case 0xC1: {
           uint8_t track_id = r.get_u8();
           uint32_t offset = r.get_u24b();
-          disassembly = phosg::string_printf("start_track     %hhu, offset=0x%" PRIX32,
+          disassembly = format("start_track     {}, offset=0x{:X}",
               track_id, offset);
-          track_start_labels.emplace(offset, phosg::string_printf("track_%02hhX_start", track_id));
+          track_start_labels.emplace(offset, format("track_{:02X}_start", track_id));
           break;
         }
 
@@ -320,11 +319,11 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
         case 0xC7:
         case 0xC8: {
           const char* opcode_name = (opcode > 0xC4) ? "jmp " : "call";
-          string conditional_str = (opcode & 1) ? "" : phosg::string_printf("cond=0x%02hhX, ", r.get_u8());
+          string conditional_str = (opcode & 1) ? "" : format("cond=0x{:02X}, ", r.get_u8());
 
           uint32_t offset = r.get_u24b();
-          disassembly = phosg::string_printf("%s            %soffset=0x%" PRIX32,
-              opcode_name, conditional_str.c_str(), offset);
+          disassembly = format("{}            {}offset=0x{:X}",
+              opcode_name, conditional_str, offset);
           break;
         }
 
@@ -333,20 +332,20 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
           break;
 
         case 0xC6: {
-          string conditional_str = phosg::string_printf("cond=0x%02hhX", r.get_u8());
-          disassembly = phosg::string_printf("ret             %s", conditional_str.c_str());
+          string conditional_str = format("cond=0x{:02X}", r.get_u8());
+          disassembly = format("ret             {}", conditional_str);
           break;
         }
 
         case 0xE7: {
           uint16_t arg = r.get_u16b();
-          disassembly = phosg::string_printf("sync_gpu        0x%04hX", arg);
+          disassembly = format("sync_gpu        0x{:04X}", arg);
           break;
         }
 
         case 0xFD: {
           uint16_t pulse_rate = r.get_u16b();
-          disassembly = phosg::string_printf("set_pulse_rate  %hu", pulse_rate);
+          disassembly = format("set_pulse_rate  {}", pulse_rate);
           break;
         }
 
@@ -354,7 +353,7 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
         case 0xFE: {
           uint16_t tempo = r.get_u16b();
           uint64_t usec_pqn = 60000000 / tempo;
-          disassembly = phosg::string_printf("set_tempo       %hu /* usecs per quarter note = %" PRIu64 " */", tempo, usec_pqn);
+          disassembly = format("set_tempo       {} /* usecs per quarter note = {} */", tempo, usec_pqn);
           break;
         }
 
@@ -382,26 +381,26 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
           uint8_t port = r.get_u8();
           uint8_t reg = r.get_u8();
           uint8_t value = r.get_u8();
-          disassembly = phosg::string_printf("%s   r%hhu, %hhu, %hhu", opcode_names.at(opcode),
+          disassembly = format("{}   r{}, {}, {}", opcode_names.at(opcode),
               reg, port, value);
           break;
         }
 
         case 0xD2:
-          disassembly = phosg::string_printf(".check_port_in  0x%hX", r.get_u16b());
+          disassembly = format(".check_port_in  0x{:X}", r.get_u16b());
           break;
 
         case 0xD3:
-          disassembly = phosg::string_printf(".check_port_ex  0x%hX", r.get_u16b());
+          disassembly = format(".check_port_ex  0x{:X}", r.get_u16b());
           break;
 
         case 0xD8: {
           uint8_t reg = r.get_u8();
           int16_t val = r.get_s16b();
           if (reg == 0x62) {
-            disassembly = phosg::string_printf("mov             r98, %hd /* set_pulse_rate */", val);
+            disassembly = format("mov             r98, {} /* set_pulse_rate */", val);
           } else {
-            disassembly = phosg::string_printf("mov             r%hhu, 0x%hX", reg, val);
+            disassembly = format("mov             r{}, 0x{:X}", reg, val);
           }
           break;
         }
@@ -417,7 +416,7 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
           } catch (const out_of_range&) {
           }
 
-          disassembly = phosg::string_printf("%s             r%hhu, r%hhu", opcode_name,
+          disassembly = format("{}             r{}, r{}", opcode_name,
               dst_reg, src_reg);
           break;
         }
@@ -433,16 +432,16 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
           } catch (const out_of_range&) {
           }
 
-          disassembly = phosg::string_printf("%s            r%hhu, 0x%hX", opcode_name,
+          disassembly = format("{}            r{}, 0x{:X}", opcode_name,
               dst_reg, val);
           break;
         }
 
         case 0xE2:
-          disassembly = phosg::string_printf("set_bank        0x%hX", r.get_u8());
+          disassembly = format("set_bank        0x{:X}", r.get_u8());
           break;
         case 0xE3:
-          disassembly = phosg::string_printf("set_instrument  0x%hX", r.get_u8());
+          disassembly = format("set_instrument  0x{:X}", r.get_u8());
           break;
 
         case 0xFB: {
@@ -451,7 +450,7 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
           while ((b = r.get_u8())) {
             s.push_back(b);
           }
-          disassembly = phosg::string_printf("debug_str       \"%s\"", s.c_str());
+          disassembly = format("debug_str       \"{}\"", s);
           break;
         }
 
@@ -464,7 +463,7 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
         case 0xF1:
         case 0xF4: {
           uint8_t param = r.get_u8();
-          disassembly = phosg::string_printf(".unknown        0x%02hhX, 0x%02hhX",
+          disassembly = format(".unknown        0x{:02X}, 0x{:02X}",
               opcode, param);
           break;
         }
@@ -478,7 +477,7 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
         case 0xE6:
         case 0xF9: {
           uint16_t param = r.get_u16b();
-          disassembly = phosg::string_printf(".unknown        0x%02hhX, 0x%04hX",
+          disassembly = format(".unknown        0x{:02X}, 0x{:04X}",
               opcode, param);
           break;
         }
@@ -488,7 +487,7 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
         case 0xDD:
         case 0xEF: {
           uint32_t param = r.get_u24b();
-          disassembly = phosg::string_printf(".unknown        0x%02hhX, 0x%06" PRIX32,
+          disassembly = format(".unknown        0x{:02X}, 0x{:06X}",
               opcode, param);
           break;
         }
@@ -498,7 +497,7 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
         case 0xB4:
         case 0xDF: {
           uint32_t param = r.get_u32b();
-          disassembly = phosg::string_printf(".unknown        0x%02hhX, 0x%08" PRIX32,
+          disassembly = format(".unknown        0x{:02X}, 0x{:08X}",
               opcode, param);
           break;
         }
@@ -507,26 +506,26 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
           uint8_t param1 = r.get_u8();
           if (param1 == 0x40) {
             uint16_t param2 = r.get_u16b();
-            disassembly = phosg::string_printf(".unknown        0x%02hhX, 0x%02hhX, 0x%04hX",
+            disassembly = format(".unknown        0x{:02X}, 0x{:02X}, 0x{:04X}",
                 opcode, param1, param2);
           } else if (param1 == 0x80) {
             uint32_t param2 = r.get_u32b();
-            disassembly = phosg::string_printf(".unknown        0x%02hhX, 0x%02hhX, 0x%08" PRIX32,
+            disassembly = format(".unknown        0x{:02X}, 0x{:02X}, 0x{:08X}",
                 opcode, param1, param2);
           } else {
-            disassembly = phosg::string_printf(".unknown        0x%02hhX, 0x%02hhX",
+            disassembly = format(".unknown        0x{:02X}, 0x{:02X}",
                 opcode, param1);
           }
           break;
         }
 
         case 0xF0: {
-          disassembly = phosg::string_printf("wait            %" PRIu64, read_variable_int(r));
+          disassembly = format("wait            {}", read_variable_int(r));
           break;
         }
 
         default:
-          disassembly = phosg::string_printf(".unknown        0x%02hhX", opcode);
+          disassembly = format(".unknown        0x{:02X}", opcode);
       }
 
     if (disassembly.empty()) {
@@ -537,7 +536,7 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
     string data = r.pread(opcode_offset, opcode_size);
     string data_str;
     for (char ch : data) {
-      data_str += phosg::string_printf("%02X ", static_cast<uint8_t>(ch));
+      data_str += format("{:02X} ", static_cast<uint8_t>(ch));
     }
     data_str.resize(18, ' ');
 
@@ -726,7 +725,7 @@ void disassemble_midi(phosg::StringReader& r) {
           printf(".meta        0x%hhX\n", type);
         }
       } else {
-        throw runtime_error(phosg::string_printf("invalid status byte: %02hhX", status));
+        throw runtime_error(format("invalid status byte: {:02X}", status));
       }
     }
 
@@ -895,9 +894,9 @@ public:
     }
     if (this->vel_region->sound->num_channels != 1) {
       // TODO: this probably wouldn't be that hard to support
-      throw invalid_argument(phosg::string_printf(
-          "sampled sound is multi-channel: %s:%" PRIX32,
-          this->vel_region->sound->source_filename.c_str(),
+      throw invalid_argument(format(
+          "sampled sound is multi-channel: {}:{:X}",
+          this->vel_region->sound->source_filename,
           this->vel_region->sound->source_offset));
     }
   }
@@ -1226,8 +1225,8 @@ public:
           throw;
         }
         if (voice_samples.size() != step_samples.size()) {
-          throw logic_error(phosg::string_printf(
-              "voice produced incorrect sample count (returned %zu samples, expected %zu samples)",
+          throw logic_error(format(
+              "voice produced incorrect sample count (returned {} samples, expected {} samples)",
               voice_samples.size(), step_samples.size()));
         }
         if (!this->mute_tracks.count(t->id)) {
@@ -1584,8 +1583,8 @@ protected:
         uint8_t track_id = t->r.get_u8();
         uint32_t offset = t->r.get_u24b();
         if (offset >= t->r.size()) {
-          throw invalid_argument(phosg::string_printf(
-              "cannot start track at pc=0x%" PRIX32 " (from pc=0x%zX)",
+          throw invalid_argument(format(
+              "cannot start track at pc=0x{:X} (from pc=0x{:X})",
               offset, t->r.where() - 5));
         }
 
@@ -1612,8 +1611,8 @@ protected:
         uint32_t offset = t->r.get_u24b();
 
         if (offset >= t->r.size()) {
-          throw invalid_argument(phosg::string_printf(
-              "cannot jump to pc=0x%" PRIX32 " (from pc=0x%zX)", offset,
+          throw invalid_argument(format(
+              "cannot jump to pc=0x{:X} (from pc=0x{:X})", offset,
               t->r.where() - 5));
         }
 
@@ -1777,7 +1776,7 @@ protected:
       }
 
       default:
-        throw invalid_argument(phosg::string_printf("unknown opcode at offset 0x%zX: 0x%hhX",
+        throw invalid_argument(format("unknown opcode at offset 0x{:X}: 0x{:X}",
             t->r.where() - 1, opcode));
     }
   }

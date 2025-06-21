@@ -8,8 +8,9 @@
 #include <phosg-audio/File.hh>
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
-#include <phosg/Strings.hh>
 #include <unordered_map>
+#include <filesystem>
+#include <format>
 #include <vector>
 
 #include "instrument.hh"
@@ -154,7 +155,7 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
     // try both Banks and Waves subdirectories
     static const vector<string> directory_names({"Banks", "Waves"});
     for (const auto& directory_name : directory_names) {
-      string aw_filename = phosg::string_printf("%s/%s/%s", base_directory, directory_name.c_str(), entry->filename);
+      string aw_filename = format("{}/{}/{}", base_directory, directory_name, entry->filename);
       try {
         aw_file_contents = phosg::load_file(aw_filename.c_str());
         break;
@@ -163,7 +164,7 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
       }
     }
     if (aw_file_contents.empty()) {
-      throw runtime_error(phosg::string_printf("%s does not exist in any checked subdirectory", entry->filename));
+      throw runtime_error(format("{} does not exist in any checked subdirectory", entry->filename));
     }
 
     for (size_t y = 0; y < entry->wav_count; y++) {
@@ -223,7 +224,7 @@ pair<uint32_t, vector<Sound>> wsys_decode(const void* vdata,
         }
         ret_snd.num_channels = is_stereo ? 2 : 1;
       } else {
-        throw runtime_error(phosg::string_printf("unknown wav entry type: 0x%" PRIX32, wav_entry->type));
+        throw runtime_error(format("unknown wav entry type: 0x{:X}", wav_entry->type));
       }
     }
   }
@@ -266,7 +267,7 @@ unordered_map<string, SequenceProgram> barc_decode(const void* vdata,
     throw invalid_argument("BARC data too small for header");
   }
 
-  string sequence_archive_filename = phosg::string_printf("%s/Seqs/%s", base_directory,
+  string sequence_archive_filename = format("{}/Seqs/{}", base_directory,
       barc->archive_filename);
   phosg::scoped_fd sequence_archive_fd(sequence_archive_filename.c_str(), O_RDONLY);
 
@@ -283,7 +284,7 @@ unordered_map<string, SequenceProgram> barc_decode(const void* vdata,
     size_t suffix = 0;
     string effective_name = e.name;
     while (ret.count(effective_name)) {
-      effective_name = phosg::string_printf("%s@%zu", e.name, ++suffix);
+      effective_name = format("{}@{}", e.name, ++suffix);
     }
     ret.emplace(piecewise_construct, forward_as_tuple(effective_name),
         forward_as_tuple(x, std::move(data)));
@@ -466,9 +467,9 @@ SoundEnvironment aaf_decode(const void* vdata, size_t size, const char* base_dir
         break;
 
       default:
-        throw invalid_argument(phosg::string_printf(
-            "unknown chunk type %.4s (%08X)",
-            reinterpret_cast<char*>(&chunk_type), chunk_type));
+        throw invalid_argument(format(
+            "unknown chunk type {} ({:08X})",
+            string_view(reinterpret_cast<char*>(&chunk_type), 4), chunk_type));
     }
   }
 
@@ -536,7 +537,7 @@ SoundEnvironment baa_decode(const void* vdata, size_t size, const char* base_dir
         uint32_t offset = data_fields[field_offset++];
         uint32_t end_offset = data_fields[field_offset++];
         ret.sequence_programs.emplace(piecewise_construct,
-            forward_as_tuple(phosg::string_printf("seq%" PRIu32, id)),
+            forward_as_tuple(format("seq{}", id)),
             forward_as_tuple(id, string(reinterpret_cast<const char*>(data + offset), end_offset - offset)));
         break;
       }
@@ -558,9 +559,9 @@ SoundEnvironment baa_decode(const void* vdata, size_t size, const char* base_dir
 
       default:
         phosg::be_uint32_t chunk_type_be = chunk_type;
-        throw invalid_argument(phosg::string_printf(
-            "unknown chunk type %.4s (%08X)",
-            reinterpret_cast<char*>(&chunk_type_be), chunk_type));
+        throw invalid_argument(format(
+            "unknown chunk type {} ({:08X})",
+                  string_view(reinterpret_cast<char*>(&chunk_type_be), 4), chunk_type));
     }
   }
 
@@ -628,12 +629,12 @@ SoundEnvironment load_sound_environment(const char* base_directory) {
   // default.dol in a hex editor and copy the resulting data (through the end of
   // the sequence names) to sequence.barc in the Seqs directory
   {
-    string filename = phosg::string_printf("%s/Banks/pikibank.bx", base_directory);
-    if (phosg::isfile(filename)) {
+    string filename = format("{}/Banks/pikibank.bx", base_directory);
+    if (filesystem::is_regular_file(filename)) {
       string data = phosg::load_file(filename);
       auto env = bx_decode(data.data(), data.size(), base_directory);
 
-      data = phosg::load_file(phosg::string_printf("%s/Seqs/sequence.barc", base_directory));
+      data = phosg::load_file(format("{}/Seqs/sequence.barc", base_directory));
       env.sequence_programs = barc_decode(data.data(), data.size(), base_directory);
 
       return env;
