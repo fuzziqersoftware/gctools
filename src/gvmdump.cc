@@ -334,9 +334,7 @@ phosg::Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullp
       break;
 
     default:
-      throw logic_error(phosg::string_printf(
-          "unimplemented data format: %02hhX",
-          static_cast<uint8_t>(header.data_format)));
+      throw logic_error(std::format("unimplemented data format: {:02X}", static_cast<uint8_t>(header.data_format)));
   }
 
   return result;
@@ -391,7 +389,7 @@ int main(int argc, char* argv[]) {
       filename += '_';
       for (const char* ch = gvm->entries[x].name; *ch; ch++) {
         if (*ch < 0x20 || *ch > 0x7E) {
-          filename += phosg::string_printf("_x%02hhX", *ch);
+          filename += std::format("_x{:02X}", *ch);
         } else {
           filename += *ch;
         }

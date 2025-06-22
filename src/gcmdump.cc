@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <filesystem>
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
 #include <string>
@@ -139,7 +140,7 @@ void parse_until(
     const unordered_set<string>& target_filenames) {
 
   int x;
-  string pwd = phosg::getcwd();
+  string pwd = std::filesystem::current_path().string();
   pwd += '/';
   size_t pwd_end = pwd.size();
   for (x = start; x < end; x++) {

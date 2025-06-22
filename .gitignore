@@ -2,15 +2,10 @@
 .DS_Store
 
 # Build products
-libprs.a
-afsdump
 gcmasm
 gcmdump
-gsldump
 gvmdump
 rcfdump
-pae2gvm
-prsd
 smsdumpbanks
 smssynth
 modsynth

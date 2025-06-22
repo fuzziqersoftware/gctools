@@ -4,6 +4,7 @@
 
 #include <array>
 #include <deque>
+#include <filesystem>
 #include <map>
 #include <phosg-audio/Convert.hh>
 #include <phosg-audio/File.hh>
@@ -480,7 +481,7 @@ void export_mod_instruments(
           i.loop_start_samples,
           i.loop_length_samples);
 
-      string output_filename_u8 = phosg::string_printf("%s_%zu.u8.wav", output_prefix, i.index + 1);
+      string output_filename_u8 = std::format("{}_{}.u8.wav", output_prefix, i.index + 1);
       vector<uint8_t> u8_sample_data;
       u8_sample_data.reserve(i.num_samples);
       for (int8_t sample : i.original_sample_data) {
@@ -488,7 +489,7 @@ void export_mod_instruments(
       }
       phosg_audio::save_wav(output_filename_u8.c_str(), u8_sample_data, 16574, 1);
 
-      string output_filename_f32 = phosg::string_printf("%s_%zu.f32.wav", output_prefix, i.index + 1);
+      string output_filename_f32 = std::format("{}_{}.f32.wav", output_prefix, i.index + 1);
       phosg_audio::save_wav(output_filename_f32.c_str(), i.sample_data, 16574, 1);
     }
   }
@@ -565,7 +566,7 @@ protected:
               static_cast<double>(this->divisions_per_minute * this->ticks_per_division) / 60),
           samples_per_tick(static_cast<double>(this->sample_rate * 60) / (this->divisions_per_minute * this->ticks_per_division)) {}
     string str() const {
-      return phosg::string_printf("%zukHz %zubpm %zut/d => %lgd/m %lgt/sec %lgsmp/t",
+      return std::format("{}kHz {}bpm {}t/d => {:g}d/m {:g}t/sec {:g}smp/t",
           this->sample_rate,
           this->beats_per_minute,
           this->ticks_per_division,
@@ -1951,10 +1952,8 @@ int main(int argc, char** argv) {
       disassemble_mod(stdout, mod);
       break;
     case Behavior::DISASSEMBLE_DIRECTORY: {
-      auto files = phosg::list_directory(input_filename);
-      size_t num_disassembled = 0;
-      for (const auto& filename : files) {
-        string path = string(input_filename) + "/" + filename;
+      for (const auto& entry : std::filesystem::directory_iterator(input_filename)) {
+        string path = string(input_filename) + "/" + entry.path().filename().string();
         fprintf(stdout, "===== %s\n", path.c_str());
 
         shared_ptr<Module> mod;
@@ -1964,9 +1963,7 @@ int main(int argc, char** argv) {
         } catch (const exception& e) {
           fprintf(stdout, "Failed: %s\n\n", e.what());
         }
-
-        num_disassembled++;
-        fprintf(stderr, "... (%zu/%zu) %s\n", num_disassembled, files.size(), path.c_str());
+        fprintf(stderr, "... %s\n", path.c_str());
       }
       break;
     }

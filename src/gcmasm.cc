@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <filesystem>
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
 #include <phosg/Strings.hh>
@@ -151,7 +152,7 @@ struct File {
       : src_path(src_path),
         name(phosg::basename(this->src_path)),
         size(phosg::stat(this->src_path).st_size) {
-    phosg::log_info("Add file: %s (as %s)", this->src_path.c_str(), this->name.c_str());
+    phosg::log_info_f("Add file: {} (as {})", this->src_path, this->name);
   }
 
   string data() const {
@@ -168,18 +169,18 @@ struct Directory {
   explicit Directory(const string& src_path)
       : src_path(src_path),
         name(phosg::basename(this->src_path)) {
-    phosg::log_info("Add directory: %s (as %s)", this->src_path.c_str(), this->name.c_str());
-    for (const string& item : phosg::list_directory(src_path)) {
-      string item_path = src_path + "/" + item;
-      if (phosg::isdir(item_path)) {
-        this->directories.emplace(item, new Directory(item_path));
-      } else if (phosg::isfile(item_path)) {
-        this->files.emplace(item, new File(item_path));
+    phosg::log_info_f("Add directory: {} (as {})", this->src_path, this->name);
+    for (const auto& item : std::filesystem::directory_iterator(src_path)) {
+      string item_path = src_path + "/" + item.path().filename().string();
+      if (std::filesystem::is_directory(item_path)) {
+        this->directories.emplace(item.path().filename().string(), new Directory(item_path));
+      } else if (std::filesystem::is_regular_file(item_path)) {
+        this->files.emplace(item.path().filename().string(), new File(item_path));
       } else {
         throw runtime_error("non-file, non-directory object in tree: " + item_path);
       }
     }
-    phosg::log_info("End directory: %s (as %s)", this->src_path.c_str(), this->name.c_str());
+    phosg::log_info_f("End directory: %s (as %s)", this->src_path.c_str(), this->name.c_str());
   }
 };
 
@@ -246,7 +247,7 @@ struct HeaderParams {
 void compile_image(
     FILE* out, const string& in_path, const HeaderParams& header_params) {
   Directory root_dir(in_path);
-  phosg::log_info("All files collected");
+  phosg::log_info_f("All files collected");
 
   auto default_dol_it = root_dir.files.find("default.dol");
   if (default_dol_it == root_dir.files.end()) {
@@ -254,7 +255,7 @@ void compile_image(
   }
   shared_ptr<File> default_dol = default_dol_it->second;
   root_dir.files.erase(default_dol_it);
-  phosg::log_info("default.dol found");
+  phosg::log_info_f("default.dol found");
 
   auto apploader_bin_it = root_dir.files.find("apploader.bin");
   if (apploader_bin_it == root_dir.files.end()) {
@@ -262,14 +263,14 @@ void compile_image(
   }
   shared_ptr<File> apploader_bin = apploader_bin_it->second;
   root_dir.files.erase(apploader_bin_it);
-  phosg::log_info("apploader.bin found");
+  phosg::log_info_f("apploader.bin found");
 
   shared_ptr<File> header_bin;
   auto header_bin_it = root_dir.files.find("__gcm_header__.bin");
   if ((header_bin_it != root_dir.files.end()) && (header_bin_it->second->size == 0x2440)) {
     header_bin = header_bin_it->second;
     root_dir.files.erase(header_bin_it);
-    phosg::log_info("__gcm_header__.bin found");
+    phosg::log_info_f("__gcm_header__.bin found");
   }
 
   size_t apploader_offset = 0x2440;
@@ -283,7 +284,7 @@ void compile_image(
   {
     size_t file_size = fst_offset + fst.bytes();
     string size_str = phosg::format_size(fst_offset + fst.bytes());
-    phosg::log_info("File size: %zu bytes (%s)", file_size, size_str.c_str());
+    phosg::log_info_f("File size: {} bytes ({})", file_size, size_str);
   }
 
   string header_data;
@@ -356,24 +357,24 @@ void compile_image(
 
     fseek(out, 0, SEEK_SET);
     phosg::fwritex(out, tgc_header_data);
-    phosg::log_info("TGC header written");
+    phosg::log_info_f("TGC header written");
   } else {
     gcm_offset = 0;
   }
 
   fseek(out, gcm_offset, SEEK_SET);
   phosg::fwritex(out, header_data);
-  phosg::log_info("GCM header written");
+  phosg::log_info_f("GCM header written");
 
   fseek(out, apploader_offset + gcm_offset, SEEK_SET);
   phosg::fwritex(out, apploader_bin->data());
-  phosg::log_info("Apploader written");
+  phosg::log_info_f("Apploader written");
   fseek(out, default_dol_offset + gcm_offset, SEEK_SET);
   phosg::fwritex(out, default_dol->data());
-  phosg::log_info("default.dol written");
+  phosg::log_info_f("default.dol written");
   fseek(out, fst_offset + gcm_offset, SEEK_SET);
   fst.write(out);
-  phosg::log_info("FST written");
+  phosg::log_info_f("FST written");
 
   function<void(FILE*, const Directory&)> write_files_data = [&](FILE* out, const Directory& dir) -> void {
     for (const auto& it : dir.directories) {
@@ -382,12 +383,12 @@ void compile_image(
     for (const auto& it : dir.files) {
       fseek(out, it.second->image_offset + gcm_offset, SEEK_SET);
       phosg::fwritex(out, it.second->data());
-      phosg::log_info("%s written", it.second->name.c_str());
+      phosg::log_info_f("{} written", it.second->name);
     }
   };
   write_files_data(out, root_dir);
 
-  phosg::log_info("Complete");
+  phosg::log_info_f("Complete");
 }
 
 void print_usage() {
@@ -457,7 +458,7 @@ int main(int argc, char* argv[]) {
     } else if (out_path.empty()) {
       out_path = argv[x];
     } else {
-      throw runtime_error(phosg::string_printf("excess command line argument: %s", argv[x]));
+      throw runtime_error(std::format("excess command line argument: {}", argv[x]));
     }
   }
 
@@ -467,7 +468,7 @@ int main(int argc, char* argv[]) {
 
   if (out_path.empty()) {
     out_path = dir_path;
-    while (phosg::ends_with(out_path, "/")) {
+    while (out_path.ends_with("/")) {
       out_path.resize(out_path.size() - 1);
     }
     out_path += ".gcm";

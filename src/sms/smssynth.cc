@@ -6,6 +6,7 @@
 #include <samplerate.h>
 
 #include <algorithm>
+#include <format>
 #include <map>
 #include <phosg-audio/Convert.hh>
 #include <phosg-audio/File.hh>
@@ -13,7 +14,6 @@
 #include <phosg/Encoding.hh>
 #include <phosg/Filesystem.hh>
 #include <phosg/Time.hh>
-#include <format>
 #include <string>
 #include <unordered_map>
 
@@ -191,7 +191,7 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
       uint8_t vel = r.get_u8();
       string note_name = phosg_audio::name_for_note(opcode);
       disassembly = format("note            note={}, voice={}, vel=0x{:02X}",
-        note_name, voice, vel);
+          note_name, voice, vel);
     } else
       switch (opcode) {
         case 0x80: {
@@ -264,7 +264,7 @@ void disassemble_bms(phosg::StringReader& r, int32_t default_bank = -1) {
           }
 
           disassembly = format("set_perf{}    {}=",
-             is_extended ? "_ext" : "    ", param_name);
+              is_extended ? "_ext" : "    ", param_name);
           if (data_type == 4) {
             disassembly += format("0x{:02X} (u8)", static_cast<uint8_t>(value));
           } else if (data_type == 8) {
@@ -792,7 +792,7 @@ struct Channel {
 class Voice {
 public:
   Voice(size_t sample_rate, int8_t note, int8_t vel, bool decay_when_off, shared_ptr<Channel> channel)
-     : Voice(sample_rate, note, vel, decay_when_off, 0.2f, channel) {}
+      : Voice(sample_rate, note, vel, decay_when_off, 0.2f, channel) {}
   Voice(size_t sample_rate, int8_t note, int8_t vel, bool decay_when_off, float decay_seconds, shared_ptr<Channel> channel)
       : sample_rate(sample_rate),
         note(note),
@@ -800,8 +800,7 @@ public:
         channel(channel),
         decay_when_off(decay_when_off),
         note_off_decay_total(static_cast<ssize_t>(round(
-          static_cast<double>(decay_seconds) * static_cast<double>(this->sample_rate)
-        ))),
+            static_cast<double>(decay_seconds) * static_cast<double>(this->sample_rate)))),
         note_off_decay_remaining(-1) {}
   virtual ~Voice() = default;
 
@@ -2086,6 +2085,7 @@ int main(int argc, char** argv) {
   bool list_sequences = false;
   int32_t default_bank = -1;
   bool decay_when_off = true;
+  float decay_seconds = -1.0f;
   int resample_method = SRC_SINC_BEST_QUALITY;
   bool resample_method_set = false;
   string env_json_filename;
@@ -2111,6 +2111,8 @@ int main(int argc, char** argv) {
       debug_flags &= ~DebugFlag::SHOW_LONG_STATUS;
     } else if (!strcmp(argv[x], "--no-decay-when-off")) {
       decay_when_off = false;
+    } else if (!strncmp(argv[x], "--decay-seconds=", 16)) {
+      decay_seconds = strtof(&argv[x][16], nullptr);
     } else if (!strcmp(argv[x], "--midi")) {
       midi = true;
     } else if (!strncmp(argv[x], "--midi-channel-instrument=", 26)) {
@@ -2304,13 +2306,17 @@ int main(int argc, char** argv) {
   } else {
     // midi has some extra params; get them from the json if possible
     uint8_t percussion_instrument = 0;
-    float decay_seconds = 0.2f;
     bool allow_program_change = true;
     if (!env_json.is_null()) {
       percussion_instrument = env_json.get_int("percussion_instrument", 0);
       allow_program_change = env_json.get_bool("allow_program_change", true);
-      decay_seconds = env_json.get_float("note_decay", 12.0f) / 60.0f;
+      if (decay_seconds < 0) {
+        decay_seconds = env_json.get_float("note_decay", 12.0f) / 60.0f;
+      }
       tempo_bias *= env_json.get_float("tempo_bias", 1.0);
+    }
+    if (decay_seconds < 0) {
+      decay_seconds = 0.2f;
     }
     r.reset(new MIDIRenderer(
         midi_contents,
