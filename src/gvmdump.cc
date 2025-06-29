@@ -141,7 +141,7 @@ vector<uint32_t> decode_gvp(const string& data) {
   return ret;
 }
 
-phosg::Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullptr) {
+phosg::ImageRGBA8888 decode_gvr(const string& data, const vector<uint32_t>* clut = nullptr) {
   if (data.size() < sizeof(GVRHeader)) {
     throw runtime_error("data too small for header");
   }
@@ -199,7 +199,7 @@ phosg::Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullp
     throw runtime_error("width/height must be multiples of 4 for dxt1 format");
   }
 
-  phosg::Image result(header.width, header.height, true);
+  phosg::ImageRGBA8888 result(header.width, header.height, true);
   switch (header.data_format) {
     case GVRDataFormat::RGB5A3:
       // 4x4 blocks of pixels
@@ -207,7 +207,7 @@ phosg::Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullp
         for (size_t x = 0; x < header.width; x += 4) {
           for (size_t yy = 0; yy < 4; yy++) {
             for (size_t xx = 0; xx < 4; xx++) {
-              result.write_pixel(x + xx, y + yy, decode_rgb5a3(r.get_u16b()));
+              result.write(x + xx, y + yy, decode_rgb5a3(r.get_u16b()));
             }
           }
         }
@@ -224,8 +224,8 @@ phosg::Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullp
           for (size_t yy = 0; yy < 8; yy++) {
             for (size_t xx = 0; xx < 8; xx += 2) {
               uint8_t indexes = r.get_u8();
-              result.write_pixel(x + xx, y + yy, clut->at((indexes >> 4) & 0x0F));
-              result.write_pixel(x + xx + 1, y + yy, clut->at(indexes & 0x0F));
+              result.write(x + xx, y + yy, clut->at((indexes >> 4) & 0x0F));
+              result.write(x + xx + 1, y + yy, clut->at(indexes & 0x0F));
             }
           }
         }
@@ -242,7 +242,7 @@ phosg::Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullp
           for (size_t yy = 0; yy < 4; yy++) {
             for (size_t xx = 0; xx < 8; xx++) {
               uint8_t index = r.get_u8();
-              result.write_pixel(x + xx, y + yy, clut->at(index));
+              result.write(x + xx, y + yy, clut->at(index));
             }
           }
         }
@@ -258,8 +258,8 @@ phosg::Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullp
               uint8_t v = r.get_u8();
               uint8_t v1 = (v & 0xF0) | (v >> 4);
               uint8_t v2 = (v & 0x0F) | (v << 4);
-              result.write_pixel(x + xx, y + yy, (v1 << 24) | (v1 << 16) | (v1 << 8) | 0xFF);
-              result.write_pixel(x + xx + 1, y + yy, (v2 << 24) | (v2 << 16) | (v2 << 8) | 0xFF);
+              result.write(x + xx, y + yy, (v1 << 24) | (v1 << 16) | (v1 << 8) | 0xFF);
+              result.write(x + xx + 1, y + yy, (v2 << 24) | (v2 << 16) | (v2 << 8) | 0xFF);
             }
           }
         }
@@ -273,7 +273,7 @@ phosg::Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullp
           for (size_t yy = 0; yy < 4; yy++) {
             for (size_t xx = 0; xx < 8; xx++) {
               uint8_t v = r.get_u8();
-              result.write_pixel(x + xx, y + yy, (v << 24) | (v << 16) | (v << 8) | 0xFF);
+              result.write(x + xx, y + yy, (v << 24) | (v << 16) | (v << 8) | 0xFF);
             }
           }
         }
@@ -285,35 +285,37 @@ phosg::Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullp
         for (size_t x = 0; x < header.width; x += 8) {
           for (size_t yy = 0; yy < 8; yy += 4) {
             for (size_t xx = 0; xx < 8; xx += 4) {
-              uint8_t color_table[4][4]; // 4 entries of [r, g, b, a] each
+              uint32_t color_table[4];
               uint16_t color1 = r.get_u16b(); // RGB565
               uint16_t color2 = r.get_u16b(); // RGB565
-              color_table[0][0] = ((color1 >> 8) & 0xF8) | ((color1 >> 13) & 0x07);
-              color_table[0][1] = ((color1 >> 3) & 0xFC) | ((color1 >> 9) & 0x03);
-              color_table[0][2] = ((color1 << 3) & 0xF8) | ((color1 >> 2) & 0x07);
-              color_table[0][3] = 0xFF;
-              color_table[1][0] = ((color2 >> 8) & 0xF8) | ((color2 >> 13) & 0x07);
-              color_table[1][1] = ((color2 >> 3) & 0xFC) | ((color2 >> 9) & 0x03);
-              color_table[1][2] = ((color2 << 3) & 0xF8) | ((color2 >> 2) & 0x07);
-              color_table[1][3] = 0xFF;
+              color_table[0] = phosg::rgba8888(
+                  ((color1 >> 8) & 0xF8) | ((color1 >> 13) & 0x07),
+                  ((color1 >> 3) & 0xFC) | ((color1 >> 9) & 0x03),
+                  ((color1 << 3) & 0xF8) | ((color1 >> 2) & 0x07),
+                  0xFF);
+              color_table[1] = phosg::rgba8888(
+                  ((color2 >> 8) & 0xF8) | ((color2 >> 13) & 0x07),
+                  ((color2 >> 3) & 0xFC) | ((color2 >> 9) & 0x03),
+                  ((color2 << 3) & 0xF8) | ((color2 >> 2) & 0x07),
+                  0xFF);
               if (color1 > color2) {
-                color_table[2][0] = (((color_table[0][0] * 2) + color_table[1][0]) / 3);
-                color_table[2][1] = (((color_table[0][1] * 2) + color_table[1][1]) / 3);
-                color_table[2][2] = (((color_table[0][2] * 2) + color_table[1][2]) / 3);
-                color_table[2][3] = 0xFF;
-                color_table[3][0] = (((color_table[1][0] * 2) + color_table[0][0]) / 3);
-                color_table[3][1] = (((color_table[1][1] * 2) + color_table[0][1]) / 3);
-                color_table[3][2] = (((color_table[1][2] * 2) + color_table[0][2]) / 3);
-                color_table[3][3] = 0xFF;
+                color_table[2] = phosg::rgba8888(
+                    (((phosg::get_r(color_table[0]) * 2) + phosg::get_r(color_table[1])) / 3),
+                    (((phosg::get_g(color_table[0]) * 2) + phosg::get_g(color_table[1])) / 3),
+                    (((phosg::get_b(color_table[0]) * 2) + phosg::get_b(color_table[1])) / 3),
+                    0xFF);
+                color_table[3] = phosg::rgba8888(
+                    (((phosg::get_r(color_table[1]) * 2) + phosg::get_r(color_table[0])) / 3),
+                    (((phosg::get_g(color_table[1]) * 2) + phosg::get_g(color_table[0])) / 3),
+                    (((phosg::get_b(color_table[1]) * 2) + phosg::get_b(color_table[0])) / 3),
+                    0xFF);
               } else {
-                color_table[2][0] = ((color_table[0][0] + color_table[1][0]) / 2);
-                color_table[2][1] = ((color_table[0][1] + color_table[1][1]) / 2);
-                color_table[2][2] = ((color_table[0][2] + color_table[1][2]) / 2);
-                color_table[2][3] = 0xFF;
-                color_table[3][0] = 0x00;
-                color_table[3][1] = 0x00;
-                color_table[3][2] = 0x00;
-                color_table[3][3] = 0x00;
+                color_table[2] = phosg::rgba8888(
+                    ((phosg::get_r(color_table[0]) + phosg::get_r(color_table[1])) / 2),
+                    ((phosg::get_g(color_table[0]) + phosg::get_g(color_table[1])) / 2),
+                    ((phosg::get_b(color_table[0]) + phosg::get_b(color_table[1])) / 2),
+                    0xFF);
+                color_table[3] = 0x00000000;
               }
 
               for (size_t yyy = 0; yyy < 4; yyy++) {
@@ -322,9 +324,7 @@ phosg::Image decode_gvr(const string& data, const vector<uint32_t>* clut = nullp
                   size_t effective_x = x + xx + xxx;
                   size_t effective_y = y + yy + yyy;
                   uint8_t color_index = (pixels >> (6 - (xxx * 2))) & 3;
-                  result.write_pixel(effective_x, effective_y,
-                      color_table[color_index][0], color_table[color_index][1],
-                      color_table[color_index][2], color_table[color_index][3]);
+                  result.write(effective_x, effective_y, color_table[color_index]);
                 }
               }
             }
@@ -365,8 +365,8 @@ int main(int argc, char* argv[]) {
       data = data.substr(gbix_size + 8); // strip off GBIX header
     }
     try {
-      phosg::Image decoded = decode_gvr(data, clut.empty() ? nullptr : &clut);
-      decoded.save(string(argv[1]) + ".bmp", phosg::Image::Format::WINDOWS_BITMAP);
+      auto decoded = decode_gvr(data, clut.empty() ? nullptr : &clut);
+      phosg::save_file(string(argv[1]) + ".bmp", decoded.serialize(phosg::ImageFormat::WINDOWS_BITMAP));
     } catch (const exception& e) {
       fprintf(stderr, "failed to decode gvr: %s\n", e.what());
       return 2;
@@ -403,8 +403,8 @@ int main(int argc, char* argv[]) {
 
       string gvr_contents = data.substr(offset, gvr->data_size + 8);
       try {
-        phosg::Image decoded = decode_gvr(gvr_contents, clut.empty() ? nullptr : &clut);
-        decoded.save(filename + ".bmp", phosg::Image::Format::WINDOWS_BITMAP);
+        auto decoded = decode_gvr(gvr_contents, clut.empty() ? nullptr : &clut);
+        phosg::save_file(filename + ".bmp", decoded.serialize(phosg::ImageFormat::WINDOWS_BITMAP));
         printf("> %04zu = %08zX:%08X => %s.bmp\n",
             x + 1, offset, gvr->data_size + 8, filename.c_str());
       } catch (const exception& e) {
