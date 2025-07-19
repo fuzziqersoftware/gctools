@@ -141,7 +141,7 @@ vector<uint32_t> decode_gvp(const string& data) {
   return ret;
 }
 
-phosg::ImageRGBA8888 decode_gvr(const string& data, const vector<uint32_t>* clut = nullptr) {
+phosg::ImageRGBA8888N decode_gvr(const string& data, const vector<uint32_t>* clut = nullptr) {
   if (data.size() < sizeof(GVRHeader)) {
     throw runtime_error("data too small for header");
   }
@@ -199,7 +199,7 @@ phosg::ImageRGBA8888 decode_gvr(const string& data, const vector<uint32_t>* clut
     throw runtime_error("width/height must be multiples of 4 for dxt1 format");
   }
 
-  phosg::ImageRGBA8888 result(header.width, header.height, true);
+  phosg::ImageRGBA8888N result(header.width, header.height, true);
   switch (header.data_format) {
     case GVRDataFormat::RGB5A3:
       // 4x4 blocks of pixels
